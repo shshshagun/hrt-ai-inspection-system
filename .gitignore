@@ -31,6 +31,29 @@ datasets/
 *.pt
 *.onnx
 
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# IDE & Local Agents
+.agents/
+.idea/
+.vscode/
+
+# Temp files
+~$*.docx
+*.tmp
+
+# Reports & Documents
+reports/
+*.docx
+skills-lock.json
+
+# Redundant duplicate directories
+hrt-frames-2/
+hrt-ai-inspection-system/
+
 # OS
 .DS_Store
 Thumbs.db

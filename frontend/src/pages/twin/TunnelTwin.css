@@ -1,0 +1,758 @@
+/* ═════════════════════════════════════════════════════════════════════════════
+   TunnelTwin.css — High-Performance 3D Digital Twin Interface
+   Palette: Deep Navy (#080d1a), Charcoal (#111827), Slate Border (#1e293b),
+            Concrete Grey (#64748b), Restrained Cyan (#0284c7 / #0ea5e9)
+   STRICTLY FORBIDDEN: glassmorphism, backdrop-blur, glowing neon, pill buttons
+   ═════════════════════════════════════════════════════════════════════════════ */
+
+.twin-root {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #061820;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #f1f5f9;
+  user-select: none;
+  z-index: 100;
+}
+
+/* ── WebGL 3D Viewport ── */
+.twin-viewport {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  cursor: grab;
+}
+
+.twin-viewport:active {
+  cursor: grabbing;
+}
+
+/* ── Loading Screen ── */
+.twin-loading {
+  position: absolute;
+  inset: 0;
+  background-color: #071018;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 50;
+}
+
+.twin-loading-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid #1e293b;
+  border-top-color: #0ea5e9;
+  border-radius: 50%;
+  animation: twin-spin 0.8s linear infinite;
+}
+
+@keyframes twin-spin {
+  to { transform: rotate(360deg); }
+}
+
+.twin-loading p {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.twin-loading-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+/* ── Fallback State ── */
+.twin-fallback {
+  position: absolute;
+  inset: 0;
+  background: #090e17;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 24px;
+}
+
+.twin-fallback-box {
+  background: #111827;
+  border: 1px solid #334155;
+  padding: 32px;
+  max-width: 540px;
+  width: 100%;
+}
+
+.twin-fallback-box h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f87171;
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.twin-fallback-box p {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.twin-fallback-sub {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+/* ── Error Banner ── */
+.twin-error-banner {
+  position: absolute;
+  top: 76px;
+  left: 20px;
+  background: #7f1d1d;
+  color: #fecaca;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  border: 1px solid #b91c1c;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 30;
+}
+
+.twin-error-banner button {
+  background: #991b1b;
+  border: 1px solid #f87171;
+  color: #fff;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+/* ── Top HUD Header ── */
+.twin-hud-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background-color: #0c121e;
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  z-index: 20;
+}
+
+.twin-brand-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.twin-brand-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #f8fafc;
+}
+
+.twin-badge-sample {
+  background-color: #451a03;
+  color: #f59e0b;
+  border: 1px solid #78350f;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+}
+
+.twin-disclaimer {
+  font-size: 0.68rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Telemetry Stream */
+.twin-telemetry-strip {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background-color: #080d16;
+  border: 1px solid #1e293b;
+  padding: 6px 16px;
+}
+
+.twin-telem-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.twin-telem-k {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.08em;
+}
+
+.twin-telem-v {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+/* Header Action Buttons */
+.twin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.twin-btn-hud {
+  background-color: #172033;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.twin-btn-hud:hover {
+  background-color: #1e293b;
+  border-color: #0ea5e9;
+  color: #f8fafc;
+}
+
+.twin-btn-exit {
+  background-color: #0f172a;
+  color: #38bdf8;
+  border-color: #0284c7;
+}
+
+.twin-btn-exit:hover {
+  background-color: #0284c7;
+  color: #ffffff;
+}
+
+/* ── Bottom Strip: Chainage Minimap ── */
+.twin-bottom-strip {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 62px;
+  background-color: #0c121e;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6px 24px;
+  z-index: 20;
+}
+
+.twin-strip-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.65rem;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.twin-strip-coords {
+  color: #94a3b8;
+  letter-spacing: 0.04em;
+}
+
+.twin-strip-track {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  background-color: #080d16;
+  border: 1px solid #1e293b;
+}
+
+.twin-strip-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.twin-tick-line {
+  width: 1px;
+  height: 100%;
+  background-color: #334155;
+}
+
+.twin-tick-text {
+  position: absolute;
+  top: -14px;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.6rem;
+  color: #475569;
+}
+
+/* Crack Defect Pins on Track */
+.twin-crack-pin {
+  position: absolute;
+  top: 2px;
+  width: 6px;
+  height: 14px;
+  transform: translateX(-50%);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s;
+  z-index: 3;
+}
+
+.twin-crack-pin:hover,
+.twin-crack-pin.selected {
+  transform: translateX(-50%) scale(1.4);
+  outline: 2px solid #ffffff;
+  z-index: 5;
+}
+
+/* Rover Location Pin */
+.twin-rover-pin {
+  position: absolute;
+  top: -6px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.twin-rover-cone {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #0ea5e9;
+}
+
+.twin-rover-label {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #0ea5e9;
+  background-color: #080d16;
+  padding: 1px 4px;
+  border: 1px solid #0284c7;
+  white-space: nowrap;
+  margin-top: 14px;
+}
+
+/* ── Controls Hint Card (Bottom Left) ── */
+.twin-controls-card {
+  position: absolute;
+  bottom: 74px;
+  left: 20px;
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  width: 270px;
+  padding: 12px 14px;
+  z-index: 25;
+}
+
+.twin-controls-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.twin-close-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.twin-close-btn:hover {
+  color: #f1f5f9;
+}
+
+.twin-controls-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #cbd5e1;
+}
+
+.twin-controls-grid div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.twin-controls-grid kbd {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  color: #f8fafc;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 5px;
+}
+
+.twin-controls-note {
+  font-size: 0.65rem;
+  color: #64748b;
+  margin: 8px 0 0;
+  border-top: 1px solid #1e293b;
+  padding-top: 6px;
+}
+
+/* ── Right Side Panel: Crack Inspector ── */
+.twin-crack-inspector {
+  position: absolute;
+  top: 76px;
+  right: 20px;
+  width: 320px;
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  padding: 18px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.twin-inspector-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 10px;
+}
+
+.twin-inspect-sub {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.1em;
+}
+
+.twin-inspect-id {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 2px 0 0;
+}
+
+.twin-inspect-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.twin-sev-pill {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border: 1px solid;
+  padding: 2px 8px;
+  letter-spacing: 0.05em;
+}
+
+.twin-source-pill {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.62rem;
+  color: #94a3b8;
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  padding: 2px 6px;
+}
+
+.twin-inspect-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: #080d16;
+  border: 1px solid #1e293b;
+  padding: 10px 12px;
+}
+
+.twin-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.twin-row strong {
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+.twin-mono {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.twin-inspect-notes {
+  background-color: #080d16;
+  border-left: 2px solid #0284c7;
+  padding: 8px 10px;
+}
+
+.twin-notes-label {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.6rem;
+  color: #64748b;
+  letter-spacing: 0.08em;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.twin-inspect-notes p {
+  font-size: 0.72rem;
+  color: #cbd5e1;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.twin-inspect-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.twin-btn-primary {
+  background-color: #0284c7;
+  color: #ffffff;
+  border: 1px solid #0ea5e9;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 10px;
+  cursor: pointer;
+  width: 100%;
+  transition: background-color 0.15s;
+}
+
+.twin-btn-primary:hover {
+  background-color: #0369a1;
+}
+
+/* ── Crack Inventory Drawer ── */
+.twin-inventory-drawer {
+  position: absolute;
+  top: 76px;
+  right: 20px;
+  width: 340px;
+  max-height: calc(100vh - 150px);
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  padding: 16px;
+  z-index: 28;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.twin-inventory-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 8px;
+}
+
+.twin-inventory-head h3 {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.twin-inventory-sub {
+  font-size: 0.68rem;
+  color: #64748b;
+  margin: 2px 0 0;
+}
+
+.twin-sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.twin-sort-btn {
+  background-color: #1e293b;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.twin-sort-btn.active {
+  background-color: #0284c7;
+  color: #ffffff;
+  border-color: #0ea5e9;
+}
+
+.twin-inventory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.twin-inv-card {
+  background-color: #080d16;
+  border: 1px solid #1e293b;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.twin-inv-card:hover,
+.twin-inv-card.selected {
+  border-color: #0284c7;
+  background-color: #111c2e;
+}
+
+.twin-inv-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.twin-inv-id {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.twin-inv-sev {
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.twin-inv-details {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: #64748b;
+}
+
+/* ── Mobile Touch Controls ── */
+.twin-mobile-controls {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .twin-telemetry-strip {
+    display: none;
+  }
+  .twin-disclaimer {
+    display: none;
+  }
+  .twin-crack-inspector,
+  .twin-inventory-drawer {
+    width: 290px;
+  }
+}
+
+@media (max-width: 680px), (pointer: coarse) {
+  .twin-mobile-controls {
+    display: flex;
+    position: absolute;
+    bottom: 74px;
+    left: 12px;
+    right: 12px;
+    justify-content: space-between;
+    pointer-events: none;
+    z-index: 25;
+  }
+
+  .twin-touch-pad,
+  .twin-touch-aux {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .twin-touch-pad button,
+  .twin-touch-aux button {
+    width: 44px;
+    height: 44px;
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  .twin-touch-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .twin-touch-boost {
+    background-color: #0284c7 !important;
+    border-color: #0ea5e9 !important;
+    font-size: 0.7rem !important;
+  }
+
+  .twin-controls-card {
+    display: none;
+  }
+}

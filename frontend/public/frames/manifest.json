@@ -1,0 +1,1 @@
+{"frameCount":192,"fps":24.000,"duration":8.000000,"pad":4,"ext":"webp","desktop":{"path":"desktop/frame_{n}.webp","width":1920,"height":1080},"mobile":{"path":"mobile/frame_{n}.webp","width":960,"height":540},"poster":"poster.webp"}

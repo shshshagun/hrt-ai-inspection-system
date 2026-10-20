@@ -1,0 +1,132 @@
+/* ═══════════════════════════════════════════════════════════════════
+   HRT AI Inspection System — Design System
+   Taste-skill compliant: no glass, no gradients, no ornament
+   Landing: deep navy/charcoal | Dashboard: slate/off-white | Accent: teal
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Landing page palette ── */
+  --lp-bg:        #0a0e16;
+  --lp-surface:   #111827;
+  --lp-ink:       #e8ecf1;
+  --lp-ink-2:     #8fa3b8;
+  --lp-border:    rgba(255,255,255,0.08);
+
+  /* ── Dashboard palette ── */
+  --db-bg:        #f4f5f7;
+  --db-surface:   #ffffff;
+  --db-surface-2: #f0f2f5;
+  --db-ink:       #1a2332;
+  --db-ink-2:     #4a5568;
+  --db-ink-3:     #8a96a8;
+  --db-border:    #dde1e8;
+  --db-sidebar:   #0f1923;
+  --db-sidebar-2: #172130;
+
+  /* ── Shared accent ── */
+  --teal:         #0d9488;
+  --teal-light:   #14b8a6;
+  --teal-dim:     rgba(13,148,136,0.12);
+
+  /* ── Severity colours (flat, no glow) ── */
+  --critical:     #dc2626;
+  --major:        #ea580c;
+  --minor:        #ca8a04;
+  --info:         #3b82f6;
+
+  /* ── Type scale (fluid) ── */
+  --text-xs:   0.75rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.125rem;
+  --text-xl:   1.25rem;
+  --text-2xl:  1.5rem;
+  --text-3xl:  2rem;
+  --text-4xl:  2.75rem;
+  --text-hero: clamp(2.5rem, 6vw, 5rem);
+
+  /* ── Spacing ── */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+
+  /* ── Radius (restrained — square preferred) ── */
+  --radius-sm:  2px;
+  --radius:     4px;
+  --radius-md:  6px;
+
+  /* ── Z-index layers ── */
+  --z-base:    0;
+  --z-overlay: 100;
+  --z-nav:     200;
+  --z-modal:   300;
+
+  /* ── Motion ── */
+  --ease-out:   cubic-bezier(0.22,1,0.36,1);
+  --ease-in:    cubic-bezier(0.76,0,0.24,1);
+  --duration:   280ms;
+  --duration-slow: 600ms;
+}
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--db-ink);
+  background: var(--db-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+img, video { display: block; max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; cursor: pointer; border: none; background: none; }
+ul, ol { list-style: none; }
+
+code, pre, .mono {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+/* ── Utility classes ── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border-width: 0;
+}
+
+/* ── Focus ring ── */
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbar (dashboard) ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--db-border); border-radius: 3px; }
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
