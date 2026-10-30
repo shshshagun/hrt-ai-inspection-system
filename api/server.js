@@ -1,69 +1,53 @@
 require('dotenv').config();
 const express = require('express');
-const { Pool } = require('pg');
+const { MongoClient } = require('mongodb');
 
 const app = express();
 app.use(express.json());
 
-// Initialize Postgres Pool
-// Render injects the DATABASE_URL environment variable automatically if linked
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
+// Initialize MongoDB Client
+// Configure MONGODB_URI in your environment variables (e.g. Render dashboard)
+const uri = process.env.MONGODB_URI;
+let db;
 
-// Run migrations on startup to ensure the table exists
-const initDB = async () => {
-  const schema = `
-    CREATE TABLE IF NOT EXISTS detections (
-        id SERIAL PRIMARY KEY,
-        class_label VARCHAR(50) NOT NULL,
-        confidence REAL NOT NULL,
-        bbox_x1 REAL,
-        bbox_y1 REAL,
-        bbox_x2 REAL,
-        bbox_y2 REAL,
-        bbox_width REAL,
-        bbox_height REAL,
-        frame_index INTEGER,
-        timestamp TIMESTAMPTZ,
-        x REAL,
-        y REAL,
-        z REAL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-  `;
+async function connectDB() {
   try {
-    await pool.query(schema);
-    console.log("✅ Database schema initialized successfully.");
+    const client = new MongoClient(uri);
+    await client.connect();
+    // Specify the database name (it will be created if it doesn't exist)
+    db = client.db('hrt_inspection');
+    console.log("✅ Successfully connected to MongoDB Atlas.");
   } catch (err) {
-    console.error("❌ Failed to initialize database:", err);
+    console.error("❌ Failed to connect to MongoDB:", err);
   }
-};
-initDB();
+}
+connectDB();
 
 // ── POST /api/detections ──
-// Receives JSON from predict.py and inserts it into PostgreSQL
+// Receives JSON from predict.py and inserts it into MongoDB
 app.post('/api/detections', async (req, res) => {
   const { class_label, confidence, bbox, frame_index, timestamp, x, y, z } = req.body;
   
+  if (!db) {
+    return res.status(500).json({ error: 'Database not initialized' });
+  }
+
   try {
-    const query = `
-      INSERT INTO detections (
-        class_label, confidence, 
-        bbox_x1, bbox_y1, bbox_x2, bbox_y2, bbox_width, bbox_height, 
-        frame_index, timestamp, x, y, z
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING *;
-    `;
-    const values = [
-      class_label, confidence,
-      bbox?.x1, bbox?.y1, bbox?.x2, bbox?.y2, bbox?.width, bbox?.height,
-      frame_index, timestamp, x, y, z
-    ];
+    const detection = {
+      class_label,
+      confidence,
+      bbox, // MongoDB can store the nested bbox object directly!
+      frame_index,
+      timestamp: new Date(timestamp),
+      x,
+      y,
+      z,
+      created_at: new Date()
+    };
     
-    const result = await pool.query(query, values);
-    res.status(201).json(result.rows[0]);
+    const result = await db.collection('detections').insertOne(detection);
+    // Return the inserted document with its new _id
+    res.status(201).json({ _id: result.insertedId, ...detection });
   } catch (error) {
     console.error("Error inserting detection:", error);
     res.status(500).json({ error: 'Internal Server Error' });
@@ -73,9 +57,18 @@ app.post('/api/detections', async (req, res) => {
 // ── GET /api/detections ──
 // Returns the latest 100 detections
 app.get('/api/detections', async (req, res) => {
+  if (!db) {
+    return res.status(500).json({ error: 'Database not initialized' });
+  }
+
   try {
-    const result = await pool.query('SELECT * FROM detections ORDER BY timestamp DESC LIMIT 100');
-    res.json(result.rows);
+    const detections = await db.collection('detections')
+      .find({})
+      .sort({ timestamp: -1 })
+      .limit(100)
+      .toArray();
+      
+    res.json(detections);
   } catch (error) {
     console.error("Error fetching detections:", error);
     res.status(500).json({ error: 'Internal Server Error' });
