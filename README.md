@@ -23,8 +23,8 @@ ROV Video Feed
              │
              ▼
 ┌─────────────────────────────────┐
-│   PostgreSQL Database           │
-│   spatial defect records        │
+│   MongoDB Atlas                 │
+│   spatial defect collections    │
 └────────────┬────────────────────┘
              │
              ▼
