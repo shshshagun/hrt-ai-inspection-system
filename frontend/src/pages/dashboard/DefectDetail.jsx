@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Flag, MessageSquare, ArrowLeft, ExternalLink } from 'lucide-react';
+import { Flag, MessageSquare, ArrowLeft, ExternalLink, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { DETECTIONS } from '../../data/mockData';
+import { generateReport } from '../../hooks/useApi';
 import './DefectDetail.css';
 
 const SEV_COLOR = {
@@ -22,6 +24,7 @@ function MetaRow({ label, value }) {
 export default function DefectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [exportState, setExportState] = useState('idle'); // idle | loading | done | error
   const detection = DETECTIONS.find(d => d.id === id);
 
   if (!detection) {
@@ -43,15 +46,29 @@ export default function DefectDetail() {
     <div className="dd-page">
       {/* ── Header ── */}
       <div className="dd-header">
-        <button
-          className="dd-back-btn"
-          onClick={() => navigate('/dashboard/detections')}
-          aria-label="Back to detections"
-        >
+        <button className="dd-back-btn" onClick={() => navigate('/dashboard/detections')} aria-label="Back to detections">
           <ArrowLeft size={16} /> AI Detections
         </button>
-        <button className="dd-export-btn" aria-label="Export analysis (not yet implemented)">
-          Export Analysis
+        <button
+          className="dd-export-btn"
+          aria-label="Export analysis as PDF"
+          disabled={exportState === 'loading'}
+          onClick={async () => {
+            setExportState('loading');
+            try {
+              await generateReport({ inspection_id: detection.inspectionId, format: 'pdf' });
+              setExportState('done');
+              setTimeout(() => setExportState('idle'), 2000);
+            } catch {
+              setExportState('error');
+              setTimeout(() => setExportState('idle'), 3000);
+            }
+          }}
+        >
+          {exportState === 'loading' && <><Loader2 size={14} className="sp-dl-btn__spin" /> Generating…</>}
+          {exportState === 'done'    && <><CheckCircle2 size={14} style={{ color: 'var(--teal)' }} /> Downloaded</>}
+          {exportState === 'error'   && <><AlertCircle size={14} style={{ color: 'var(--critical)' }} /> Error — retry</>}
+          {exportState === 'idle'    && <><Download size={14} /> Export Analysis</>}
         </button>
       </div>
 
