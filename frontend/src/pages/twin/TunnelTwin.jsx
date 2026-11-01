@@ -117,6 +117,14 @@ export default function TunnelTwin() {
   const [showInventory, setShowInventory]   = useState(false);
   const [sortBy, setSortBy]                 = useState('chainage');
 
+  // Autonomous Survey Fly-Through State
+  const [autoPilot, setAutoPilot]           = useState(false);
+  const autoPilotRef                        = useRef(false);
+  const autoPilotPauseUntilRef              = useRef(0);
+  const inspectedDefectsRef                 = useRef(new Set());
+  const cracksDataRef                       = useRef([]);
+  useEffect(() => { cracksDataRef.current = cracksData; }, [cracksData]);
+
   const [telemetry, setTelemetry] = useState({
     x: 0, y: -0.6, z: 6.0, speed: 0, chainage: 6.0, heading: 0, depth: 38.5,
   });
@@ -450,6 +458,42 @@ export default function TunnelTwin() {
       const ctrl = controlsRef.current;
       const cfg  = TUNNEL_CONFIG.rover;
 
+      // --- AUTONOMOUS SURVEY FLY-THROUGH LOGIC ---
+      if (autoPilotRef.current) {
+        const curZ = roverGroup.position.z;
+        const now = performance.now();
+
+        if (now < autoPilotPauseUntilRef.current) {
+          roverVelocity.set(0, 0, 0);
+        } else {
+          const upcoming = cracksDataRef.current.find(c => {
+            const dz = c.chainage_m - curZ;
+            return dz > 0 && dz < 3.0 && !inspectedDefectsRef.current.has(c.id);
+          });
+
+          if (upcoming) {
+            autoPilotPauseUntilRef.current = now + 2400;
+            inspectedDefectsRef.current.add(upcoming.id);
+            setSelectedCrack(upcoming);
+
+            const defectTheta = (upcoming.angle_deg * Math.PI) / 180;
+            const targetYaw = -defectTheta + Math.PI / 2;
+            roverYaw = THREE.MathUtils.lerp(roverYaw, targetYaw, delta * 4.0);
+          } else {
+            roverGroup.position.x = THREE.MathUtils.lerp(roverGroup.position.x, 0, delta * 2.0);
+            roverGroup.position.y = THREE.MathUtils.lerp(roverGroup.position.y, -0.4, delta * 2.0);
+            roverYaw = THREE.MathUtils.lerp(roverYaw, 0, delta * 3.0);
+            roverPitch = THREE.MathUtils.lerp(roverPitch, 0, delta * 3.0);
+            roverVelocity.set(0, 0, 3.5);
+            roverGroup.position.z += 3.5 * delta;
+
+            if (roverGroup.position.z >= length - 2.0) {
+              roverGroup.position.z = 2.0;
+              inspectedDefectsRef.current.clear();
+            }
+          }
+        }
+      } else
       // Smooth LERP fly-to when a jump target is active
       if (jumpTargetRef.current) {
         const tgt = jumpTargetRef.current;
@@ -798,6 +842,18 @@ export default function TunnelTwin() {
   useEffect(() => { selectClosestCrackRef.current = selectClosestCrack; }, [selectClosestCrack]);
 
   // ── Reset camera to start / chase mode ────────────────────────────────────
+  const toggleAutoPilot = useCallback(() => {
+    setAutoPilot(prev => {
+      const next = !prev;
+      autoPilotRef.current = next;
+      if (next) {
+        inspectedDefectsRef.current.clear();
+        autoPilotPauseUntilRef.current = 0;
+      }
+      return next;
+    });
+  }, []);
+
   const handleResetCamera = useCallback(() => {
     jumpTargetRef.current = {
       pos: new THREE.Vector3(...TUNNEL_CONFIG.rover.start_pos),
@@ -901,6 +957,21 @@ export default function TunnelTwin() {
         </div>
 
         <div className="twin-header-actions">
+          <button
+            className={`twin-btn-hud ${autoPilot ? 'twin-btn-hud--active' : ''}`}
+            onClick={toggleAutoPilot}
+            title="Toggle Autonomous Inspection Fly-Through"
+            id="twin-autopilot-btn"
+            style={{
+              background: autoPilot ? '#0d9488' : 'rgba(15, 23, 42, 0.75)',
+              color: '#ffffff',
+              border: autoPilot ? '1px solid #14b8a6' : '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: autoPilot ? '0 0 12px rgba(20, 184, 166, 0.6)' : 'none',
+              fontWeight: 700
+            }}
+          >
+            AUTONOMOUS: {autoPilot ? 'ENGAGED 🚀' : 'OFF'}
+          </button>
           <button
             className="twin-btn-hud"
             onClick={() => {
