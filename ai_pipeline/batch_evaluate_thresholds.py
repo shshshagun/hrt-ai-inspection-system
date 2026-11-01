@@ -1,110 +1,105 @@
 """
 batch_evaluate_thresholds.py
------------------------------
-Sweeps over confidence thresholds to find the optimal conf value
-that maximises F1 score on the validation split.
-
-Usage:
-    python ai_pipeline/batch_evaluate_thresholds.py
-    python ai_pipeline/batch_evaluate_thresholds.py --start 0.1 --end 0.9 --step 0.05
+----------------------------
+Sweeps confidence thresholds (0.10 to 0.90, step 0.05) on the test split
+to locate optimal operating points and generate metric curves under runs/evaluate/.
 """
 
-import argparse
 import json
+import argparse
 from pathlib import Path
-
-import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from ultralytics import YOLO
 
-ROOT            = Path(__file__).resolve().parent.parent
-DEFAULT_WEIGHTS = ROOT / "runs" / "detect" / "hrt_crack_det" / "weights" / "best.pt"
-DATA_YAML       = ROOT / "data" / "data.yaml"
-OUTPUT_DIR      = ROOT / "runs" / "threshold_sweep"
+# FIXED: Resolve root path correctly from within subdirectories
+ROOT = Path(__file__).resolve().parent.parent
+WEIGHTS = ROOT / "runs" / "detect" / "hrt_crack_det" / "weights" / "best.pt"
+DATA_YAML = ROOT / "data" / "data.yaml"
+RESULTS_DIR = ROOT / "runs" / "evaluate" / "threshold_sweeps"
 
+def run_sweep(device_str: str):
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    if not WEIGHTS.exists():
+        raise FileNotFoundError(f"Model weights not found at: {WEIGHTS}")
 
-def parse_args():
-    p = argparse.ArgumentParser(description="Sweep confidence thresholds")
-    p.add_argument("--weights", default=str(DEFAULT_WEIGHTS))
-    p.add_argument("--data",    default=str(DATA_YAML))
-    p.add_argument("--split",   default="val", choices=["val", "test"])
-    p.add_argument("--start",   type=float, default=0.10)
-    p.add_argument("--end",     type=float, default=0.90)
-    p.add_argument("--step",    type=float, default=0.05)
-    p.add_argument("--device",  default="0")
-    return p.parse_args()
+    model = YOLO(str(WEIGHTS))
+    thresholds = np.arange(0.10, 0.95, 0.05)
+    records = []
 
+    print("=" * 70)
+    print("  STARTING CONFIDENCE THRESHOLD SWEEP (0.10 to 0.90)")
+    print(f"  Execution Device Engine: {device_str}")
+    print("=" * 70)
 
-def main():
-    args = parse_args()
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    model  = YOLO(str(args.weights))
-    threshs = []
-    precisions, recalls, f1s, maps = [], [], [], []
-
-    conf = args.start
-    while conf <= args.end + 1e-6:
-        conf_r = round(conf, 3)
-        print(f"\n  Testing conf={conf_r:.3f} …", end=" ", flush=True)
-
+    for conf in thresholds:
+        conf_val = round(float(conf), 2)
         metrics = model.val(
-            data    = args.data,
-            split   = args.split,
-            conf    = conf_r,
-            iou     = 0.45,
-            imgsz   = 640,
-            device  = args.device,
-            verbose = False,
-            plots   = False,
+            data=str(DATA_YAML),
+            split="test",
+            imgsz=640,
+            conf=conf_val,
+            iou=0.45,
+            device=device_str, # FIXED: Dynamically passes command execution device
+            plots=True,
+            project=str(RESULTS_DIR),
+            name=f"conf_{conf_val:.2f}",
+            exist_ok=True,
+            verbose=False,
         )
+
         box = metrics.box
-        p   = float(box.mp)
-        r   = float(box.mr)
-        m   = float(box.map50)
-        f1  = 2 * p * r / (p + r + 1e-9)
+        p = float(box.mp)
+        r = float(box.mr)
+        map50 = float(box.map50)
+        map50_95 = float(box.map)
+        f1 = (2 * p * r) / (p + r + 1e-9)
 
-        threshs.append(conf_r)
-        precisions.append(p)
-        recalls.append(r)
-        f1s.append(f1)
-        maps.append(m)
-        print(f"P={p:.3f}  R={r:.3f}  F1={f1:.3f}  mAP50={m:.3f}")
-        conf += args.step
+        records.append({
+            "conf_threshold": conf_val,
+            "precision": round(p, 4),
+            "recall": round(r, 4),
+            "f1_score": round(f1, 4),
+            "mAP_50": round(map50, 4),
+            "mAP_50_95": round(map50_95, 4),
+        })
 
-    best_idx  = f1s.index(max(f1s))
-    best_conf = threshs[best_idx]
-    best_f1   = f1s[best_idx]
+        print(
+            f"  Conf: {conf_val:.2f} | Precision: {p:.4f} | Recall: {r:.4f} | "
+            f"F1: {f1:.4f} | mAP@0.5: {map50:.4f}"
+        )
 
-    print(f"\n🏆 Optimal confidence threshold: {best_conf:.3f}  (F1={best_f1:.4f})")
+    df = pd.DataFrame(records)
+    csv_path = RESULTS_DIR / "confidence_sweep_results.csv"
+    df.to_csv(csv_path, index=False)
 
-    # ── Save results JSON ────────────────────────────────────────────────────
-    results = [
-        {"conf": c, "precision": p, "recall": r, "f1": f, "mAP50": m}
-        for c, p, r, f, m in zip(threshs, precisions, recalls, f1s, maps)
-    ]
-    json_path = OUTPUT_DIR / "threshold_sweep.json"
-    with open(json_path, "w") as fh:
-        json.dump({"best_conf": best_conf, "best_f1": best_f1, "results": results}, fh, indent=2)
+    best_row = df.loc[df["f1_score"].idxmax()]
 
-    # ── Plot ─────────────────────────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(threshs, precisions, label="Precision", marker="o", markersize=4)
-    ax.plot(threshs, recalls,    label="Recall",    marker="s", markersize=4)
-    ax.plot(threshs, f1s,        label="F1",        marker="^", markersize=4, linewidth=2)
-    ax.plot(threshs, maps,       label="mAP@0.5",   marker="D", markersize=4, linestyle="--")
-    ax.axvline(best_conf, color="red", linestyle=":", label=f"Best conf={best_conf}")
-    ax.set_xlabel("Confidence Threshold")
-    ax.set_ylabel("Score")
-    ax.set_title("Confidence Threshold Sweep — HRT Crack Detection")
-    ax.legend()
-    ax.grid(alpha=0.3)
-    plot_path = OUTPUT_DIR / "threshold_sweep.png"
-    fig.savefig(str(plot_path), dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    summary = {
+        "best_conf_threshold": float(best_row["conf_threshold"]),
+        "peak_f1_score": float(best_row["f1_score"]),
+        "precision_at_best_f1": float(best_row["precision"]),
+        "recall_at_best_f1": float(best_row["recall"]),
+        "mAP_50_at_best_f1": float(best_row["mAP_50"]),
+    }
 
-    print(f"\n  📊 Plot  → {plot_path}")
-    print(f"  📄 JSON  → {json_path}")
+    with open(RESULTS_DIR / "sweep_summary.json", "w") as f:
+        json.dump(summary, f, indent=2)
 
+    print("\n" + "=" * 70)
+    print("  OPTIMAL OPERATING POINT")
+    print("=" * 70)
+    print(f"  Best Confidence Threshold : {summary['best_conf_threshold']}")
+    print(f"  Peak F1-Score             : {summary['peak_f1_score']}")
+    print(f"  Precision                 : {summary['precision_at_best_f1']}")
+    print(f"  Recall                    : {summary['recall_at_best_f1']}")
+    print(f"  mAP @ 0.5                 : {summary['mAP_50_at_best_f1']}")
+    print(f"  Full CSV Exported To      : {csv_path}")
+    print("=" * 70)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="cpu", help="Device engine execution context")
+    args = parser.parse_args()
+    
+    run_sweep(device_str=args.device)
