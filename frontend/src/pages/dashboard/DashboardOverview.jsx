@@ -4,9 +4,9 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis
 } from 'recharts';
 import {
-  KPI_SUMMARY, DEFECT_TYPE_DISTRIBUTION, SEVERITY_DISTRIBUTION,
-  INSPECTIONS, DETECTIONS
+  KPI_SUMMARY, DEFECT_TYPE_DISTRIBUTION, INSPECTIONS, DETECTIONS
 } from '../../data/mockData';
+import { useKpiSummary, useDetections, useDefectDistributions } from '../../hooks/useApi';
 import './DashboardOverview.css';
 
 const HOURS = ['08:00','10:00','12:00','14:00','16:00'];
@@ -57,8 +57,18 @@ function SeverityDot({ level }) {
 
 export default function DashboardOverview() {
   const navigate = useNavigate();
-  const pct = Math.round((KPI_SUMMARY.inspectedKm / KPI_SUMMARY.tunnelLengthKm) * 100);
-  const recentDets = DETECTIONS.slice(0, 3);
+
+  // Module 8 — live API data with graceful fallbacks
+  const { data: kpi }   = useKpiSummary();
+  const { data: dists } = useDefectDistributions();
+  const { data: dets }  = useDetections();
+
+  const kpiData    = kpi   ?? KPI_SUMMARY;
+  const distData   = dists ?? { typeDistribution: DEFECT_TYPE_DISTRIBUTION };
+  const detData    = dets  ?? DETECTIONS;
+
+  const pct        = Math.round((kpiData.inspectedKm / kpiData.tunnelLengthKm) * 100);
+  const recentDets = detData.slice(0, 3);
 
   return (
     <div className="db-overview">
@@ -77,20 +87,20 @@ export default function DashboardOverview() {
       <section className="db-overview__kpis" aria-label="Key performance indicators">
         <KpiCard
           label="Total Inspections"
-          value={KPI_SUMMARY.totalInspections}
+          value={kpiData.totalInspections}
           Icon={Activity}
           color="var(--teal)"
         />
         <KpiCard
           label="Defects Detected"
-          value={KPI_SUMMARY.defectsDetected}
+          value={kpiData.defectsDetected}
           Icon={AlertTriangle}
           color="var(--major)"
-          sub="Sample data"
+          sub="From detections API"
         />
         <KpiCard
           label="Critical Defects"
-          value={KPI_SUMMARY.criticalDefects}
+          value={kpiData.criticalDefects}
           Icon={ShieldAlert}
           color="var(--critical)"
           sub="Requires review"
@@ -101,7 +111,7 @@ export default function DashboardOverview() {
           unit=""
           Icon={Activity}
           color="var(--info)"
-          sub={`${KPI_SUMMARY.inspectedKm} / ${KPI_SUMMARY.tunnelLengthKm} km`}
+          sub={`${kpiData.inspectedKm} / ${kpiData.tunnelLengthKm} km`}
         />
       </section>
 
@@ -172,7 +182,7 @@ export default function DashboardOverview() {
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie
-                data={DEFECT_TYPE_DISTRIBUTION}
+                data={distData.typeDistribution}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -181,7 +191,7 @@ export default function DashboardOverview() {
                 dataKey="value"
                 nameKey="name"
               >
-                {DEFECT_TYPE_DISTRIBUTION.map((entry) => (
+                {distData.typeDistribution.map((entry) => (
                   <Cell key={entry.name} fill={entry.color} stroke="none" />
                 ))}
               </Pie>
@@ -196,7 +206,7 @@ export default function DashboardOverview() {
             </PieChart>
           </ResponsiveContainer>
           <ul className="db-donut-legend" aria-label="Defect type legend">
-            {DEFECT_TYPE_DISTRIBUTION.map(d => (
+            {distData.typeDistribution.map(d => (
               <li key={d.name} className="db-donut-legend__item">
                 <span className="db-donut-legend__swatch" style={{ background: d.color }} />
                 <span className="db-donut-legend__label">{d.name}</span>
