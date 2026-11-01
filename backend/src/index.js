@@ -19,6 +19,8 @@ const spatialRoutes         = require('./routes/spatial');
 const detectionsQueryRoutes = require('./routes/detections.query');
 // Module 6: Inspection session management
 const inspectionsRoutes     = require('./routes/inspections');
+// Module 7: PDF / CSV Report Engine
+const reportsRoutes         = require('./routes/reports');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -61,6 +63,9 @@ app.use('/api/detections', detectionsQueryRoutes);  // Module 6: query (GET) + s
 app.use('/api/spatial-summary', spatialRoutes);
 
 app.use('/api/inspections', inspectionsRoutes);  // Module 6: inspection sessions
+
+// Module 7 — Report generation (PDF / CSV)
+app.use('/api/reports', reportsRoutes);
 
 // ---------------------------------------------------------------------------
 // 404 — Catch-all for unknown routes

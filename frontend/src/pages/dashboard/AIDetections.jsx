@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, ChevronUp, ChevronDown, ArrowRight } from 'lucide-react';
-import { DETECTIONS, DEFECT_CATEGORIES, SEVERITY_LEVELS } from '../../data/mockData';
+import { Search, Filter, ChevronUp, ChevronDown, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { DEFECT_CATEGORIES, SEVERITY_LEVELS } from '../../data/mockData';
+import { useDetections } from '../../hooks/useApi';
 import './AIDetections.css';
 
 const SEV_COLOR = {
@@ -27,18 +28,20 @@ export default function AIDetections() {
   const [page, setPage]             = useState(1);
   const PER_PAGE = 10;
 
+  // Module 8 — live API with graceful fallback
+  const { data: allDetections, loading, error, isLive } = useDetections({
+    category: filterCat || undefined,
+    severity: filterSev || undefined,
+    search:   search    || undefined,
+  });
+
   function toggleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('desc'); }
   }
 
-  const filtered = DETECTIONS
-    .filter(d => {
-      if (search && !`${d.id} ${d.category} ${d.subtype}`.toLowerCase().includes(search.toLowerCase())) return false;
-      if (filterCat && d.category !== filterCat) return false;
-      if (filterSev && d.severity !== filterSev) return false;
-      return true;
-    })
+  const source = allDetections ?? [];
+  const filtered = source
     .sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey];
       if (typeof av === 'string') av = av.toLowerCase();
@@ -58,7 +61,19 @@ export default function AIDetections() {
 
   return (
     <div className="det-page">
-      <h1 className="det-page__title">AI Detections</h1>
+      <div className="det-page__topbar">
+        <h1 className="det-page__title">AI Detections</h1>
+        {!isLive && !loading && (
+          <span className="sp-badge sp-badge--warn" title="Backend offline — showing demo data">
+            Demo data
+          </span>
+        )}
+        {isLive && (
+          <span className="sp-badge" style={{ color: 'var(--teal)', borderColor: 'var(--teal)' }}>
+            Live
+          </span>
+        )}
+      </div>
 
       {/* ── Filters ── */}
       <div className="det-filters" role="search">
@@ -95,7 +110,11 @@ export default function AIDetections() {
           </select>
         </div>
         <p className="det-count" aria-live="polite">
-          {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+          {loading ? (
+            <><Loader2 size={12} className="sp-dl-btn__spin" /> Loading…</>
+          ) : (
+            <>{filtered.length} result{filtered.length !== 1 ? 's' : ''}{error ? ' (offline)' : ''}</>
+          )}
         </p>
       </div>
 

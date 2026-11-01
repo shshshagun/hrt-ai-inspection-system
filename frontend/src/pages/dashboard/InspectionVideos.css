@@ -203,3 +203,39 @@
 @media (max-width: 900px) {
   .ipv-layout { grid-template-columns: 1fr; }
 }
+
+/* ── Module 9: Frame player additions ────────────────────── */
+
+/* Frame <img> fills viewport like a video */
+.ipv-video {
+  width: 100%; height: 100%; object-fit: contain;
+  display: block; background: #000;
+}
+
+/* Loading spinner overlay while frame loads */
+.ipv-frame-loading {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.5); background: rgba(0,0,0,0.6);
+}
+
+/* Detection markers on seek bar */
+.ipv-seekbar__marker {
+  position: absolute; top: 0; bottom: 0;
+  width: 3px; border-radius: 2px;
+  transform: translateX(-50%);
+  opacity: 0.85; pointer-events: none;
+  z-index: 1;
+}
+
+/* HUD confidence value */
+.ipv-hud__conf {
+  font-size: 10px; opacity: 0.7; letter-spacing: 0.05em;
+}
+
+/* Skip back / forward buttons */
+.ipv-btn--play {
+  width: 36px; height: 36px;
+  background: var(--teal); color: #fff; border-radius: 50%;
+}
+.ipv-btn--play:hover:not(:disabled) { background: var(--teal-light); }
