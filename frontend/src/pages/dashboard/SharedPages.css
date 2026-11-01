@@ -154,3 +154,46 @@
     90deg, rgba(13,148,136,0.04) 0px, rgba(13,148,136,0.04) 1px, transparent 1px, transparent 40px
   );
 }
+
+
+/* ── Module 7/8 additions ─────────────────────────────────── */
+
+/* Page header row with live/demo badge */
+.sp-page-header {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+}
+.sp-badge--warn {
+  color: var(--minor); border-color: var(--minor);
+}
+
+/* Report card icon */
+.sp-report-card__icon {
+  flex-shrink: 0; width: 40px; height: 40px;
+  background: var(--db-surface-2); border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--db-ink-3);
+}
+
+/* Download button flex items */
+.sp-dl-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.sp-dl-btn__spin { animation: spin 1s linear infinite; }
+
+/* Loading / error banners */
+.sp-loading {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-5); color: var(--db-ink-2); font-size: var(--text-sm);
+}
+.sp-error-banner {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: rgba(220,38,38,0.06); border: 1px solid rgba(220,38,38,0.2);
+  border-radius: var(--radius); padding: var(--space-3) var(--space-4);
+  color: var(--critical); font-size: var(--text-sm);
+}
+
+/* AIDetections topbar */
+.det-page__topbar {
+  display: flex; align-items: center; gap: var(--space-3);
+}
