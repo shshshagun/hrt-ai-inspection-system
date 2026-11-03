@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-# ── Defaults ───────────────────────────────────────────────────────────────────
+# -- Defaults -------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_WEIGHTS = ROOT / "runs" / "detect" / "hrt_crack_det" / "weights" / "best.pt"
 DATA_YAML = ROOT / "data" / "data.yaml"
@@ -21,7 +21,7 @@ IMG_SIZE = 640
 DEVICE = "0"
 CONF_THRESH = 0.25
 IOU_THRESH = 0.45
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 
 def parse_args():
@@ -106,8 +106,8 @@ def run_evaluation(weights_path: Path, data_yaml: Path, split: str, conf: float,
     with open(report_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    print(f"\n  ✅ Report saved → {report_path}")
-    print(f"  📊 Plots saved  → {save_dir}")
+    print(f"\n  [OK] Report saved -> {report_path}")
+    print(f"  [REPORT] Plots saved  -> {save_dir}")
     return results
 
 
