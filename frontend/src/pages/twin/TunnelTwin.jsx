@@ -141,6 +141,7 @@ export default function TunnelTwin() {
   const [cracksData, setCracksData] = useState([]);
   const [dataError, setDataError]   = useState(null);
   const [selectedCrack, setSelectedCrack] = useState(null);
+  const [sceneReady, setSceneReady] = useState(0);
 
   // Mirror selectedCrack in a ref so the rAF loop reads it without stale closure
   const selectedCrackRef = useRef(null);
@@ -849,6 +850,7 @@ export default function TunnelTwin() {
       renderer.render(scene, camera);
     };
 
+    setSceneReady(prev => prev + 1);
     animId = requestAnimationFrame(animate);
 
     // ── CLEANUP: dispose all GPU resources (FIX #3) ────────────────────────
@@ -864,23 +866,57 @@ export default function TunnelTwin() {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('resize', handleResize);
 
-      tunnelGeo.dispose();    tunnelMat.dispose();    concreteTex.dispose();
-      ringJointGeo.dispose(); ringJointMat.dispose();
-      capGeo.dispose();       capMat.dispose();
-      particleGeo.dispose();  particleMat.dispose();
-      chassisGeo.dispose();   chassisMat.dispose();
-      shellGeo.dispose();     shellMat.dispose();
-      domeGeo.dispose();      domeMat.dispose();
-      thrusterGeo.dispose();  thrusterMat.dispose();
+      // Comprehensive scene disposal with deduplication Sets
+      const disposedGeos = new Set();
+      const disposedMats = new Set();
+      const disposedTexs = new Set();
+
+      scene.traverse(obj => {
+        if (obj.geometry && !disposedGeos.has(obj.geometry)) {
+          disposedGeos.add(obj.geometry);
+          obj.geometry.dispose();
+        }
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach(m => {
+            if (!m || disposedMats.has(m)) return;
+            disposedMats.add(m);
+            ['map', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'emissiveMap'].forEach(key => {
+              if (m[key] && !disposedTexs.has(m[key])) {
+                disposedTexs.add(m[key]);
+                m[key].dispose?.();
+              }
+            });
+            m.dispose?.();
+          });
+        }
+      });
+      if (diffuseTex && !disposedTexs.has(diffuseTex)) {
+        disposedTexs.add(diffuseTex);
+        diffuseTex.dispose();
+      }
+      if (bumpTex && !disposedTexs.has(bumpTex)) {
+        disposedTexs.add(bumpTex);
+        bumpTex.dispose();
+      }
 
       crackMeshesRef.current.forEach(cm => {
-        cm.crackGeo?.dispose();     cm.crackMat?.dispose();
-        cm.highlightGeo?.dispose(); cm.highlightMat?.dispose();
-        cm.indicatorGeo?.dispose(); cm.indicatorMat?.dispose();
-        cm.sphereGeo?.dispose();    cm.sphereMat?.dispose();
-        cm.haloGeo?.dispose();      cm.haloMat?.dispose();
-        cm.hitGeo?.dispose();       cm.hitMat?.dispose();
+        ['crackGeo', 'highlightGeo', 'indicatorGeo', 'sphereGeo', 'haloGeo', 'hitGeo'].forEach(key => {
+          if (cm[key] && !disposedGeos.has(cm[key])) {
+            disposedGeos.add(cm[key]);
+            cm[key].dispose?.();
+          }
+        });
+        ['crackMat', 'highlightMat', 'indicatorMat', 'sphereMat', 'haloMat', 'hitMat'].forEach(key => {
+          if (cm[key] && !disposedMats.has(cm[key])) {
+            disposedMats.add(cm[key]);
+            cm[key].dispose?.();
+          }
+        });
       });
+      crackMeshesRef.current = [];
+      sceneRef.current = null;
+      roverMeshRef.current = null;
 
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
@@ -1011,7 +1047,17 @@ export default function TunnelTwin() {
         hitGeo,   hitMat,
       });
     });
-  }, [cracksData]);
+
+    return () => {
+      const curScene = sceneRef.current;
+      crackMeshesRef.current.forEach(cm => {
+        if (curScene && cm.group) curScene.remove(cm.group);
+        ['crackGeo', 'highlightGeo', 'indicatorGeo', 'sphereGeo', 'haloGeo', 'hitGeo'].forEach(g => cm[g]?.dispose?.());
+        ['crackMat', 'highlightMat', 'indicatorMat', 'sphereMat', 'haloMat', 'hitMat'].forEach(m => cm[m]?.dispose?.());
+      });
+      crackMeshesRef.current = [];
+    };
+  }, [cracksData, sceneReady]);
 
   // ── Jump to defect (smooth LERP fly-to, ~1.5m from wall) ─────────────────
   const handleJumpToCrack = useCallback((crack) => {

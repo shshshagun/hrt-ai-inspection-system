@@ -90,6 +90,53 @@ test('Detection API Client JSON payload format compatibility', () => {
   assert.ok(samplePayload.confidence >= 0 && samplePayload.confidence <= 1);
   assert.strictEqual(typeof samplePayload.frame_index, 'number');
   assert.strictEqual(typeof samplePayload.z, 'number');
+
+  // Payload with optional inspection_id
+  const payloadWithInsp = {
+    ...samplePayload,
+    inspection_id: 'c1455943-882d-4250-843b-092bdd1351a9',
+  };
+  assert.ok(isValidUUID(payloadWithInsp.inspection_id), 'Valid UUID inspection_id passes');
+});
+
+// 5. Rate Limiter Verification
+test('Rate limiter middleware tracks requests and enforces threshold', () => {
+  const { createRateLimiter } = require('./middleware/rateLimiter');
+  const limiter = createRateLimiter({ windowMs: 1000, max: 2 });
+  const req = { ip: '127.0.0.1', headers: {}, socket: {} };
+  const headers = {};
+  let statusSet = 200;
+  let jsonSent = null;
+  const res = {
+    setHeader: (k, v) => { headers[k] = v; },
+    status: (code) => {
+      statusSet = code;
+      return { json: (j) => { jsonSent = j; } };
+    },
+  };
+  let nextCalled = 0;
+  const next = () => { nextCalled++; };
+
+  limiter(req, res, next);
+  assert.strictEqual(nextCalled, 1);
+  assert.strictEqual(headers['X-RateLimit-Limit'], 2);
+  assert.strictEqual(headers['X-RateLimit-Remaining'], 1);
+
+  limiter(req, res, next);
+  assert.strictEqual(nextCalled, 2);
+  assert.strictEqual(headers['X-RateLimit-Remaining'], 0);
+
+  limiter(req, res, next);
+  assert.strictEqual(nextCalled, 2, 'Next should not be called when limit exceeded');
+  assert.strictEqual(statusSet, 429);
+  assert.ok(jsonSent && jsonSent.error);
+});
+
+// 6. Reports PDF Engine Verification
+test('Reports route is loadable and exportable as an Express Router', () => {
+  const reports = require('./routes/reports');
+  assert.ok(reports, 'Reports router should be exportable');
+  assert.strictEqual(typeof reports, 'function', 'Reports should be an Express router');
 });
 
 console.log('━'.repeat(55));

@@ -21,6 +21,7 @@ const detectionsQueryRoutes = require('./routes/detections.query');
 const inspectionsRoutes     = require('./routes/inspections');
 // Module 7: PDF / CSV Report Engine
 const reportsRoutes         = require('./routes/reports');
+const { createRateLimiter } = require('./middleware/rateLimiter');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -29,9 +30,25 @@ const PORT = process.env.PORT || 3000;
 // Global Middleware
 // ---------------------------------------------------------------------------
 
-// Allow all origins in development; tighten this in production via an
-// allowlist derived from process.env.ALLOWED_ORIGINS.
-app.use(cors());
+// Production origin allowlist; permits local Vite dev clients by default
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : null;
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (!allowedOrigins || process.env.NODE_ENV !== 'production') return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Blocked by CORS'));
+  },
+  methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+  credentials: true,
+}));
+
+// In-memory rate limiting to protect DB pool from starvation
+app.use(createRateLimiter({ windowMs: 60000, max: 600, message: 'Too many requests, please slow down.' }));
 
 // Parse incoming JSON bodies (limit kept at Express default: 100 kb).
 app.use(express.json());
@@ -116,6 +133,14 @@ process.on('SIGINT', () => {
     console.log('[HRT Backend] HTTP server closed');
     process.exit(0);
   });
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[HRT Backend] Unhandled Promise Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[HRT Backend] Uncaught Exception:', err);
 });
 
 module.exports = app; // exported for testing

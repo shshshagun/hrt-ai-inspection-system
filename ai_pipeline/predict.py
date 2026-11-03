@@ -19,6 +19,14 @@ import numpy as np
 from pathlib import Path
 from ultralytics import YOLO
 
+try:
+    from utils.api_client import DetectionAPIClient
+except ImportError:
+    try:
+        from ai_pipeline.utils.api_client import DetectionAPIClient
+    except ImportError:
+        DetectionAPIClient = None
+
 # ── Defaults ───────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_WEIGHTS = ROOT / "runs" / "detect" / "hrt_crack_det" / "weights" / "best.pt"
@@ -88,6 +96,7 @@ def run_inference(
     distance: float,
     pixel_pitch: float,
     show: bool,
+    api_url: str = None,
 ):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     quantifier = PhysicalCrackQuantifier(
@@ -95,6 +104,10 @@ def run_inference(
         distance_mm=distance,
         pixel_pitch_mm=pixel_pitch,
     )
+
+    api_client = None
+    if api_url and DetectionAPIClient:
+        api_client = DetectionAPIClient(base_url=api_url, verbose=True)
 
     print("=" * 60)
     print("  HRT AI Inspection — Real-Time Stream & Metric Quantification")
@@ -105,6 +118,9 @@ def run_inference(
     print(f"  Focal Length : {focal_length} mm")
     print(f"  Distance     : {distance} mm")
     print(f"  Pixel Pitch  : {pixel_pitch} mm")
+    if api_url:
+        print(f"  API Ingestion: {api_url}")
+    print("=" * 60)
     print("=" * 60)
 
     model = YOLO(weights)
@@ -201,6 +217,26 @@ def run_inference(
                 width_mm,
             ])
 
+            # Ingest to REST API backend if enabled
+            if api_client:
+                api_client.post({
+                    "class_label": class_name,
+                    "confidence": round(conf, 4),
+                    "bbox": {
+                        "x1": float(x1),
+                        "y1": float(y1),
+                        "x2": float(x2),
+                        "y2": float(y2),
+                        "width": float(max(0, x2 - x1)),
+                        "height": float(max(0, y2 - y1)),
+                    },
+                    "frame_index": frame_count,
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(curr_ts)),
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": round(frame_count * 0.1, 2),
+                })
+
         writer.write(frame)
 
         if show:
@@ -213,6 +249,9 @@ def run_inference(
     csv_file.close()
     if show:
         cv2.destroyAllWindows()
+
+    if api_client:
+        api_client.print_stats()
 
     print(f"\n[+] Pipeline execution completed successfully.")
     print(f"  Output Video: {out_video_path}")
@@ -227,6 +266,7 @@ def parse_args():
     p.add_argument("--focal-length", type=float, default=8.0, help="Lens focal length in mm")
     p.add_argument("--distance", type=float, default=1000.0, help="Distance to target wall in mm")
     p.add_argument("--pixel-pitch", type=float, default=0.00345, help="Sensor pixel pitch in mm/px")
+    p.add_argument("--api-url", default=None, help="Backend REST API ingestion URL (e.g. http://localhost:3000/api/detections)")
     p.add_argument("--show", action="store_true", help="Display stream window")
     return p.parse_args()
 
@@ -241,4 +281,5 @@ if __name__ == "__main__":
         distance=args.distance,
         pixel_pitch=args.pixel_pitch,
         show=args.show,
+        api_url=args.api_url,
     )

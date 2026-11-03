@@ -65,12 +65,6 @@ export default function InspectionVideos() {
   const [selectedInspectionId, setSelectedInspectionId] = useState(null);
   const selectedInspection = inspList.find(i => i.id === selectedInspectionId) ?? inspList[0] ?? null;
 
-  // Set default inspection once data loads
-  useEffect(() => {
-    if (inspList.length && !selectedInspectionId) {
-      setSelectedInspectionId(inspList[0].id);
-    }
-  }, [inspList, selectedInspectionId]);
 
   const { data: allDetections } = useDetections();
   const detections = (allDetections ?? []).filter(
@@ -132,7 +126,11 @@ export default function InspectionVideos() {
 
   function togglePlay() {
     if (!manifest) return;
-    playing ? stopPlayback() : startPlayback();
+    if (playing) {
+      stopPlayback();
+    } else {
+      startPlayback();
+    }
   }
 
   function stepFrame(delta) {

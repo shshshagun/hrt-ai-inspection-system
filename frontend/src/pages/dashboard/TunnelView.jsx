@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ShieldCheck, Activity, Flame, Info, Eye } from 'lucide-react';
+import { AlertTriangle, ShieldCheck, Flame, Eye } from 'lucide-react';
 import { useDetections } from '../../hooks/useApi';
 import { DETECTIONS, TUNNEL_META } from '../../data/mockData';
 import './TunnelView.css';

@@ -11,6 +11,7 @@
 
 const express = require('express');
 const { query } = require('../db/pool');
+const { isValidUUID } = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -86,7 +87,8 @@ function parseMinConf(raw) {
  */
 router.get('/', async (req, res) => {
   // ── Validate interval_m ──
-  const { value: intervalM, error: intervalErr } = parseInterval(req.query.interval_m);
+  const rawInterval = req.query.interval_m !== undefined ? req.query.interval_m : req.query.interval;
+  const { value: intervalM, error: intervalErr } = parseInterval(rawInterval);
   if (intervalErr) {
     return res.status(400).json({ error: intervalErr });
   }
@@ -99,6 +101,9 @@ router.get('/', async (req, res) => {
 
   // ── Optional inspection_id ──
   const inspectionId = req.query.inspection_id || null;
+  if (inspectionId && !isValidUUID(inspectionId)) {
+    return res.status(400).json({ error: 'Invalid inspection_id: must be a valid UUID' });
+  }
 
   // ── Build parameterised SQL ───────────────────────────────────────────────
   //
