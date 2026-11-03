@@ -179,27 +179,29 @@ export default function DashboardOverview() {
               return (
                 <button
                   key={d.id}
-                  className={`db-defect-marker db-defect-marker--${d.cssClass} ${isSelected ? 'db-defect-marker--selected' : ''}`}
+                  className={`db-defect-marker ${isSelected ? 'db-defect-marker--selected' : ''}`}
                   style={{ top: d.top, left: d.left }}
-                  title={`${d.id} — ${d.severity} ${d.type}`}
+                  title={`${d.id} — ${d.severity} ${d.type} (Click to inspect)`}
                   aria-label={`${d.severity} defect at Ch ${d.chainage}km`}
                   onClick={(e) => {
                     e.stopPropagation();
                     setActiveDefectMarker(isSelected ? null : d);
                   }}
+                  onDoubleClick={() => navigate(`/dashboard/detections/${d.id}`)}
                 >
-                  <span className="db-defect-marker__pulse" />
+                  <span className={`db-defect-marker__dot db-defect-marker__dot--${d.cssClass}`} />
+                  <span className={`db-defect-marker__pulse db-defect-marker__pulse--${d.cssClass}`} />
                 </button>
               );
             })}
 
-            {/* Interactive Defect Telemetry Popover */}
+            {/* In-schematic Floating Popover with Smart Clamped Position */}
             {activeDefectMarker && (
               <div
                 className="db-defect-popover"
                 style={{
-                  top: `calc(${activeDefectMarker.top} - 120px)`,
-                  left: `calc(${activeDefectMarker.left} - 60px)`,
+                  top: parseFloat(activeDefectMarker.top) <= 50 ? `calc(${activeDefectMarker.top} + 22px)` : `calc(${activeDefectMarker.top} - 130px)`,
+                  left: `clamp(12px, calc(${activeDefectMarker.left} - 90px), calc(100% - 220px))`,
                 }}
                 onClick={e => e.stopPropagation()}
               >
@@ -239,7 +241,7 @@ export default function DashboardOverview() {
                     className="db-defect-popover__btn db-defect-popover__btn--details"
                     onClick={() => navigate(`/dashboard/detections/${activeDefectMarker.id}`)}
                   >
-                    <Eye size={12} /> Details
+                    <Eye size={12} /> Inspect
                   </button>
                   <button
                     className="db-defect-popover__btn db-defect-popover__btn--twin"
@@ -251,6 +253,89 @@ export default function DashboardOverview() {
               </div>
             )}
           </div>
+
+          {/* Active Defect Quick Inspector Card */}
+          {activeDefectMarker ? (
+            <div
+              className="db-tunnel-active-banner"
+              style={{
+                background: 'rgba(15, 23, 42, 0.95)',
+                border: `1px solid ${activeDefectMarker.color}80`,
+                borderRadius: '6px',
+                padding: '10px 14px',
+                marginBottom: '12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '10px',
+                flexWrap: 'wrap'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '50%',
+                    background: activeDefectMarker.color,
+                    boxShadow: `0 0 8px ${activeDefectMarker.color}`,
+                    flexShrink: 0
+                  }}
+                />
+                <div>
+                  <strong style={{ color: '#f8fafc', fontSize: '0.88rem' }}>
+                    {activeDefectMarker.id} &middot; {activeDefectMarker.type}
+                  </strong>
+                  <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                    <span style={{ color: activeDefectMarker.color, fontWeight: 700 }}>{activeDefectMarker.severity.toUpperCase()}</span>
+                    <span> &bull; Location: Ch {activeDefectMarker.chainage.toFixed(2)} km &bull; Confidence: {Math.round(activeDefectMarker.confidence * 100)}%</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => navigate(`/dashboard/detections/${activeDefectMarker.id}`)}
+                  style={{
+                    background: '#0d9488',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Eye size={12} /> Inspect Defect &rarr;
+                </button>
+                <button
+                  onClick={() => navigate('/tunnel-twin')}
+                  style={{
+                    background: '#1e293b',
+                    color: '#38bdf8',
+                    border: '1px solid #38bdf8',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Compass size={12} /> 3D Rover
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.74rem', color: '#64748b', textAlign: 'center', marginBottom: '10px', letterSpacing: '0.02em' }}>
+              &uarr; Click on any defect marker above to inspect defect details or launch 3D twin
+            </div>
+          )}
 
           <div className="db-tunnel-meta">
             <span>Tunnel length: <strong>27.3 km</strong></span>

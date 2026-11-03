@@ -87,16 +87,24 @@ export default function DefectDetail() {
                   CONFIDENCE: {Math.round(confidence * 100)}%
                 </span>
               </div>
-              <div
-                className="dd-img-placeholder__bbox"
-                style={{
-                  left: `${(detection.bbox.x1 / 640) * 100}%`,
-                  top: `${(detection.bbox.y1 / 480) * 100}%`,
-                  width: `${((detection.bbox.x2 - detection.bbox.x1) / 640) * 100}%`,
-                  height: `${((detection.bbox.y2 - detection.bbox.y1) / 480) * 100}%`,
-                }}
-                aria-label="Bounding box"
-              />
+              {detection.bbox ? (
+                <div
+                  className="dd-img-placeholder__bbox"
+                  style={{
+                    left: `${(detection.bbox.x1 / 640) * 100}%`,
+                    top: `${(detection.bbox.y1 / 480) * 100}%`,
+                    width: `${((detection.bbox.x2 - detection.bbox.x1) / 640) * 100}%`,
+                    height: `${((detection.bbox.y2 - detection.bbox.y1) / 480) * 100}%`,
+                  }}
+                  aria-label="Bounding box"
+                />
+              ) : (
+                <div
+                  className="dd-img-placeholder__bbox"
+                  style={{ left: '25%', top: '25%', width: '50%', height: '50%' }}
+                  aria-label="Default Bounding Box"
+                />
+              )}
             </div>
           </div>
 
@@ -142,15 +150,17 @@ export default function DefectDetail() {
           {/* Metadata table */}
           <table className="dd-meta-table" aria-label="Defect metadata">
             <tbody>
-              <MetaRow label="Location (Chainage)" value={`${chainage.toFixed(2)} km`} />
+              <MetaRow label="Location (Chainage)" value={typeof chainage === 'number' ? `${chainage.toFixed(2)} km` : (chainage || '—')} />
               <MetaRow label="Tunnel Depth (m)" value={tunnelDepthM ? `${tunnelDepthM} m` : null} />
               <MetaRow label="Estimated Size" value={estimatedSize} />
               <MetaRow label="Orientation" value={orientation} />
               <MetaRow label="First Detected" value={
-                new Date(detectedAt).toLocaleString('en-IN', {
-                  month: 'short', day: 'numeric', year: 'numeric',
-                  hour: '2-digit', minute: '2-digit'
-                })
+                detectedAt && !isNaN(new Date(detectedAt).getTime())
+                  ? new Date(detectedAt).toLocaleString('en-IN', {
+                      month: 'short', day: 'numeric', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    })
+                  : '—'
               } />
               <MetaRow label="AI Model" value={aiModel} />
               <MetaRow label="Video Timestamp" value={timestamp} />
@@ -159,14 +169,22 @@ export default function DefectDetail() {
             </tbody>
           </table>
 
-          {/* ── Inspection link ── */}
-          <div className="dd-inspection-link">
+          {/* ── Inspection & 3D Twin links ── */}
+          <div className="dd-inspection-link" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <Link
               to="/dashboard/inspections"
               className="dd-insp-link-btn"
-              aria-label={`Go to inspection ${inspectionId}`}
+              aria-label={`Go to inspection ${inspectionId || 'history'}`}
             >
-              Inspection {inspectionId} <ExternalLink size={13} />
+              Inspection {inspectionId || 'Batch'} <ExternalLink size={13} />
+            </Link>
+            <Link
+              to="/tunnel-twin"
+              className="dd-insp-link-btn"
+              style={{ borderColor: '#0d9488', color: '#14b8a6' }}
+              aria-label="View in 3D Digital Twin"
+            >
+              Inspect in 3D Twin &rarr;
             </Link>
           </div>
 
