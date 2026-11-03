@@ -9,19 +9,24 @@ Write-Host ""
 
 $Root = $PSScriptRoot
 
-# 1. Start Backend API in a separate terminal window
-Write-Host "[1/2] Starting Backend API Server (Port 5000 / MongoDB)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\api'; Write-Host '--- HRT API Server ---' -ForegroundColor Green; node server.js"
+# 1. Start Backend Core REST API & Spatial Analytics (Port 3000)
+Write-Host "[1/3] Starting HRT Backend REST API (Port 3000 / Spatial & Reports)..." -ForegroundColor Yellow
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\backend'; Write-Host '--- HRT REST API & Spatial Engine (Port 3000) ---' -ForegroundColor Green; node src/index.js"
 
-# 2. Start Frontend Vite Dev Server in a separate terminal window
-Write-Host "[2/2] Starting React + Three.js Frontend..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\frontend'; Write-Host '--- HRT Frontend UI ---' -ForegroundColor Cyan; npm run dev"
+# 2. Start MongoDB Atlas Ingestion Gateway (Port 5000)
+Write-Host "[2/3] Starting MongoDB Atlas Ingestion Gateway (Port 5000)..." -ForegroundColor Yellow
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\api'; Write-Host '--- HRT MongoDB Gateway (Port 5000) ---' -ForegroundColor Magenta; node server.js"
+
+# 3. Start Frontend Vite Dev Server (Port 5173)
+Write-Host "[3/3] Starting React + Three.js Frontend..." -ForegroundColor Yellow
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\frontend'; Write-Host '--- HRT Frontend UI (Port 5173) ---' -ForegroundColor Cyan; npm run dev"
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "  ✅ Both Backend and Frontend launched in separate windows!" -ForegroundColor Green
-Write-Host "  • Frontend UI : http://localhost:5173" -ForegroundColor White
-Write-Host "  • Backend API : http://localhost:5000" -ForegroundColor White
+Write-Host "  ✅ All HRT Inspection Services launched in separate windows!" -ForegroundColor Green
+Write-Host "  • Frontend UI        : http://localhost:5173" -ForegroundColor White
+Write-Host "  • Core REST API      : http://localhost:3000 (Spatial, Reports & Detections)" -ForegroundColor White
+Write-Host "  • MongoDB Gateway    : http://localhost:5000 (Live Atlas Telemetry)" -ForegroundColor White
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host ""
 
