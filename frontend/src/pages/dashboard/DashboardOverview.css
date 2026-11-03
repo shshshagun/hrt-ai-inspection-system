@@ -462,3 +462,132 @@
   .db-overview__kpis { grid-template-columns: 1fr 1fr; }
   .db-recent-grid { grid-template-columns: 1fr; }
 }
+
+
+/* ── Interactive Defect Popover on Schematic ─────────────────── */
+.db-defect-marker {
+  z-index: 10;
+  cursor: pointer;
+  padding: 0;
+}
+.db-defect-marker:focus {
+  outline: 2px solid #38bdf8;
+  outline-offset: 3px;
+}
+.db-defect-marker--selected {
+  transform: scale(1.4);
+  box-shadow: 0 0 10px #ffffff;
+}
+
+.db-defect-popover {
+  position: absolute;
+  z-index: 50;
+  width: 210px;
+  background: #090d16;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7), 0 0 15px rgba(13, 148, 136, 0.25);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: popover-fade 0.18s ease-out;
+}
+
+@keyframes popover-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.db-defect-popover__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 6px;
+}
+
+.db-defect-popover__id {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.85rem;
+  color: #f8fafc;
+}
+
+.db-defect-popover__close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+.db-defect-popover__close:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.db-defect-popover__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.db-defect-popover__type {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.db-defect-popover__meta {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.db-defect-popover__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.db-defect-popover__btn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.db-defect-popover__btn--details {
+  background: #1e293b;
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+.db-defect-popover__btn--details:hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+.db-defect-popover__btn--twin {
+  background: rgba(13, 148, 136, 0.2);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.4);
+}
+.db-defect-popover__btn--twin:hover {
+  background: #0d9488;
+  color: #ffffff;
+  border-color: #0d9488;
+}

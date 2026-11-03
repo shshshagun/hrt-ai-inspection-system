@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, AlertTriangle, ShieldAlert, Activity } from 'lucide-react';
+import { ArrowUpRight, AlertTriangle, ShieldAlert, Activity, Eye, Compass, X } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis
 } from 'recharts';
@@ -69,6 +70,43 @@ export default function DashboardOverview() {
 
   const pct        = Math.round((kpiData.inspectedKm / kpiData.tunnelLengthKm) * 100);
   const recentDets = detData.slice(0, 3);
+  const [activeDefectMarker, setActiveDefectMarker] = useState(null);
+
+  const schematicDefects = [
+    {
+      id: 'DET-4782',
+      type: 'Structural Crack',
+      severity: 'Critical',
+      chainage: 2.14,
+      confidence: 0.92,
+      top: '38%',
+      left: '28%',
+      color: 'var(--critical)',
+      cssClass: 'critical',
+    },
+    {
+      id: 'DET-4781',
+      type: 'Surface Spalling',
+      severity: 'Major',
+      chainage: 2.43,
+      confidence: 0.87,
+      top: '60%',
+      left: '58%',
+      color: 'var(--major)',
+      cssClass: 'major',
+    },
+    {
+      id: 'DET-4780',
+      type: 'Seepage / Leakage',
+      severity: 'Minor',
+      chainage: 3.12,
+      confidence: 0.81,
+      top: '25%',
+      left: '68%',
+      color: 'var(--minor)',
+      cssClass: 'minor',
+    },
+  ];
 
   return (
     <div className="db-overview">
@@ -135,34 +173,83 @@ export default function DashboardOverview() {
             <div className="db-tunnel-schematic__ring db-tunnel-schematic__ring--inner" />
             <div className="db-tunnel-schematic__axis" />
 
-            {/* Defect markers */}
-            <button
-              className="db-defect-marker db-defect-marker--critical"
-              style={{ top: '38%', left: '28%' }}
-              title="DET-4782 — Critical Crack"
-              aria-label="Critical defect at Ch 2.14km"
-              onClick={() => navigate('/dashboard/detections/DET-4782')}
-            >
-              <span className="db-defect-marker__pulse" />
-            </button>
-            <button
-              className="db-defect-marker db-defect-marker--major"
-              style={{ top: '60%', left: '58%' }}
-              title="DET-4781 — Major Spalling"
-              aria-label="Major defect at Ch 2.43km"
-              onClick={() => navigate('/dashboard/detections/DET-4781')}
-            >
-              <span className="db-defect-marker__pulse" />
-            </button>
-            <button
-              className="db-defect-marker db-defect-marker--minor"
-              style={{ top: '25%', left: '68%' }}
-              title="DET-4780 — Minor Leakage"
-              aria-label="Minor defect at Ch 3.12km"
-              onClick={() => navigate('/dashboard/detections/DET-4780')}
-            >
-              <span className="db-defect-marker__pulse" />
-            </button>
+            {/* Interactive Defect markers */}
+            {schematicDefects.map(d => {
+              const isSelected = activeDefectMarker?.id === d.id;
+              return (
+                <button
+                  key={d.id}
+                  className={`db-defect-marker db-defect-marker--${d.cssClass} ${isSelected ? 'db-defect-marker--selected' : ''}`}
+                  style={{ top: d.top, left: d.left }}
+                  title={`${d.id} — ${d.severity} ${d.type}`}
+                  aria-label={`${d.severity} defect at Ch ${d.chainage}km`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveDefectMarker(isSelected ? null : d);
+                  }}
+                >
+                  <span className="db-defect-marker__pulse" />
+                </button>
+              );
+            })}
+
+            {/* Interactive Defect Telemetry Popover */}
+            {activeDefectMarker && (
+              <div
+                className="db-defect-popover"
+                style={{
+                  top: `calc(${activeDefectMarker.top} - 120px)`,
+                  left: `calc(${activeDefectMarker.left} - 60px)`,
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="db-defect-popover__header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: activeDefectMarker.color,
+                        flexShrink: 0
+                      }}
+                    />
+                    <strong className="db-defect-popover__id">{activeDefectMarker.id}</strong>
+                  </div>
+                  <button
+                    className="db-defect-popover__close"
+                    onClick={() => setActiveDefectMarker(null)}
+                    aria-label="Close defect card"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+
+                <div className="db-defect-popover__body">
+                  <div className="db-defect-popover__type">{activeDefectMarker.type}</div>
+                  <div className="db-defect-popover__meta">
+                    <span style={{ color: activeDefectMarker.color, fontWeight: 700 }}>{activeDefectMarker.severity.toUpperCase()}</span>
+                    <span> &bull; Ch {activeDefectMarker.chainage.toFixed(2)} km</span>
+                    <span> &bull; {Math.round(activeDefectMarker.confidence * 100)}% Conf</span>
+                  </div>
+                </div>
+
+                <div className="db-defect-popover__actions">
+                  <button
+                    className="db-defect-popover__btn db-defect-popover__btn--details"
+                    onClick={() => navigate(`/dashboard/detections/${activeDefectMarker.id}`)}
+                  >
+                    <Eye size={12} /> Details
+                  </button>
+                  <button
+                    className="db-defect-popover__btn db-defect-popover__btn--twin"
+                    onClick={() => navigate('/tunnel-twin')}
+                  >
+                    <Compass size={12} /> 3D Rover
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="db-tunnel-meta">
