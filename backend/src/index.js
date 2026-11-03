@@ -23,12 +23,53 @@ const inspectionsRoutes     = require('./routes/inspections');
 const reportsRoutes         = require('./routes/reports');
 const { createRateLimiter } = require('./middleware/rateLimiter');
 
+let helmetMiddleware;
+try {
+  const helmet = require('helmet');
+  helmetMiddleware = helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        fontSrc: ["'self'", 'https:', 'data:'],
+        formAction: ["'self'"],
+        frameAncestors: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: { maxAge: 31536000, includeSubDomains: true },
+    noSniff: true,
+    frameguard: { action: 'sameorigin' },
+  });
+} catch {
+  // Resilient zero-dependency fallback if helmet package cannot be loaded
+  helmetMiddleware = (_req, res, next) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'");
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    next();
+  };
+}
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
+
+// Suppress server software fingerprinting
+app.disable('x-powered-by');
 
 // ---------------------------------------------------------------------------
 // Global Middleware
 // ---------------------------------------------------------------------------
+
+// Apply Helmet security headers
+app.use(helmetMiddleware);
 
 // Production origin allowlist; permits local Vite dev clients by default
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -38,9 +79,14 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (!allowedOrigins || process.env.NODE_ENV !== 'production') return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('Blocked by CORS'));
+    const configuredOrigins = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+      : allowedOrigins;
+    if (!configuredOrigins || process.env.NODE_ENV !== 'production') return callback(null, true);
+    if (configuredOrigins.includes(origin)) return callback(null, true);
+    const corsError = new Error('CORS forbidden: origin not allowed');
+    corsError.status = 403;
+    return callback(corsError);
   },
   methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
@@ -99,6 +145,11 @@ app.use((_req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
+  // Gracefully handle CORS rejections without emitting 500 or stack traces
+  if (err.status === 403 || (err.message && err.message.toLowerCase().includes('cors'))) {
+    return res.status(403).json({ error: 'CORS forbidden: origin not allowed' });
+  }
+
   console.error('[Global Error Handler]', err);
 
   // Never expose raw internal errors in production.
