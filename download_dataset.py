@@ -13,7 +13,7 @@ import os
 from roboflow import Roboflow
 
 # ── Configuration ──────────────────────────────────────────────────────────────
-API_KEY        = os.environ.get("ROBOFLOW_API_KEY")
+API_KEY        = os.environ.get("ROBOFLOW_API_KEY", "dRcXrNz9wBV62VOKC8x2")
 if not API_KEY:
     raise ValueError("Please set the ROBOFLOW_API_KEY environment variable.")
 WORKSPACE      = "rov-crack-detection-3o91d"
