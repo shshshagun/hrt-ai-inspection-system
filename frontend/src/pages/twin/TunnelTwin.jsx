@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import * as THREE from 'three';
 import { TUNNEL_CONFIG } from './tunnel.config';
 import './TunnelTwin.css';
@@ -7,9 +7,9 @@ import './TunnelTwin.css';
 // ─── Severity visual tokens ───────────────────────────────────────────────────
 const SEVERITY_CONFIG = {
   Critical: { color: '#ef4444', threeColor: 0xef4444, label: 'CRITICAL' },
-  Major:    { color: '#f97316', threeColor: 0xf97316, label: 'MAJOR' },
-  Minor:    { color: '#eab308', threeColor: 0xeab308, label: 'MINOR' },
-  Info:     { color: '#38bdf8', threeColor: 0x38bdf8, label: 'INFO' },
+  Major: { color: '#f97316', threeColor: 0xf97316, label: 'MAJOR' },
+  Minor: { color: '#eab308', threeColor: 0xeab308, label: 'MINOR' },
+  Info: { color: '#38bdf8', threeColor: 0x38bdf8, label: 'INFO' },
 };
 
 // ─── Defect marker projected radius (snapped 5cm inside inner wall) ───────────
@@ -18,7 +18,7 @@ const DEFECT_R = 2.95;
 function formatClockPosition(deg) {
   const normalized = ((deg % 360) + 360) % 360;
   if (normalized === 0 || normalized === 360) return "12 o'clock (Crown)";
-  if (normalized === 90)  return "3 o'clock (Right Wall)";
+  if (normalized === 90) return "3 o'clock (Right Wall)";
   if (normalized === 180) return "6 o'clock (Invert / Floor)";
   if (normalized === 270) return "9 o'clock (Left Wall)";
   const clock = Math.round(normalized / 30) || 12;
@@ -56,14 +56,14 @@ function createProceduralConcreteTextures() {
       const base = 104 + wave1 + wave2 + speckle; // Calibrated damp hydraulic concrete gray
 
       // Diffuse RGB (neutral damp concrete with cold aquatic blue-green shift)
-      dData[idx]     = Math.max(0, Math.min(255, base - 8));
+      dData[idx] = Math.max(0, Math.min(255, base - 8));
       dData[idx + 1] = Math.max(0, Math.min(255, base + 2));
       dData[idx + 2] = Math.max(0, Math.min(255, base + 9));
       dData[idx + 3] = 255;
 
       // Bump height (128 neutral, speckles and seams add micro-relief)
       const bHeight = 128 + speckle * 1.5;
-      bData[idx]     = Math.max(0, Math.min(255, bHeight));
+      bData[idx] = Math.max(0, Math.min(255, bHeight));
       bData[idx + 1] = Math.max(0, Math.min(255, bHeight));
       bData[idx + 2] = Math.max(0, Math.min(255, bHeight));
       bData[idx + 3] = 255;
@@ -109,7 +109,7 @@ function createProceduralConcreteTextures() {
   bumpTex.wrapS = THREE.RepeatWrapping;
   bumpTex.wrapT = THREE.RepeatWrapping;
 
-  return { diffuseTex, bumpTex };
+  return { diffuseTex, bumpTex, dCanvas, bCanvas };
 }
 
 // ─── WebGL capability check — run once as lazy state initializer ──────────────
@@ -131,34 +131,36 @@ function detectWebGLError() {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function TunnelTwin() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const defectParam = searchParams.get('defect');
+  const chainageParam = searchParams.get('chainage');
   const mountRef = useRef(null);
 
   // FIX #2: webglError uses a lazy initializer — setWebglError is never needed
   // inside an effect, eliminating the react/no-direct-mutation-state lint warning.
   const [webglError] = useState(detectWebGLError);
 
-  const [loading, setLoading]       = useState(true);
+  const [loading, setLoading] = useState(true);
   const [cracksData, setCracksData] = useState([]);
-  const [dataError, setDataError]   = useState(null);
+  const [dataError, setDataError] = useState(null);
   const [selectedCrack, setSelectedCrack] = useState(null);
-  const [sceneReady, setSceneReady] = useState(0);
 
   // Mirror selectedCrack in a ref so the rAF loop reads it without stale closure
   const selectedCrackRef = useRef(null);
   useEffect(() => { selectedCrackRef.current = selectedCrack; }, [selectedCrack]);
 
-  const [cameraMode, setCameraMode]         = useState('chase');
-  const cameraModeRef                       = useRef('chase');
+  const [cameraMode, setCameraMode] = useState('chase');
+  const cameraModeRef = useRef('chase');
   const [showControlsHint, setShowControlsHint] = useState(true);
-  const [showInventory, setShowInventory]   = useState(false);
-  const [sortBy, setSortBy]                 = useState('chainage');
+  const [showInventory, setShowInventory] = useState(false);
+  const [sortBy, setSortBy] = useState('chainage');
 
   // Autonomous Survey Fly-Through State
-  const [autoPilot, setAutoPilot]           = useState(false);
-  const autoPilotRef                        = useRef(false);
-  const autoPilotPauseUntilRef              = useRef(0);
-  const inspectedDefectsRef                 = useRef(new Set());
-  const cracksDataRef                       = useRef([]);
+  const [autoPilot, setAutoPilot] = useState(false);
+  const autoPilotRef = useRef(false);
+  const autoPilotPauseUntilRef = useRef(0);
+  const inspectedDefectsRef = useRef(new Set());
+  const cracksDataRef = useRef([]);
   useEffect(() => { cracksDataRef.current = cracksData; }, [cracksData]);
 
   const [telemetry, setTelemetry] = useState({
@@ -176,17 +178,17 @@ export default function TunnelTwin() {
     dx: 0, dy: 0,
   });
 
-  const jumpTargetRef    = useRef(null);
-  const sceneRef         = useRef(null);
-  const roverMeshRef     = useRef(null);
-  const crackMeshesRef   = useRef([]);
+  const jumpTargetRef = useRef(null);
+  const sceneRef = useRef(null);
+  const roverMeshRef = useRef(null);
+  const crackMeshesRef = useRef([]);
 
   // FIX #1: Keyboard handler is registered once in the Three.js effect.
   // cycleCrack and selectClosestCrack are defined later (after the effect) and
   // reference state. Calling them directly from within the effect closure creates
   // a stale-capture lint error. Solution: store latest function in a ref and
   // always call via the ref from the keyboard handler.
-  const cycleCrackRef         = useRef(null);
+  const cycleCrackRef = useRef(null);
   const selectClosestCrackRef = useRef(null);
 
   // ── 1. Fetch defect telemetry ──────────────────────────────────────────────
@@ -218,13 +220,13 @@ export default function TunnelTwin() {
     const container = mountRef.current;
     if (!container) return;
 
-    const width  = container.clientWidth;
+    const width = container.clientWidth;
     const height = container.clientHeight;
 
     // SCENE
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.fog        = new THREE.FogExp2(TUNNEL_CONFIG.water_fog.color, TUNNEL_CONFIG.water_fog.density);
+    scene.fog = new THREE.FogExp2(TUNNEL_CONFIG.water_fog.color, TUNNEL_CONFIG.water_fog.density);
     scene.background = new THREE.Color(TUNNEL_CONFIG.water_fog.color);
 
     // CAMERA
@@ -240,13 +242,13 @@ export default function TunnelTwin() {
     container.appendChild(renderer.domElement);
 
     // ── TUNNEL CYLINDER (BackSide: camera navigates inside) ────────────────
-    const radius    = TUNNEL_CONFIG.radius_m;
-    const length    = TUNNEL_CONFIG.length_m;
+    const radius = TUNNEL_CONFIG.radius_m;
+    const length = TUNNEL_CONFIG.length_m;
     const radialSegs = TUNNEL_CONFIG.radial_segments;
-    const ringLen   = TUNNEL_CONFIG.ring_length_m;
-    const numRings  = Math.round(length / ringLen);
+    const ringLen = TUNNEL_CONFIG.ring_length_m;
+    const numRings = Math.round(length / ringLen);
 
-    const { diffuseTex, bumpTex } = createProceduralConcreteTextures();
+    const { diffuseTex, bumpTex, dCanvas, bCanvas } = createProceduralConcreteTextures();
     diffuseTex.repeat.set(6, numRings);
     bumpTex.repeat.set(6, numRings);
 
@@ -289,12 +291,12 @@ export default function TunnelTwin() {
     scene.add(endCap);
 
     // ── MARINE SNOW (suspended particulate drift) ──────────────────────────
-    const particleCount     = TUNNEL_CONFIG.particles.count;
+    const particleCount = TUNNEL_CONFIG.particles.count;
     const particlePositions = new Float32Array(particleCount * 3);
     for (let p = 0; p < particleCount; p++) {
       const theta = Math.random() * Math.PI * 2;
-      const r     = Math.random() * (radius - 0.35);
-      particlePositions[p * 3]     = Math.cos(theta) * r;
+      const r = Math.random() * (radius - 0.35);
+      particlePositions[p * 3] = Math.cos(theta) * r;
       particlePositions[p * 3 + 1] = Math.sin(theta) * r;
       particlePositions[p * 3 + 2] = Math.random() * length;
     }
@@ -431,10 +433,10 @@ export default function TunnelTwin() {
     const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3, metalness: 0.3 });
 
     const thrusterPositions = [
-      { x: -0.34, y: 0.0,  z: -0.28, isVert: false }, // Port propulsion
-      { x:  0.34, y: 0.0,  z: -0.28, isVert: false }, // Starboard propulsion
-      { x: -0.25, y: 0.22, z:  0.06, isVert: true  }, // Port vertical
-      { x:  0.25, y: 0.22, z:  0.06, isVert: true  }, // Starboard vertical
+      { x: -0.34, y: 0.0, z: -0.28, isVert: false }, // Port propulsion
+      { x: 0.34, y: 0.0, z: -0.28, isVert: false }, // Starboard propulsion
+      { x: -0.25, y: 0.22, z: 0.06, isVert: true }, // Port vertical
+      { x: 0.25, y: 0.22, z: 0.06, isVert: true }, // Starboard vertical
     ];
 
     thrusterPositions.forEach((tp) => {
@@ -526,14 +528,14 @@ export default function TunnelTwin() {
     }
 
     // ── RAYCASTER ─────────────────────────────────────────────────────────
-    const raycaster  = new THREE.Raycaster();
+    const raycaster = new THREE.Raycaster();
     const mouseCoord = new THREE.Vector2();
     const getHitboxes = () => crackMeshesRef.current.map(c => c.hitMesh);
 
     const handleCanvasClick = (e) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouseCoord.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseCoord.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+      mouseCoord.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouseCoord, camera);
       const hits = raycaster.intersectObjects(getHitboxes(), false);
       if (hits.length > 0) {
@@ -546,7 +548,7 @@ export default function TunnelTwin() {
     const handleMouseHover = (e) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouseCoord.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseCoord.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+      mouseCoord.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouseCoord, camera);
       const hits = raycaster.intersectObjects(getHitboxes(), false);
       renderer.domElement.style.cursor =
@@ -573,6 +575,20 @@ export default function TunnelTwin() {
     const onMouseUp = () => { controlsRef.current.pointerDown = false; };
 
     const domEl = renderer.domElement;
+
+    // WebGL Context Loss / Restoration handling
+    const handleContextLost = (e) => {
+      e.preventDefault();
+      console.warn('[TunnelTwin] WebGL context lost. Pausing rendering.');
+      cancelAnimationFrame(animId);
+    };
+    const handleContextRestored = () => {
+      console.info('[TunnelTwin] WebGL context restored. Resuming rendering.');
+      animId = requestAnimationFrame(animate);
+    };
+    domEl.addEventListener('webglcontextlost', handleContextLost, false);
+    domEl.addEventListener('webglcontextrestored', handleContextRestored, false);
+
     domEl.addEventListener('click', handleCanvasClick);
     domEl.addEventListener('mousemove', handleMouseHover);
     domEl.addEventListener('mousedown', onMouseDown);
@@ -583,13 +599,13 @@ export default function TunnelTwin() {
     const onKeyDown = (e) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
       const c = e.code;
-      if (c === 'KeyW' || c === 'ArrowUp')    controlsRef.current.forward   = true;
-      if (c === 'KeyS' || c === 'ArrowDown')  controlsRef.current.backward  = true;
-      if (c === 'KeyA' || c === 'ArrowLeft')  controlsRef.current.yawLeft   = true;
-      if (c === 'KeyD' || c === 'ArrowRight') controlsRef.current.yawRight  = true;
-      if (c === 'KeyR' || c === 'Space')      controlsRef.current.up        = true;
-      if (c === 'KeyF' || c === 'ControlLeft')controlsRef.current.down      = true;
-      if (c === 'KeyQ') controlsRef.current.rollLeft  = true;
+      if (c === 'KeyW' || c === 'ArrowUp') controlsRef.current.forward = true;
+      if (c === 'KeyS' || c === 'ArrowDown') controlsRef.current.backward = true;
+      if (c === 'KeyA' || c === 'ArrowLeft') controlsRef.current.yawLeft = true;
+      if (c === 'KeyD' || c === 'ArrowRight') controlsRef.current.yawRight = true;
+      if (c === 'KeyR' || c === 'Space') controlsRef.current.up = true;
+      if (c === 'KeyF' || c === 'ControlLeft') controlsRef.current.down = true;
+      if (c === 'KeyQ') controlsRef.current.rollLeft = true;
       if (c === 'KeyE') controlsRef.current.rollRight = true;
       if (c === 'ShiftLeft' || c === 'ShiftRight') controlsRef.current.boost = true;
       if (c === 'KeyC') {
@@ -601,19 +617,19 @@ export default function TunnelTwin() {
       }
       if (c === 'KeyH') setShowControlsHint(prev => !prev);
       // FIX #1: Call via ref — avoids capturing stale closures of cycleCrack/selectClosestCrack
-      if (c === 'BracketLeft')  cycleCrackRef.current?.(-1);
+      if (c === 'BracketLeft') cycleCrackRef.current?.(-1);
       if (c === 'BracketRight') cycleCrackRef.current?.(1);
-      if (c === 'Enter')        selectClosestCrackRef.current?.();
+      if (c === 'Enter') selectClosestCrackRef.current?.();
     };
     const onKeyUp = (e) => {
       const c = e.code;
-      if (c === 'KeyW' || c === 'ArrowUp')    controlsRef.current.forward   = false;
-      if (c === 'KeyS' || c === 'ArrowDown')  controlsRef.current.backward  = false;
-      if (c === 'KeyA' || c === 'ArrowLeft')  controlsRef.current.yawLeft   = false;
-      if (c === 'KeyD' || c === 'ArrowRight') controlsRef.current.yawRight  = false;
-      if (c === 'KeyR' || c === 'Space')      controlsRef.current.up        = false;
-      if (c === 'KeyF' || c === 'ControlLeft')controlsRef.current.down      = false;
-      if (c === 'KeyQ') controlsRef.current.rollLeft  = false;
+      if (c === 'KeyW' || c === 'ArrowUp') controlsRef.current.forward = false;
+      if (c === 'KeyS' || c === 'ArrowDown') controlsRef.current.backward = false;
+      if (c === 'KeyA' || c === 'ArrowLeft') controlsRef.current.yawLeft = false;
+      if (c === 'KeyD' || c === 'ArrowRight') controlsRef.current.yawRight = false;
+      if (c === 'KeyR' || c === 'Space') controlsRef.current.up = false;
+      if (c === 'KeyF' || c === 'ControlLeft') controlsRef.current.down = false;
+      if (c === 'KeyQ') controlsRef.current.rollLeft = false;
       if (c === 'KeyE') controlsRef.current.rollRight = false;
       if (c === 'ShiftLeft' || c === 'ShiftRight') controlsRef.current.boost = false;
     };
@@ -621,6 +637,7 @@ export default function TunnelTwin() {
       if (!container) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
+      if (!container || !w || !h) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -632,20 +649,20 @@ export default function TunnelTwin() {
 
     // ── FIX #4: Pre-allocate all Vector3/Quaternion used in the rAF loop ──
     // No `new THREE.Vector3()` inside requestAnimationFrame to avoid GC churn.
-    const _fwd       = new THREE.Vector3();
-    const _thrust    = new THREE.Vector3();
-    const _roverFwd  = new THREE.Vector3();
-    const _noseOff   = new THREE.Vector3();
-    const _chaseOff  = new THREE.Vector3();
-    const _lookAt    = new THREE.Vector3();
+    const _fwd = new THREE.Vector3();
+    const _thrust = new THREE.Vector3();
+    const _roverFwd = new THREE.Vector3();
+    const _noseOff = new THREE.Vector3();
+    const _chaseOff = new THREE.Vector3();
+    const _lookAt = new THREE.Vector3();
 
     // ROVER PHYSICS STATE (owned by the rAF loop, not React state)
     const roverVelocity = new THREE.Vector3();
-    let roverYaw   = 0;
+    let roverYaw = 0;
     let roverPitch = 0;
-    let roverRoll  = 0;
-    let lastTime   = performance.now();
-    let animId     = null;
+    let roverRoll = 0;
+    let lastTime = performance.now();
+    let animId = null;
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     // ── RENDER LOOP ────────────────────────────────────────────────────────
@@ -655,7 +672,7 @@ export default function TunnelTwin() {
       lastTime = currentTime;
 
       const ctrl = controlsRef.current;
-      const cfg  = TUNNEL_CONFIG.rover;
+      const cfg = TUNNEL_CONFIG.rover;
 
       // --- AUTONOMOUS SURVEY FLY-THROUGH LOGIC ---
       if (autoPilotRef.current) {
@@ -693,53 +710,53 @@ export default function TunnelTwin() {
           }
         }
       } else
-      // Smooth LERP fly-to when a jump target is active
-      if (jumpTargetRef.current) {
-        const tgt = jumpTargetRef.current;
-        roverGroup.position.lerp(tgt.pos, delta * 3.2);
-        roverYaw   = THREE.MathUtils.lerp(roverYaw,   tgt.yaw,   delta * 3.5);
-        roverPitch = THREE.MathUtils.lerp(roverPitch, tgt.pitch, delta * 3.5);
-        roverVelocity.set(0, 0, 0);
-        if (roverGroup.position.distanceTo(tgt.pos) < 0.25) {
-          jumpTargetRef.current = null;
+        // Smooth LERP fly-to when a jump target is active
+        if (jumpTargetRef.current) {
+          const tgt = jumpTargetRef.current;
+          roverGroup.position.lerp(tgt.pos, delta * 3.2);
+          roverYaw = THREE.MathUtils.lerp(roverYaw, tgt.yaw, delta * 3.5);
+          roverPitch = THREE.MathUtils.lerp(roverPitch, tgt.pitch, delta * 3.5);
+          roverVelocity.set(0, 0, 0);
+          if (roverGroup.position.distanceTo(tgt.pos) < 0.25) {
+            jumpTargetRef.current = null;
+          }
+        } else {
+          const speedMax = ctrl.boost ? cfg.max_speed * cfg.boost_mult : cfg.max_speed;
+
+          // Smooth mouse look handling
+          if (ctrl.dx !== 0 || ctrl.dy !== 0) {
+            roverYaw -= ctrl.dx * 0.0025;
+            roverPitch = Math.max(-0.85, Math.min(0.85, roverPitch - ctrl.dy * 0.0025));
+            ctrl.dx = 0;
+            ctrl.dy = 0;
+          }
+
+          if (ctrl.yawLeft) roverYaw += cfg.turn_speed * delta;
+          if (ctrl.yawRight) roverYaw -= cfg.turn_speed * delta;
+          if (ctrl.rollLeft) roverRoll += 1.8 * delta;
+          if (ctrl.rollRight) roverRoll -= 1.8 * delta;
+          roverRoll = THREE.MathUtils.lerp(roverRoll, 0, delta * 2.5);
+          if (!ctrl.pointerDown && Math.abs(roverPitch) > 0.01) {
+            roverPitch = THREE.MathUtils.lerp(roverPitch, 0, delta * 1.5);
+          }
+
+          // Forward thrust direction — reusing pre-allocated _fwd
+          _fwd.set(
+            -Math.sin(roverYaw) * Math.cos(roverPitch),
+            Math.sin(roverPitch),
+            Math.cos(roverYaw) * Math.cos(roverPitch)
+          );
+
+          // Accumulated thrust — reusing pre-allocated _thrust
+          _thrust.set(0, 0, 0);
+          if (ctrl.forward) _thrust.addScaledVector(_fwd, speedMax);
+          if (ctrl.backward) _thrust.addScaledVector(_fwd, -speedMax * 0.6);
+          if (ctrl.up) _thrust.y += cfg.vertical_speed;
+          if (ctrl.down) _thrust.y -= cfg.vertical_speed;
+
+          roverVelocity.lerp(_thrust, delta * cfg.acceleration);
+          roverGroup.position.addScaledVector(roverVelocity, delta);
         }
-      } else {
-        const speedMax = ctrl.boost ? cfg.max_speed * cfg.boost_mult : cfg.max_speed;
-
-        // Smooth mouse look handling
-        if (ctrl.dx !== 0 || ctrl.dy !== 0) {
-          roverYaw   -= ctrl.dx * 0.0025;
-          roverPitch  = Math.max(-0.85, Math.min(0.85, roverPitch - ctrl.dy * 0.0025));
-          ctrl.dx = 0;
-          ctrl.dy = 0;
-        }
-
-        if (ctrl.yawLeft)   roverYaw  += cfg.turn_speed * delta;
-        if (ctrl.yawRight)  roverYaw  -= cfg.turn_speed * delta;
-        if (ctrl.rollLeft)  roverRoll += 1.8 * delta;
-        if (ctrl.rollRight) roverRoll -= 1.8 * delta;
-        roverRoll  = THREE.MathUtils.lerp(roverRoll,  0, delta * 2.5);
-        if (!ctrl.pointerDown && Math.abs(roverPitch) > 0.01) {
-          roverPitch = THREE.MathUtils.lerp(roverPitch, 0, delta * 1.5);
-        }
-
-        // Forward thrust direction — reusing pre-allocated _fwd
-        _fwd.set(
-          -Math.sin(roverYaw) * Math.cos(roverPitch),
-           Math.sin(roverPitch),
-           Math.cos(roverYaw) * Math.cos(roverPitch)
-        );
-
-        // Accumulated thrust — reusing pre-allocated _thrust
-        _thrust.set(0, 0, 0);
-        if (ctrl.forward)  _thrust.addScaledVector(_fwd,  speedMax);
-        if (ctrl.backward) _thrust.addScaledVector(_fwd, -speedMax * 0.6);
-        if (ctrl.up)   _thrust.y += cfg.vertical_speed;
-        if (ctrl.down) _thrust.y -= cfg.vertical_speed;
-
-        roverVelocity.lerp(_thrust, delta * cfg.acceleration);
-        roverGroup.position.addScaledVector(roverVelocity, delta);
-      }
 
       // Radial wall collision clamp
       const maxR = cfg.max_radial_distance;
@@ -797,7 +814,7 @@ export default function TunnelTwin() {
       // Particle drift (marine snow flowing down the tunnel)
       if (!prefersReducedMotion) {
         const pAttr = particleGeo.attributes.position;
-        const pArr  = pAttr.array;
+        const pArr = pAttr.array;
         for (let p = 0; p < particleCount; p++) {
           pArr[p * 3 + 2] -= delta * TUNNEL_CONFIG.particles.drift_speed;
           if (pArr[p * 3 + 2] < 0) pArr[p * 3 + 2] = length;
@@ -808,24 +825,24 @@ export default function TunnelTwin() {
       // Defect marker pulse — sphere emissive + halo opacity
       const roverPos = roverGroup.position;
       crackMeshesRef.current.forEach(cm => {
-        const dist  = cm.anchorPos.distanceTo(roverPos);
+        const dist = cm.anchorPos.distanceTo(roverPos);
         const isNear = dist <= 18.0;
-        const isSel  = selectedCrackRef.current?.id === cm.data.id;
+        const isSel = selectedCrackRef.current?.id === cm.data.id;
 
         if (isSel || isNear) {
           const pulse = Math.sin(currentTime * 0.006) * 0.5 + 0.5;
           // Halo ring
-          cm.haloMesh.visible    = true;
-          cm.haloMat.opacity     = isSel ? 0.95 : 0.4 + pulse * 0.5;
+          cm.haloMesh.visible = true;
+          cm.haloMat.opacity = isSel ? 0.95 : 0.4 + pulse * 0.5;
           // Sphere emissive glow
-          cm.sphereMesh.visible  = true;
+          cm.sphereMesh.visible = true;
           cm.sphereMat.emissiveIntensity = isSel ? 1.2 : 0.65 + pulse * 0.45;
           // Legacy reticle indicator
           cm.indicatorMesh.visible = true;
-          cm.indicatorMat.opacity  = isSel ? 1.0 : 0.5 + pulse * 0.4;
+          cm.indicatorMat.opacity = isSel ? 1.0 : 0.5 + pulse * 0.4;
           cm.highlightMesh.visible = isSel;
         } else {
-          cm.haloMesh.visible      = false;
+          cm.haloMesh.visible = false;
           cm.indicatorMesh.visible = false;
           cm.highlightMesh.visible = false;
           // Keep sphere clearly visible as navigational beacon up to 90m
@@ -850,13 +867,14 @@ export default function TunnelTwin() {
       renderer.render(scene, camera);
     };
 
-    setSceneReady(prev => prev + 1);
     animId = requestAnimationFrame(animate);
 
     // ── CLEANUP: dispose all GPU resources (FIX #3) ────────────────────────
     return () => {
       cancelAnimationFrame(animId);
 
+      domEl.removeEventListener('webglcontextlost', handleContextLost);
+      domEl.removeEventListener('webglcontextrestored', handleContextRestored);
       domEl.removeEventListener('click', handleCanvasClick);
       domEl.removeEventListener('mousemove', handleMouseHover);
       domEl.removeEventListener('mousedown', onMouseDown);
@@ -866,57 +884,32 @@ export default function TunnelTwin() {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('resize', handleResize);
 
-      // Comprehensive scene disposal with deduplication Sets
-      const disposedGeos = new Set();
-      const disposedMats = new Set();
-      const disposedTexs = new Set();
-
+      // Comprehensive scene disposal
       scene.traverse(obj => {
-        if (obj.geometry && !disposedGeos.has(obj.geometry)) {
-          disposedGeos.add(obj.geometry);
+        if (obj.geometry) {
           obj.geometry.dispose();
         }
         if (obj.material) {
-          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-          mats.forEach(m => {
-            if (!m || disposedMats.has(m)) return;
-            disposedMats.add(m);
-            ['map', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'emissiveMap'].forEach(key => {
-              if (m[key] && !disposedTexs.has(m[key])) {
-                disposedTexs.add(m[key]);
-                m[key].dispose?.();
-              }
-            });
-            m.dispose?.();
-          });
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach(m => m?.dispose());
+          } else {
+            obj.material.dispose();
+          }
         }
       });
-      if (diffuseTex && !disposedTexs.has(diffuseTex)) {
-        disposedTexs.add(diffuseTex);
-        diffuseTex.dispose();
-      }
-      if (bumpTex && !disposedTexs.has(bumpTex)) {
-        disposedTexs.add(bumpTex);
-        bumpTex.dispose();
-      }
+      diffuseTex?.dispose();
+      bumpTex?.dispose();
+      if (dCanvas) { dCanvas.width = 0; dCanvas.height = 0; }
+      if (bCanvas) { bCanvas.width = 0; bCanvas.height = 0; }
 
       crackMeshesRef.current.forEach(cm => {
-        ['crackGeo', 'highlightGeo', 'indicatorGeo', 'sphereGeo', 'haloGeo', 'hitGeo'].forEach(key => {
-          if (cm[key] && !disposedGeos.has(cm[key])) {
-            disposedGeos.add(cm[key]);
-            cm[key].dispose?.();
-          }
-        });
-        ['crackMat', 'highlightMat', 'indicatorMat', 'sphereMat', 'haloMat', 'hitMat'].forEach(key => {
-          if (cm[key] && !disposedMats.has(cm[key])) {
-            disposedMats.add(cm[key]);
-            cm[key].dispose?.();
-          }
-        });
+        cm.crackGeo?.dispose(); cm.crackMat?.dispose();
+        cm.highlightGeo?.dispose(); cm.highlightMat?.dispose();
+        cm.indicatorGeo?.dispose(); cm.indicatorMat?.dispose();
+        cm.sphereGeo?.dispose(); cm.sphereMat?.dispose();
+        cm.haloGeo?.dispose(); cm.haloMat?.dispose();
+        cm.hitGeo?.dispose(); cm.hitMat?.dispose();
       });
-      crackMeshesRef.current = [];
-      sceneRef.current = null;
-      roverMeshRef.current = null;
 
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
@@ -933,31 +926,31 @@ export default function TunnelTwin() {
     // Dispose and remove previous markers
     crackMeshesRef.current.forEach(cm => {
       scene.remove(cm.group);
-      cm.crackGeo?.dispose();     cm.crackMat?.dispose();
+      cm.crackGeo?.dispose(); cm.crackMat?.dispose();
       cm.highlightGeo?.dispose(); cm.highlightMat?.dispose();
       cm.indicatorGeo?.dispose(); cm.indicatorMat?.dispose();
-      cm.sphereGeo?.dispose();    cm.sphereMat?.dispose();
-      cm.haloGeo?.dispose();      cm.haloMat?.dispose();
-      cm.hitGeo?.dispose();       cm.hitMat?.dispose();
+      cm.sphereGeo?.dispose(); cm.sphereMat?.dispose();
+      cm.haloGeo?.dispose(); cm.haloMat?.dispose();
+      cm.hitGeo?.dispose(); cm.hitMat?.dispose();
     });
     crackMeshesRef.current = [];
 
     const rSurface = TUNNEL_CONFIG.radius_m - 0.025; // 2.5cm inset from wall
 
     cracksData.forEach((crack, idx) => {
-      const group  = new THREE.Group();
+      const group = new THREE.Group();
       const baseRad = (crack.angle_deg * Math.PI) / 180;
-      const baseZ   = crack.chainage_m;
+      const baseZ = crack.chainage_m;
       const crackLen = Math.max(0.35, crack.length_mm / 1000);
       const sev = SEVERITY_CONFIG[crack.severity] || SEVERITY_CONFIG.Minor;
       const orientAngle = (idx % 3 === 0) ? 0 : (idx % 3 === 1 ? Math.PI / 2 : Math.PI / 4);
 
       // ── Crack tube (wall-conforming tube geometry) ─────────────────────
       const pts = [];
-      const N   = 9;
+      const N = 9;
       for (let i = 0; i <= N; i++) {
-        const u    = (i / N - 0.5) * crackLen;
-        const dZ   = u * Math.cos(orientAngle);
+        const u = (i / N - 0.5) * crackLen;
+        const dZ = u * Math.cos(orientAngle);
         const dArc = u * Math.sin(orientAngle);
         const curRad = baseRad + (dArc / rSurface);
         const jitter = (i > 0 && i < N) ? (Math.random() - 0.5) * 0.025 : 0;
@@ -967,15 +960,15 @@ export default function TunnelTwin() {
           baseZ + dZ + (Math.random() - 0.5) * 0.015
         ));
       }
-      const curve      = new THREE.CatmullRomCurve3(pts);
-      const tubeRad    = Math.max(0.012, (crack.width_mm / 1000) * 3.5);
-      const crackGeo   = new THREE.TubeGeometry(curve, 24, tubeRad, 6, false);
-      const crackMat   = new THREE.MeshStandardMaterial({ color: 0x05080f, roughness: 0.95, metalness: 0.05 });
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const tubeRad = Math.max(0.012, (crack.width_mm / 1000) * 3.5);
+      const crackGeo = new THREE.TubeGeometry(curve, 24, tubeRad, 6, false);
+      const crackMat = new THREE.MeshStandardMaterial({ color: 0x05080f, roughness: 0.95, metalness: 0.05 });
       group.add(new THREE.Mesh(crackGeo, crackMat));
 
       // Wireframe highlight overlay (visible when selected/near)
-      const highlightGeo  = new THREE.TubeGeometry(curve, 24, tubeRad * 1.9, 6, false);
-      const highlightMat  = new THREE.MeshBasicMaterial({
+      const highlightGeo = new THREE.TubeGeometry(curve, 24, tubeRad * 1.9, 6, false);
+      const highlightMat = new THREE.MeshBasicMaterial({
         color: sev.threeColor, transparent: true, opacity: 0.75, wireframe: true,
       });
       const highlightMesh = new THREE.Mesh(highlightGeo, highlightMat);
@@ -983,7 +976,7 @@ export default function TunnelTwin() {
       group.add(highlightMesh);
 
       // Technical reticle ring (indicator at crack midpoint)
-      const centerPt     = pts[Math.floor(N / 2)];
+      const centerPt = pts[Math.floor(N / 2)];
       const indicatorGeo = new THREE.RingGeometry(0.25, 0.28, 24);
       const indicatorMat = new THREE.MeshBasicMaterial({
         color: sev.threeColor, transparent: true, opacity: 0.8, side: THREE.DoubleSide,
@@ -996,9 +989,9 @@ export default function TunnelTwin() {
 
       // ── Sphere defect marker (Req 2) ─────────────────────────────────────
       // Cylindrical projection: X=r·sin(θ), Y=r·cos(θ), Z=chainage
-      const mx        = DEFECT_R * Math.sin(baseRad);
-      const my        = DEFECT_R * Math.cos(baseRad);
-      const mz        = crack.chainage_m;
+      const mx = DEFECT_R * Math.sin(baseRad);
+      const my = DEFECT_R * Math.cos(baseRad);
+      const mz = crack.chainage_m;
       const anchorPos = new THREE.Vector3(mx, my, mz);
 
       const sphereGeo = new THREE.SphereGeometry(0.22, 16, 12);
@@ -1014,8 +1007,8 @@ export default function TunnelTwin() {
       group.add(sphereMesh);
 
       // ── Halo torus ring (Req 2 — pulses when hovered / selected) ─────────
-      const haloGeo  = new THREE.TorusGeometry(0.32, 0.022, 8, 32);
-      const haloMat  = new THREE.MeshBasicMaterial({
+      const haloGeo = new THREE.TorusGeometry(0.32, 0.022, 8, 32);
+      const haloMat = new THREE.MeshBasicMaterial({
         color: sev.threeColor, transparent: true, opacity: 0.0,
       });
       const haloMesh = new THREE.Mesh(haloGeo, haloMat);
@@ -1026,9 +1019,9 @@ export default function TunnelTwin() {
 
       // ── Invisible hit sphere for raycasting ───────────────────────────────
       const hitRadius = Math.max(0.45, crackLen * 0.6);
-      const hitGeo    = new THREE.SphereGeometry(hitRadius, 8, 8);
-      const hitMat    = new THREE.MeshBasicMaterial({ visible: false });
-      const hitMesh   = new THREE.Mesh(hitGeo, hitMat);
+      const hitGeo = new THREE.SphereGeometry(hitRadius, 8, 8);
+      const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+      const hitMesh = new THREE.Mesh(hitGeo, hitMat);
       hitMesh.position.copy(anchorPos);
       group.add(hitMesh);
 
@@ -1040,31 +1033,21 @@ export default function TunnelTwin() {
         anchorPos,
         hitMesh,
         sphereMesh, sphereMat, sphereGeo,
-        haloMesh,   haloMat,   haloGeo,
+        haloMesh, haloMat, haloGeo,
         highlightMesh, highlightMat, highlightGeo,
         indicatorMesh, indicatorMat, indicatorGeo,
         crackGeo, crackMat,
-        hitGeo,   hitMat,
+        hitGeo, hitMat,
       });
     });
-
-    return () => {
-      const curScene = sceneRef.current;
-      crackMeshesRef.current.forEach(cm => {
-        if (curScene && cm.group) curScene.remove(cm.group);
-        ['crackGeo', 'highlightGeo', 'indicatorGeo', 'sphereGeo', 'haloGeo', 'hitGeo'].forEach(g => cm[g]?.dispose?.());
-        ['crackMat', 'highlightMat', 'indicatorMat', 'sphereMat', 'haloMat', 'hitMat'].forEach(m => cm[m]?.dispose?.());
-      });
-      crackMeshesRef.current = [];
-    };
-  }, [cracksData, sceneReady]);
+  }, [cracksData]);
 
   // ── Jump to defect (smooth LERP fly-to, ~1.5m from wall) ─────────────────
   const handleJumpToCrack = useCallback((crack) => {
     setSelectedCrack(crack);
     setShowInventory(false);
 
-    const rad    = (crack.angle_deg * Math.PI) / 180;
+    const rad = (crack.angle_deg * Math.PI) / 180;
     const targetZ = Math.max(2.0, crack.chainage_m - 1.5);
     // Offset rover toward the wall where the defect is
     const targetX = Math.sin(rad) * 1.0;
@@ -1081,8 +1064,8 @@ export default function TunnelTwin() {
   const cycleCrack = useCallback((direction) => {
     if (!cracksData.length) return;
     const sorted = [...cracksData].sort((a, b) => a.chainage_m - b.chainage_m);
-    const cur    = selectedCrackRef.current;
-    let nextIdx  = 0;
+    const cur = selectedCrackRef.current;
+    let nextIdx = 0;
     if (cur) {
       const curIdx = sorted.findIndex(c => c.id === cur.id);
       nextIdx = (curIdx + direction + sorted.length) % sorted.length;
@@ -1109,6 +1092,75 @@ export default function TunnelTwin() {
 
   // Sync latest selectClosestCrack into ref (FIX #1)
   useEffect(() => { selectClosestCrackRef.current = selectClosestCrack; }, [selectClosestCrack]);
+
+  // ── Deep-Link Support (?defect= and ?chainage=) ─────────────────────────
+  const lastDeepLinkKeyRef = useRef('');
+
+  useEffect(() => {
+    if (!defectParam && !chainageParam) return;
+    const currentKey = `${defectParam || ''}:${chainageParam || ''}:${cracksData.length}`;
+    if (lastDeepLinkKeyRef.current === currentKey) return;
+
+    // 1. Defect ID lookup in cracksData
+    if (defectParam && cracksData.length > 0) {
+      const match = cracksData.find(c =>
+        String(c.id).toLowerCase() === defectParam.toLowerCase()
+      );
+      if (match) {
+        requestAnimationFrame(() => {
+          handleJumpToCrack(match);
+        });
+        const rad = (match.angle_deg * Math.PI) / 180;
+        const targetZ = Math.max(2.0, match.chainage_m - 1.5);
+        const targetX = Math.sin(rad) * 1.0;
+        const targetY = Math.cos(rad) * 1.0 - 0.15;
+        if (roverMeshRef.current && Math.abs(roverMeshRef.current.position.z - targetZ) > 8) {
+          roverMeshRef.current.position.set(targetX * 0.5, targetY * 0.5, Math.max(2.0, targetZ - 2.5));
+        }
+        lastDeepLinkKeyRef.current = currentKey;
+        return;
+      }
+    }
+
+    // 2. Chainage coordinate focusing
+    if (chainageParam) {
+      const parsedChainage = parseFloat(chainageParam);
+      if (!isNaN(parsedChainage)) {
+        const targetZ = Math.min(
+          Math.max(2.0, parsedChainage),
+          TUNNEL_CONFIG.length_m - 2.0
+        );
+
+        jumpTargetRef.current = {
+          pos: new THREE.Vector3(0, -0.4, targetZ),
+          yaw: 0,
+          pitch: 0,
+        };
+
+        if (roverMeshRef.current && Math.abs(roverMeshRef.current.position.z - targetZ) > 8) {
+          roverMeshRef.current.position.set(0, -0.4, Math.max(2.0, targetZ - 2.5));
+        }
+
+        // Try to select nearest defect marker if available
+        if (cracksData.length > 0) {
+          let closest = null, minDist = Infinity;
+          cracksData.forEach(c => {
+            const d = Math.abs(c.chainage_m - targetZ);
+            if (d < minDist) { minDist = d; closest = c; }
+          });
+          if (closest && minDist <= 15.0) {
+            requestAnimationFrame(() => {
+              setSelectedCrack(closest);
+            });
+          }
+        }
+
+        lastDeepLinkKeyRef.current = currentKey;
+      }
+    } else if (defectParam && cracksData.length > 0) {
+      lastDeepLinkKeyRef.current = currentKey;
+    }
+  }, [defectParam, chainageParam, cracksData, handleJumpToCrack]);
 
   // ── Reset camera to start / chase mode ────────────────────────────────────
   const toggleAutoPilot = useCallback(() => {
@@ -1144,13 +1196,13 @@ export default function TunnelTwin() {
   // ── Mobile virtual joystick ────────────────────────────────────────────────
   const handleTouchControl = (action, isStart) => {
     const ctrl = controlsRef.current;
-    if (action === 'fwd')   ctrl.forward  = isStart;
-    if (action === 'back')  ctrl.backward = isStart;
-    if (action === 'left')  ctrl.yawLeft  = isStart;
+    if (action === 'fwd') ctrl.forward = isStart;
+    if (action === 'back') ctrl.backward = isStart;
+    if (action === 'left') ctrl.yawLeft = isStart;
     if (action === 'right') ctrl.yawRight = isStart;
-    if (action === 'up')    ctrl.up       = isStart;
-    if (action === 'down')  ctrl.down     = isStart;
-    if (action === 'boost') ctrl.boost    = isStart;
+    if (action === 'up') ctrl.up = isStart;
+    if (action === 'down') ctrl.down = isStart;
+    if (action === 'boost') ctrl.boost = isStart;
   };
 
   // ── JSX ───────────────────────────────────────────────────────────────────
@@ -1433,7 +1485,7 @@ export default function TunnelTwin() {
               className="twin-sev-pill"
               style={{
                 borderColor: SEVERITY_CONFIG[selectedCrack.severity]?.color,
-                color:       SEVERITY_CONFIG[selectedCrack.severity]?.color,
+                color: SEVERITY_CONFIG[selectedCrack.severity]?.color,
               }}
             >
               {selectedCrack.severity.toUpperCase()}
@@ -1488,6 +1540,14 @@ export default function TunnelTwin() {
               id="twin-jump-btn"
             >
               JUMP ROVER TO DEFECT
+            </button>
+            <button
+              className="twin-btn-hud"
+              onClick={() => navigate(`/dashboard/detections/${selectedCrack.id}`)}
+              id="twin-dossier-btn"
+              style={{ width: '100%', marginTop: 0 }}
+            >
+              OPEN DEFECT DOSSIER &rarr;
             </button>
             <button
               className="twin-btn-hud"
@@ -1586,8 +1646,8 @@ export default function TunnelTwin() {
           ))}
 
           {cracksData.map(crack => {
-            const pct   = Math.max(0, Math.min(100, (crack.chainage_m / TUNNEL_CONFIG.length_m) * 100));
-            const sev   = SEVERITY_CONFIG[crack.severity] || SEVERITY_CONFIG.Minor;
+            const pct = Math.max(0, Math.min(100, (crack.chainage_m / TUNNEL_CONFIG.length_m) * 100));
+            const sev = SEVERITY_CONFIG[crack.severity] || SEVERITY_CONFIG.Minor;
             const isSel = selectedCrack?.id === crack.id;
             return (
               <button

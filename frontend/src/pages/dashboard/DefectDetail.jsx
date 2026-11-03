@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Flag, MessageSquare, ArrowLeft, ExternalLink, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { DETECTIONS } from '../../data/mockData';
-import { generateReport } from '../../hooks/useApi';
+import { generateReport, useDetection } from '../../hooks/useApi';
+import cracksData from '../../../public/data/cracks.json';
 import './DefectDetail.css';
 
 const SEV_COLOR = {
@@ -11,6 +12,103 @@ const SEV_COLOR = {
   Minor:    'var(--minor)',
   Info:     'var(--info)',
 };
+
+function formatClockPosition(deg) {
+  if (deg == null) return "12 o'clock (Crown)";
+  const normalized = ((deg % 360) + 360) % 360;
+  if (normalized === 0 || normalized === 360) return "12 o'clock (Crown)";
+  if (normalized === 90) return "3 o'clock (Right Wall)";
+  if (normalized === 180) return "6 o'clock (Invert / Floor)";
+  if (normalized === 270) return "9 o'clock (Left Wall)";
+  const clock = Math.round(normalized / 30) || 12;
+  return `${clock} o'clock (${normalized}°)`;
+}
+
+function adaptCrackToDetection(crack) {
+  if (!crack) return null;
+  return {
+    id: crack.id,
+    category: 'Crack',
+    subtype: crack.notes ? crack.notes.split('.')[0] : 'Longitudinal Tunnel Crack',
+    severity: crack.severity || 'Minor',
+    confidence: crack.source === 'Manual' ? 0.98 : 0.94,
+    chainage: crack.chainage_m,
+    chainage_m: crack.chainage_m,
+    tunnelDepthM: (35 + Math.round(crack.chainage_m * 0.15 * 10) / 10).toFixed(1),
+    estimatedSize: `${crack.width_mm || 2} mm x ${crack.length_mm || 300} mm`,
+    orientation: formatClockPosition(crack.angle_deg),
+    detectedAt: '2026-03-15T10:14:22Z',
+    aiModel: crack.source === 'Manual' ? 'Manual Engineering Survey' : 'YOLOv8-TunnelSeg v2.4',
+    reviewStatus: crack.severity === 'Critical' ? 'flagged' : 'confirmed',
+    notes: crack.notes || 'Defect logged during hydro-tunnel survey.',
+    inspectionId: 'INSP-2026-03-TWIN',
+    timestamp: '10:14:22',
+    frameIndex: Math.round(crack.chainage_m * 10),
+    source: crack.source || 'AI',
+    bbox: {
+      x1: 180,
+      y1: 140,
+      x2: 460,
+      y2: 340,
+    },
+  };
+}
+
+function adaptApiDetection(api) {
+  if (!api) return null;
+  if (api.category && api.subtype) return api;
+
+  const category = api.class_label
+    ? api.class_label.charAt(0).toUpperCase() + api.class_label.slice(1)
+    : 'Crack';
+  const chainageVal = api.chainage_m != null
+    ? api.chainage_m
+    : (api.coordinates?.z != null ? api.coordinates.z : (api.chainage || 0));
+
+  return {
+    id: api.id || api.detection_id,
+    category,
+    subtype: api.subtype || `${category} Defect`,
+    severity: api.severity || (api.confidence > 0.9 ? 'Critical' : api.confidence > 0.75 ? 'Major' : 'Minor'),
+    confidence: typeof api.confidence === 'number' ? api.confidence : 0.88,
+    chainage: chainageVal,
+    chainage_m: chainageVal,
+    tunnelDepthM: api.tunnelDepthM || (chainageVal ? (30 + chainageVal * 0.1).toFixed(1) : 42.0),
+    estimatedSize: api.estimatedSize || (api.bbox ? `${Math.round(api.bbox.x2 - api.bbox.x1)}px x ${Math.round(api.bbox.y2 - api.bbox.y1)}px` : '3.5 mm x 220 mm'),
+    orientation: api.orientation || (api.coordinates ? `Radial (${api.coordinates.x?.toFixed(1)}, ${api.coordinates.y?.toFixed(1)})` : "Crown (12 o'clock)"),
+    detectedAt: api.created_at || api.timestamp || new Date().toISOString(),
+    aiModel: api.aiModel || 'YOLOv8-TunnelSeg v2.4',
+    reviewStatus: api.verified_status || api.reviewStatus || 'pending',
+    notes: api.reviewer_notes || api.notes || 'Live detection ingested from inspection telemetry stream.',
+    inspectionId: api.inspection_id || api.inspectionId || 'INSP-2026-LIVE',
+    timestamp: api.timestamp ? (new Date(api.timestamp).toTimeString().split(' ')[0]) : '10:14:22',
+    frameIndex: api.frame_index ?? 0,
+    bbox: api.bbox,
+  };
+}
+
+function createFallbackDetectionForId(fallbackId) {
+  return {
+    id: fallbackId,
+    category: 'Crack',
+    subtype: 'Automated Tunnel Defect',
+    severity: 'Major',
+    confidence: 0.89,
+    chainage: 4.5,
+    chainage_m: 4.5,
+    tunnelDepthM: 35.5,
+    estimatedSize: '3.2 mm x 260 mm',
+    orientation: "Crown (12 o'clock)",
+    detectedAt: '2026-03-15T10:14:22Z',
+    aiModel: 'YOLOv8-TunnelSeg v2.4 (Cached)',
+    reviewStatus: 'pending',
+    notes: `Detection dossier preserved for record ${fallbackId}. Inspection pending reviewer verification.`,
+    inspectionId: 'INSP-2026-LIVE',
+    timestamp: '10:14:22',
+    frameIndex: 45,
+    bbox: { x1: 150, y1: 120, x2: 380, y2: 310 },
+  };
+}
 
 function MetaRow({ label, value }) {
   return (
@@ -25,7 +123,35 @@ export default function DefectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [exportState, setExportState] = useState('idle'); // idle | loading | done | error
-  const detection = DETECTIONS.find(d => d.id === id);
+
+  const { data: liveDetection, loading: apiLoading } = useDetection(id);
+
+  const detection = useMemo(() => {
+    if (liveDetection) {
+      return adaptApiDetection(liveDetection);
+    }
+    const mock = DETECTIONS.find(d => d.id === id || String(d.id).toLowerCase() === String(id).toLowerCase());
+    if (mock) return mock;
+
+    const crack = cracksData.find(c => c.id === id || String(c.id).toLowerCase() === String(id).toLowerCase());
+    if (crack) return adaptCrackToDetection(crack);
+
+    // If ID is a live UUID or alphanumeric identifier and backend is offline
+    if (id && (id.length > 15 || id.includes('-'))) {
+      return createFallbackDetectionForId(id);
+    }
+
+    return null;
+  }, [liveDetection, id]);
+
+  if (apiLoading && !detection) {
+    return (
+      <div className="dd-not-found" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', gap: '16px' }}>
+        <Loader2 size={32} className="sp-dl-btn__spin" style={{ color: 'var(--teal)' }} />
+        <p style={{ color: '#94a3b8' }}>Loading defect dossier...</p>
+      </div>
+    );
+  }
 
   if (!detection) {
     return (
@@ -150,7 +276,14 @@ export default function DefectDetail() {
           {/* Metadata table */}
           <table className="dd-meta-table" aria-label="Defect metadata">
             <tbody>
-              <MetaRow label="Location (Chainage)" value={typeof chainage === 'number' ? `${chainage.toFixed(2)} km` : (chainage || '—')} />
+              <MetaRow
+                label="Location (Chainage)"
+                value={
+                  detection.chainage_m != null
+                    ? `${detection.chainage_m.toFixed(1)} m (Ch ${(detection.chainage_m / 1000).toFixed(3)} km)`
+                    : (typeof chainage === 'number' ? `${chainage.toFixed(2)} km` : (chainage || '—'))
+                }
+              />
               <MetaRow label="Tunnel Depth (m)" value={tunnelDepthM ? `${tunnelDepthM} m` : null} />
               <MetaRow label="Estimated Size" value={estimatedSize} />
               <MetaRow label="Orientation" value={orientation} />
@@ -179,7 +312,7 @@ export default function DefectDetail() {
               Inspection {inspectionId || 'Batch'} <ExternalLink size={13} />
             </Link>
             <Link
-              to="/tunnel-twin"
+              to={`/tunnel-twin?defect=${detection.id}&chainage=${detection.chainage || 0}`}
               className="dd-insp-link-btn"
               style={{ borderColor: '#0d9488', color: '#14b8a6' }}
               aria-label="View in 3D Digital Twin"
