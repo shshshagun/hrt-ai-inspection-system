@@ -35,9 +35,9 @@ def parse_args():
 
 
 COLOURS = [
-    (0, 255, 64),   # crack  – neon green
-    (255, 80, 0),   # class1 – orange (if more classes added later)
-    (0, 120, 255),  # class2 – blue
+    (0, 255, 64),   # crack  - neon green
+    (255, 80, 0),   # class1 - orange (if more classes added later)
+    (0, 120, 255),  # class2 - blue
 ]
 
 
@@ -92,7 +92,7 @@ def main():
     img_dir   = (data_root / split_rel).resolve()
 
     if not img_dir.exists():
-        print(f"❌ Image directory not found: {img_dir}")
+        print(f"[FAIL] Image directory not found: {img_dir}")
         print("   Run  python download_dataset.py  first.")
         return
 
@@ -118,7 +118,7 @@ def main():
 
     if args.out:
         cv2.imwrite(args.out, grid)
-        print(f"✅ Saved grid → {args.out}")
+        print(f"[OK] Saved grid -> {args.out}")
     else:
         cv2.imshow(f"Dataset: {args.split} split ({len(annotated)} images)", grid)
         print("Press any key to close...")

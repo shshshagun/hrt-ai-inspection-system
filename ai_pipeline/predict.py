@@ -27,11 +27,54 @@ except ImportError:
     except ImportError:
         DetectionAPIClient = None
 
-# ── Defaults ───────────────────────────────────────────────────────────────────
+# -- Defaults -------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_WEIGHTS = ROOT / "runs" / "detect" / "hrt_crack_det" / "weights" / "best.pt"
 OUTPUT_DIR = ROOT / "runs" / "predict"
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
+
+
+def resolve_weights(weights_arg: str) -> str:
+    """
+    Resolves model weights path.
+    Supports custom trained weights (best.pt), checking common locations,
+    and provides a graceful fallback to yolov8s.pt if the custom weights file is not found.
+    """
+    if not weights_arg:
+        weights_arg = str(DEFAULT_WEIGHTS)
+
+    # If explicitly asking for a standard pretrained model
+    std_models = {"yolov8n.pt", "yolov8s.pt", "yolov8m.pt", "yolov8l.pt", "yolov8x.pt"}
+    if weights_arg.lower() in std_models:
+        return weights_arg
+
+    p = Path(weights_arg)
+    if p.exists() and p.is_file():
+        return str(p)
+
+    if (ROOT / weights_arg).exists() and (ROOT / weights_arg).is_file():
+        return str(ROOT / weights_arg)
+
+    # Check common project locations for custom trained weights (best.pt)
+    candidates = [
+        DEFAULT_WEIGHTS,
+        ROOT / "runs" / "detect" / "train" / "weights" / "best.pt",
+        ROOT / "runs" / "detect" / "train" / "weights" / "last.pt",
+        ROOT / "weights" / "best.pt",
+        ROOT / "best.pt",
+        ROOT / "ai_pipeline" / "weights" / "best.pt",
+        ROOT / "underwater-crack-detection" / "weights" / "best.pt",
+    ]
+
+    for cand in candidates:
+        if cand.exists() and cand.is_file():
+            print(f"[+] Found custom weights at: {cand}")
+            return str(cand)
+
+    # Graceful fallback to yolov8s.pt
+    print(f"[!] Custom weights '{weights_arg}' not found.")
+    print("    Gracefully falling back to pretrained 'yolov8s.pt'...")
+    return "yolov8s.pt"
 
 
 class PhysicalCrackQuantifier:
@@ -109,8 +152,10 @@ def run_inference(
     if api_url and DetectionAPIClient:
         api_client = DetectionAPIClient(base_url=api_url, verbose=True)
 
+    weights = resolve_weights(weights)
+
     print("=" * 60)
-    print("  HRT AI Inspection — Real-Time Stream & Metric Quantification")
+    print("  HRT AI Inspection - Real-Time Stream & Metric Quantification")
     print("=" * 60)
     print(f"  Source       : {source}")
     print(f"  Weights      : {weights}")
@@ -261,7 +306,11 @@ def run_inference(
 def parse_args():
     p = argparse.ArgumentParser(description="HRT Inspection Inference & Quantification Engine")
     p.add_argument("--source", default="0", help="MP4/AVI file, webcam ID, or RTSP stream URL")
-    p.add_argument("--weights", default=str(DEFAULT_WEIGHTS))
+    p.add_argument(
+        "--weights",
+        default=str(DEFAULT_WEIGHTS),
+        help="Path to model weights (.pt); falls back to best.pt candidates or yolov8s.pt if not found",
+    )
     p.add_argument("--conf", type=float, default=0.25)
     p.add_argument("--focal-length", type=float, default=8.0, help="Lens focal length in mm")
     p.add_argument("--distance", type=float, default=1000.0, help="Distance to target wall in mm")

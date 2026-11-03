@@ -6,18 +6,18 @@ Simulates ROV spatial telemetry for the HRT AI Inspection System.
 In a real deployment, these XYZ values would come from the ROV's IMU,
 depth sensor, or acoustic positioning system.  For the project demo / testing
 phase, this module generates a synthetic helical path through a cylindrical
-tunnel — a realistic approximation of how an ROV would travel.
+tunnel -- a realistic approximation of how an ROV would travel.
 
 Tunnel model
-────────────
-  • The tunnel is a cylinder with:
-      – length  L  along the Z-axis  (default 200 m)
-      – radius  R  (default 2.5 m)
-  • The ROV follows a helical path:
-      x(t) = R * cos(2π * t * turns)
-      y(t) = R * sin(2π * t * turns)  (or near-centre if straight-mode)
+------------
+  - The tunnel is a cylinder with:
+      - length  L  along the Z-axis  (default 200 m)
+      - radius  R  (default 2.5 m)
+  - The ROV follows a helical path:
+      x(t) = R * cos(2*pi * t * turns)
+      y(t) = R * sin(2*pi * t * turns)  (or near-centre if straight-mode)
       z(t) = L * t
-  • t ∈ [0, 1] is the normalised progress (frame_index / total_frames)
+  - t in [0, 1] is the normalised progress (frame_index / total_frames)
 
 The module can also load real telemetry from a CSV / JSON file.
 """
@@ -30,14 +30,14 @@ from typing import Optional
 
 class SpatialTelemetry:
     """
-    Maps frame indices → (x, y, z) spatial coordinates.
+    Maps frame indices -> (x, y, z) spatial coordinates.
 
     Parameters
     ----------
     mode : str
-        'helix'   – helical path (default, good demo)
-        'straight' – straight path through tunnel centre
-        'file'    – load from telemetry_file (CSV or JSON)
+        'helix'   - helical path (default, good demo)
+        'straight' - straight path through tunnel centre
+        'file'    - load from telemetry_file (CSV or JSON)
     total_frames : int
         Expected total number of video frames.  The helix is scaled
         to span the full tunnel length in this many frames.
@@ -70,7 +70,7 @@ class SpatialTelemetry:
         if mode == "file" and telemetry_file:
             self._load_file(telemetry_file)
 
-    # ── Public interface ──────────────────────────────────────────────────────
+    # -- Public interface ------------------------------------------------------
 
     def position_at(self, frame_index: int) -> dict:
         """
@@ -110,11 +110,11 @@ class SpatialTelemetry:
         if output_path:
             with open(output_path, "w") as f:
                 json.dump(path, f, indent=2)
-            print(f"ROV path exported → {output_path}")
+            print(f"ROV path exported -> {output_path}")
 
         return path
 
-    # ── Private helpers ───────────────────────────────────────────────────────
+    # -- Private helpers -------------------------------------------------------
 
     def _load_file(self, file_path):
         """Load telemetry from JSON or CSV into self._lookup."""
@@ -148,14 +148,14 @@ class SpatialTelemetry:
         print(f"Loaded {len(self._lookup)} telemetry records from {file_path}")
 
 
-# ── Quick self-test ───────────────────────────────────────────────────────────
+# -- Quick self-test -----------------------------------------------------------
 if __name__ == "__main__":
-    print("Testing SpatialTelemetry (helix mode) — 10 sample frames:\n")
+    print("Testing SpatialTelemetry (helix mode) - 10 sample frames:\n")
     telem = SpatialTelemetry(mode="helix", total_frames=1000)
     for i in range(0, 1001, 100):
         pos = telem.position_at(i)
-        print(f"  frame {i:>4} → x={pos['x']:>6.2f} m  y={pos['y']:>6.2f} m  z={pos['z']:>6.2f} m")
+        print(f"  frame {i:>4} -> x={pos['x']:>6.2f} m  y={pos['y']:>6.2f} m  z={pos['z']:>6.2f} m")
 
     # Export path to JSON (useful for Three.js frontend)
     path = telem.export_path_json(total_frames=100, output_path="rov_path.json")
-    print(f"\nExported {len(path)} path points → rov_path.json")
+    print(f"\nExported {len(path)} path points -> rov_path.json")
