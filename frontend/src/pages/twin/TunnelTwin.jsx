@@ -575,7 +575,7 @@ export default function TunnelTwin() {
         }
       }
       roverGroup.position.z = Math.max(1.2, Math.min(length - 1.2, roverGroup.position.z));
-      roverGroup.rotation.set(roverPitch, roverYaw + ctrl.yawDelta, roverRoll, 'YXZ');
+      roverGroup.rotation.set(roverPitch, roverYaw, roverRoll, 'YXZ');
 
       // Spotlight aim — reusing pre-allocated _roverFwd
       _roverFwd.set(0, 0, 24.0).applyQuaternion(roverGroup.quaternion);
