@@ -111,8 +111,8 @@ export default function TunnelTwin() {
   const selectedCrackRef = useRef(null);
   useEffect(() => { selectedCrackRef.current = selectedCrack; }, [selectedCrack]);
 
-  const [cameraMode, setCameraMode]         = useState('first');
-  const cameraModeRef                       = useRef('first');
+  const [cameraMode, setCameraMode]         = useState('chase');
+  const cameraModeRef                       = useRef('chase');
   const [showControlsHint, setShowControlsHint] = useState(true);
   const [showInventory, setShowInventory]   = useState(false);
   const [sortBy, setSortBy]                 = useState('chainage');
@@ -137,7 +137,7 @@ export default function TunnelTwin() {
     rollLeft: false, rollRight: false,
     boost: false,
     pointerDown: false, mouseX: 0, mouseY: 0,
-    pitchDelta: 0, yawDelta: 0,
+    dx: 0, dy: 0,
   });
 
   const jumpTargetRef    = useRef(null);
@@ -363,13 +363,10 @@ export default function TunnelTwin() {
     };
     const onMouseMove = (e) => {
       if (!controlsRef.current.pointerDown) return;
-      const dx = e.clientX - controlsRef.current.mouseX;
-      const dy = e.clientY - controlsRef.current.mouseY;
+      controlsRef.current.dx += (e.clientX - controlsRef.current.mouseX);
+      controlsRef.current.dy += (e.clientY - controlsRef.current.mouseY);
       controlsRef.current.mouseX = e.clientX;
       controlsRef.current.mouseY = e.clientY;
-      controlsRef.current.yawDelta   -= dx * 0.0035;
-      controlsRef.current.pitchDelta -= dy * 0.0035;
-      controlsRef.current.pitchDelta = Math.max(-0.6, Math.min(0.6, controlsRef.current.pitchDelta));
     };
     const onMouseUp = () => { controlsRef.current.pointerDown = false; };
 
@@ -384,12 +381,12 @@ export default function TunnelTwin() {
     const onKeyDown = (e) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
       const c = e.code;
-      if (c === 'KeyW') controlsRef.current.forward   = true;
-      if (c === 'KeyS') controlsRef.current.backward  = true;
-      if (c === 'KeyA') controlsRef.current.yawLeft   = true;
-      if (c === 'KeyD') controlsRef.current.yawRight  = true;
-      if (c === 'KeyR') controlsRef.current.up        = true;
-      if (c === 'KeyF') controlsRef.current.down      = true;
+      if (c === 'KeyW' || c === 'ArrowUp')    controlsRef.current.forward   = true;
+      if (c === 'KeyS' || c === 'ArrowDown')  controlsRef.current.backward  = true;
+      if (c === 'KeyA' || c === 'ArrowLeft')  controlsRef.current.yawLeft   = true;
+      if (c === 'KeyD' || c === 'ArrowRight') controlsRef.current.yawRight  = true;
+      if (c === 'KeyR' || c === 'Space')      controlsRef.current.up        = true;
+      if (c === 'KeyF' || c === 'ControlLeft')controlsRef.current.down      = true;
       if (c === 'KeyQ') controlsRef.current.rollLeft  = true;
       if (c === 'KeyE') controlsRef.current.rollRight = true;
       if (c === 'ShiftLeft' || c === 'ShiftRight') controlsRef.current.boost = true;
@@ -408,12 +405,12 @@ export default function TunnelTwin() {
     };
     const onKeyUp = (e) => {
       const c = e.code;
-      if (c === 'KeyW') controlsRef.current.forward   = false;
-      if (c === 'KeyS') controlsRef.current.backward  = false;
-      if (c === 'KeyA') controlsRef.current.yawLeft   = false;
-      if (c === 'KeyD') controlsRef.current.yawRight  = false;
-      if (c === 'KeyR') controlsRef.current.up        = false;
-      if (c === 'KeyF') controlsRef.current.down      = false;
+      if (c === 'KeyW' || c === 'ArrowUp')    controlsRef.current.forward   = false;
+      if (c === 'KeyS' || c === 'ArrowDown')  controlsRef.current.backward  = false;
+      if (c === 'KeyA' || c === 'ArrowLeft')  controlsRef.current.yawLeft   = false;
+      if (c === 'KeyD' || c === 'ArrowRight') controlsRef.current.yawRight  = false;
+      if (c === 'KeyR' || c === 'Space')      controlsRef.current.up        = false;
+      if (c === 'KeyF' || c === 'ControlLeft')controlsRef.current.down      = false;
       if (c === 'KeyQ') controlsRef.current.rollLeft  = false;
       if (c === 'KeyE') controlsRef.current.rollRight = false;
       if (c === 'ShiftLeft' || c === 'ShiftRight') controlsRef.current.boost = false;
@@ -507,12 +504,22 @@ export default function TunnelTwin() {
       } else {
         const speedMax = ctrl.boost ? cfg.max_speed * cfg.boost_mult : cfg.max_speed;
 
+        // Smooth mouse look handling
+        if (ctrl.dx !== 0 || ctrl.dy !== 0) {
+          roverYaw   -= ctrl.dx * 0.0025;
+          roverPitch  = Math.max(-0.85, Math.min(0.85, roverPitch - ctrl.dy * 0.0025));
+          ctrl.dx = 0;
+          ctrl.dy = 0;
+        }
+
         if (ctrl.yawLeft)   roverYaw  += cfg.turn_speed * delta;
         if (ctrl.yawRight)  roverYaw  -= cfg.turn_speed * delta;
         if (ctrl.rollLeft)  roverRoll += 1.8 * delta;
         if (ctrl.rollRight) roverRoll -= 1.8 * delta;
-        roverRoll  = THREE.MathUtils.lerp(roverRoll,  0,              delta * 2.5);
-        roverPitch = THREE.MathUtils.lerp(roverPitch, ctrl.pitchDelta, delta * 6.0);
+        roverRoll  = THREE.MathUtils.lerp(roverRoll,  0, delta * 2.5);
+        if (!ctrl.pointerDown && Math.abs(roverPitch) > 0.01) {
+          roverPitch = THREE.MathUtils.lerp(roverPitch, 0, delta * 1.5);
+        }
 
         // Forward thrust direction — reusing pre-allocated _fwd
         _fwd.set(
@@ -558,15 +565,16 @@ export default function TunnelTwin() {
 
       roverVisuals.visible = (cameraModeRef.current === 'chase');
 
-      // Camera — reusing pre-allocated offset vectors
+      // Camera — forward oriented for both 1st and 3rd person
       if (cameraModeRef.current === 'first') {
         _noseOff.set(0, 0.08, 0.42).applyQuaternion(roverGroup.quaternion);
         camera.position.copy(roverGroup.position).add(_noseOff);
-        camera.rotation.copy(roverGroup.rotation);
+        _lookAt.set(0, 0, 15.0).applyQuaternion(roverGroup.quaternion).add(roverGroup.position);
+        camera.lookAt(_lookAt);
       } else {
-        _chaseOff.set(0, 0.55, -2.1).applyQuaternion(roverGroup.quaternion);
+        _chaseOff.set(0, 0.65, -2.4).applyQuaternion(roverGroup.quaternion);
         camera.position.copy(roverGroup.position).add(_chaseOff);
-        _lookAt.set(0, 0, 5.0).applyQuaternion(roverGroup.quaternion).add(roverGroup.position);
+        _lookAt.set(0, 0.15, 8.0).applyQuaternion(roverGroup.quaternion).add(roverGroup.position);
         camera.lookAt(_lookAt);
       }
 
@@ -1013,9 +1021,9 @@ export default function TunnelTwin() {
             </button>
           </div>
           <div className="twin-controls-grid">
-            <div><kbd>W</kbd> <kbd>S</kbd> Forward / Reverse</div>
-            <div><kbd>A</kbd> <kbd>D</kbd> Yaw Steer</div>
-            <div><kbd>R</kbd> <kbd>F</kbd> Vertical Elevate</div>
+            <div><kbd>W</kbd>/<kbd>&uarr;</kbd> <kbd>S</kbd>/<kbd>&darr;</kbd> Forward/Back</div>
+            <div><kbd>A</kbd>/<kbd>&larr;</kbd> <kbd>D</kbd>/<kbd>&rarr;</kbd> Yaw Steer</div>
+            <div><kbd>Space</kbd>/<kbd>R</kbd> Up &bull; <kbd>Ctrl</kbd>/<kbd>F</kbd> Down</div>
             <div><kbd>Shift</kbd> Hydrodynamic Boost</div>
             <div><kbd>Mouse</kbd> Drag to Look</div>
             <div><kbd>C</kbd> Toggle 1st / 3rd Camera</div>
@@ -1048,6 +1056,29 @@ export default function TunnelTwin() {
             onTouchEnd={() => handleTouchControl('boost', false)}
           >BOOST</button>
         </div>
+      </div>
+
+      {/* ── CHAINAGE QUICK-JUMP BAR ── */}
+      <div className="twin-chainage-bar" aria-label="Tunnel Chainage Quick-Jump Bar">
+        <span className="twin-chainage-label">CH 0.0m (INTAKE)</span>
+        <input
+          type="range"
+          min={2}
+          max={248}
+          step={0.5}
+          value={telemetry.chainage}
+          onChange={(e) => {
+            const z = parseFloat(e.target.value);
+            jumpTargetRef.current = {
+              pos: new THREE.Vector3(roverMeshRef.current?.position.x || 0, roverMeshRef.current?.position.y || -0.4, z),
+              yaw: 0,
+              pitch: 0
+            };
+          }}
+          className="twin-chainage-slider"
+          aria-label="Chainage position slider"
+        />
+        <span className="twin-chainage-label">CH 250.0m (OUTLET)</span>
       </div>
 
       {/* ── DEFECT INSPECTOR PANEL ── */}

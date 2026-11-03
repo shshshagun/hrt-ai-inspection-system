@@ -756,3 +756,59 @@
     display: none;
   }
 }
+
+
+/* ── Chainage Quick-Jump Track Bar ────────────────────────────── */
+.twin-chainage-bar {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(650px, 85vw);
+  background: rgba(10, 18, 30, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 40;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+.twin-chainage-label {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.twin-chainage-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: #1e293b;
+  outline: none;
+  cursor: pointer;
+}
+
+.twin-chainage-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #14b8a6;
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  box-shadow: 0 0 10px #14b8a6;
+  transition: transform 0.1s ease;
+}
+
+.twin-chainage-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}

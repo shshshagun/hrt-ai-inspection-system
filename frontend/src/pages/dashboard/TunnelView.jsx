@@ -30,10 +30,23 @@ export default function TunnelView() {
   const [selectedBin, setSelectedBin] = useState(null);
   const [hoveredBin, setHoveredBin] = useState(null);
 
-  // Active section metadata (e.g. s01 = 0 to 4.2 km)
+  // Safe Section Chainage Extraction
   const currentSection = TUNNEL_META.sections.find(s => s.id === activeSectionId) || TUNNEL_META.sections[0];
-  const [secStartKm, secEndKm] = currentSection.chainage;
-  const sectionLengthMeters = (secEndKm - secStartKm) * 1000;
+  
+  // Parse chainage safely from either .chainage or regex on .label
+  const [secStartKm, secEndKm] = useMemo(() => {
+    if (Array.isArray(currentSection.chainage) && currentSection.chainage.length >= 2) {
+      return currentSection.chainage;
+    }
+    // Attempt parse from label like: "Section 01 · Intake to Adit 1 (0.00 – 4.50 km)"
+    const match = currentSection.label?.match(/([\d.]+)\s*[–—-]\s*([\d.]+)\s*km/i);
+    if (match) {
+      return [parseFloat(match[1]), parseFloat(match[2])];
+    }
+    return [0.0, 4.5];
+  }, [currentSection]);
+
+  const sectionLengthMeters = Math.max(100, (secEndKm - secStartKm) * 1000);
 
   // ── Calculate 100-meter Heatmap Bins ──────────────────────────
   const BIN_SIZE_M = 100;
