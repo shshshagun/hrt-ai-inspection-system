@@ -25,56 +25,91 @@ function formatClockPosition(deg) {
   return `${clock} o'clock (${normalized}\xB0)`;
 }
 
-// ─── Procedural concrete texture (damp mottled aggregate, submerged) ──────────
-function createProceduralConcreteTexture() {
+// ─── Procedural Hydraulic Concrete Textures (PBR Diffuse + Bump) ──────────
+function createProceduralConcreteTextures() {
   const size = 1024;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#4b5563';
-  ctx.fillRect(0, 0, size, size);
+  // 1. Diffuse Albedo Canvas
+  const dCanvas = document.createElement('canvas');
+  dCanvas.width = size;
+  dCanvas.height = size;
+  const dCtx = dCanvas.getContext('2d');
 
-  const imgData = ctx.getImageData(0, 0, size, size);
-  const data = imgData.data;
+  // 2. Normal / Bump Height Canvas
+  const bCanvas = document.createElement('canvas');
+  bCanvas.width = size;
+  bCanvas.height = size;
+  const bCtx = bCanvas.getContext('2d');
+
+  const dImg = dCtx.createImageData(size, size);
+  const bImg = bCtx.createImageData(size, size);
+  const dData = dImg.data;
+  const bData = bImg.data;
+
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const idx = (y * size + x) * 4;
-      const damp = Math.sin(x * 0.015) * Math.cos(y * 0.015) * 16;
-      const noise = (Math.random() - 0.5) * 28;
-      const base = 132 + damp + noise;
-      data[idx]     = Math.max(0, Math.min(255, base - 8));  // R (cold tone)
-      data[idx + 1] = Math.max(0, Math.min(255, base + 2));  // G
-      data[idx + 2] = Math.max(0, Math.min(255, base + 8));  // B (blue-shift)
-      data[idx + 3] = 255;
+      // Multi-frequency aggregate & moisture variation
+      const wave1 = Math.sin(x * 0.02) * Math.cos(y * 0.02) * 12;
+      const wave2 = Math.sin(y * 0.05 + x * 0.01) * 8; // water streak flow
+      const speckle = (Math.random() - 0.5) * 22;
+      const base = 104 + wave1 + wave2 + speckle; // Calibrated damp hydraulic concrete gray
+
+      // Diffuse RGB (neutral damp concrete with cold aquatic blue-green shift)
+      dData[idx]     = Math.max(0, Math.min(255, base - 8));
+      dData[idx + 1] = Math.max(0, Math.min(255, base + 2));
+      dData[idx + 2] = Math.max(0, Math.min(255, base + 9));
+      dData[idx + 3] = 255;
+
+      // Bump height (128 neutral, speckles and seams add micro-relief)
+      const bHeight = 128 + speckle * 1.5;
+      bData[idx]     = Math.max(0, Math.min(255, bHeight));
+      bData[idx + 1] = Math.max(0, Math.min(255, bHeight));
+      bData[idx + 2] = Math.max(0, Math.min(255, bHeight));
+      bData[idx + 3] = 255;
     }
   }
-  ctx.putImageData(imgData, 0, 0);
+  dCtx.putImageData(dImg, 0, 0);
+  bCtx.putImageData(bImg, 0, 0);
 
-  // Ring joint groove
-  ctx.strokeStyle = 'rgba(15, 23, 42, 0.65)';
-  ctx.lineWidth = 8;
-  ctx.beginPath();
-  ctx.moveTo(0, size / 2);
-  ctx.lineTo(size, size / 2);
-  ctx.stroke();
-
-  // Longitudinal formwork seam lines
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = 3;
-  for (let i = 0; i < 4; i++) {
-    const lx = (size / 4) * i;
+  // Precast Segment Ring Bevels & Gasket Joints
+  [dCtx, bCtx].forEach((ctx, isBump) => {
+    // Circumferential joint ring
+    ctx.strokeStyle = isBump ? 'rgb(40, 40, 40)' : 'rgba(10, 18, 30, 0.75)';
+    ctx.lineWidth = 10;
     ctx.beginPath();
-    ctx.moveTo(lx, 0);
-    ctx.lineTo(lx, size);
+    ctx.moveTo(0, size / 2);
+    ctx.lineTo(size, size / 2);
     ctx.stroke();
-  }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  return texture;
+    // 6 Segment radial cast formwork seams
+    ctx.strokeStyle = isBump ? 'rgb(60, 60, 60)' : 'rgba(15, 23, 42, 0.6)';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 6; i++) {
+      const lx = (size / 6) * i;
+      ctx.beginPath();
+      ctx.moveTo(lx, 0);
+      ctx.lineTo(lx, size);
+      ctx.stroke();
+
+      // Circular segment bolting recesses near joints
+      ctx.fillStyle = isBump ? 'rgb(30, 30, 30)' : 'rgba(8, 14, 24, 0.8)';
+      ctx.beginPath();
+      ctx.arc(lx + 24, size / 2 - 20, 7, 0, Math.PI * 2);
+      ctx.arc(lx + 24, size / 2 + 20, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  const diffuseTex = new THREE.CanvasTexture(dCanvas);
+  diffuseTex.wrapS = THREE.RepeatWrapping;
+  diffuseTex.wrapT = THREE.RepeatWrapping;
+
+  const bumpTex = new THREE.CanvasTexture(bCanvas);
+  bumpTex.wrapS = THREE.RepeatWrapping;
+  bumpTex.wrapT = THREE.RepeatWrapping;
+
+  return { diffuseTex, bumpTex };
 }
 
 // ─── WebGL capability check — run once as lazy state initializer ──────────────
@@ -194,11 +229,13 @@ export default function TunnelTwin() {
     // CAMERA
     const camera = new THREE.PerspectiveCamera(65, width / height, 0.1, 120);
 
-    // RENDERER
+    // RENDERER (Cinematic ACES Filmic tone mapping for realistic underwater contrast)
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     container.appendChild(renderer.domElement);
 
     // ── TUNNEL CYLINDER (BackSide: camera navigates inside) ────────────────
@@ -208,15 +245,21 @@ export default function TunnelTwin() {
     const ringLen   = TUNNEL_CONFIG.ring_length_m;
     const numRings  = Math.round(length / ringLen);
 
-    const concreteTex = createProceduralConcreteTexture();
-    concreteTex.repeat.set(8, numRings);
+    const { diffuseTex, bumpTex } = createProceduralConcreteTextures();
+    diffuseTex.repeat.set(6, numRings);
+    bumpTex.repeat.set(6, numRings);
 
     const tunnelGeo = new THREE.CylinderGeometry(radius, radius, length, radialSegs, numRings, true);
     tunnelGeo.rotateX(Math.PI / 2);
     tunnelGeo.translate(0, 0, length / 2);
 
     const tunnelMat = new THREE.MeshStandardMaterial({
-      map: concreteTex, roughness: 0.58, metalness: 0.08, side: THREE.BackSide,
+      map: diffuseTex,
+      bumpMap: bumpTex,
+      bumpScale: 0.035,
+      roughness: 0.64,
+      metalness: 0.04,
+      side: THREE.BackSide,
     });
     const tunnelMesh = new THREE.Mesh(tunnelGeo, tunnelMat);
     scene.add(tunnelMesh);
@@ -262,82 +305,222 @@ export default function TunnelTwin() {
     });
     scene.add(new THREE.Points(particleGeo, particleMat));
 
-    // ── ROV VEHICLE ────────────────────────────────────────────────────────
+    // ── HIGH-DETAIL SUBSEA INSPECTION ROV VEHICLE ──────────────────────────
     const roverGroup = new THREE.Group();
     roverGroup.position.set(...TUNNEL_CONFIG.rover.start_pos);
     roverMeshRef.current = roverGroup;
 
     const roverVisuals = new THREE.Group();
     roverGroup.add(roverVisuals);
+    const thrusterImpellers = [];
 
-    // Chassis body
-    const chassisGeo = new THREE.BoxGeometry(0.55, 0.32, 0.75);
-    const chassisMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
-    roverVisuals.add(new THREE.Mesh(chassisGeo, chassisMat));
+    // 1. Dual Hydrodynamic Flotation Pontoons (Safety Yellow Syntactic Foam)
+    const pontoonMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      roughness: 0.28,
+      metalness: 0.12,
+    });
+    const pontoonGeo = new THREE.CylinderGeometry(0.12, 0.13, 0.82, 16);
+    pontoonGeo.rotateX(Math.PI / 2);
 
-    // Buoyancy shell
-    const shellGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.65, 16);
-    shellGeo.rotateX(Math.PI / 2);
-    shellGeo.scale(1.1, 0.45, 1);
-    const shellMat = new THREE.MeshStandardMaterial({ color: 0xca8a04, roughness: 0.35, metalness: 0.1 });
-    const shell = new THREE.Mesh(shellGeo, shellMat);
-    shell.position.set(0, 0.18, 0);
-    roverVisuals.add(shell);
+    const portPontoon = new THREE.Mesh(pontoonGeo, pontoonMat);
+    portPontoon.position.set(-0.25, 0.14, 0);
+    roverVisuals.add(portPontoon);
 
-    // Front camera dome
-    const domeGeo = new THREE.SphereGeometry(0.1, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const stbdPontoon = new THREE.Mesh(pontoonGeo, pontoonMat);
+    stbdPontoon.position.set(0.25, 0.14, 0);
+    roverVisuals.add(stbdPontoon);
+
+    // Streamlined Pontoon Nose Cones
+    const noseGeo = new THREE.SphereGeometry(0.12, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+    noseGeo.rotateX(-Math.PI / 2);
+    const portNose = new THREE.Mesh(noseGeo, pontoonMat);
+    portNose.position.set(-0.25, 0.14, 0.41);
+    roverVisuals.add(portNose);
+    const stbdNose = new THREE.Mesh(noseGeo, pontoonMat);
+    stbdNose.position.set(0.25, 0.14, 0.41);
+    roverVisuals.add(stbdNose);
+
+    // Center Equipment Deck / Cowling
+    const deckGeo = new THREE.BoxGeometry(0.32, 0.10, 0.68);
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.75 });
+    const deck = new THREE.Mesh(deckGeo, deckMat);
+    deck.position.set(0, 0.18, 0);
+    roverVisuals.add(deck);
+
+    // 2. Titanium Tubular Space-Frame Roll Cage & Protective Skid Rails
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.2, metalness: 0.9 });
+    const skidGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.88, 8);
+    skidGeo.rotateX(Math.PI / 2);
+
+    const portSkid = new THREE.Mesh(skidGeo, frameMat);
+    portSkid.position.set(-0.24, -0.16, 0);
+    roverVisuals.add(portSkid);
+
+    const stbdSkid = new THREE.Mesh(skidGeo, frameMat);
+    stbdSkid.position.set(0.24, -0.16, 0);
+    roverVisuals.add(stbdSkid);
+
+    // Front Tubular Crash Bumper
+    const bumperGeo = new THREE.TorusGeometry(0.26, 0.022, 8, 16, Math.PI);
+    bumperGeo.rotateX(-Math.PI / 2);
+    const bumper = new THREE.Mesh(bumperGeo, frameMat);
+    bumper.position.set(0, -0.01, 0.48);
+    roverVisuals.add(bumper);
+
+    // 3. Central 1-Bar Pressure Vessel & Optical Inspection Sensor Dome
+    const vesselGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.54, 18);
+    vesselGeo.rotateX(Math.PI / 2);
+    const vesselMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.2, metalness: 0.85 });
+    const vessel = new THREE.Mesh(vesselGeo, vesselMat);
+    vessel.position.set(0, -0.02, 0.02);
+    roverVisuals.add(vessel);
+
+    // Acrylic Inspection Dome
+    const domeGeo = new THREE.SphereGeometry(0.11, 20, 16, 0, Math.PI * 2, 0, Math.PI / 2);
     domeGeo.rotateX(-Math.PI / 2);
-    const domeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1, metalness: 0.9 });
+    const domeMat = new THREE.MeshPhysicalMaterial({
+      color: 0x38bdf8,
+      roughness: 0.05,
+      metalness: 0.1,
+      transmission: 0.9,
+      transparent: true,
+      opacity: 0.85,
+    });
     const dome = new THREE.Mesh(domeGeo, domeMat);
-    dome.position.set(0, 0.02, 0.39);
+    dome.position.set(0, -0.02, 0.29);
     roverVisuals.add(dome);
 
-    // Thruster cowlings
-    const thrusterGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.18, 12);
-    thrusterGeo.rotateX(Math.PI / 2);
-    const thrusterMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.4 });
-    [[-0.34, 0.02, -0.2], [0.34, 0.02, -0.2], [-0.34, 0.02, 0.2], [0.34, 0.02, 0.2]]
-      .forEach(([tx, ty, tz]) => {
-        const t = new THREE.Mesh(thrusterGeo, thrusterMat);
-        t.position.set(tx, ty, tz);
-        roverVisuals.add(t);
-      });
+    // Optical Camera Sensor Eye
+    const lensGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.08, 16);
+    lensGeo.rotateX(Math.PI / 2);
+    const lensMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      roughness: 0.1,
+      metalness: 0.9,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.5,
+    });
+    const lens = new THREE.Mesh(lensGeo, lensMat);
+    lens.position.set(0, -0.02, 0.27);
+    roverVisuals.add(lens);
 
-    // ── ROV LIGHTING ──────────────────────────────────────────────────────
-    const spotTarget = new THREE.Object3D();
-    scene.add(spotTarget);
+    // 4. Dual Projector Headlight Pods (Left & Right)
+    const podHousingGeo = new THREE.CylinderGeometry(0.052, 0.052, 0.14, 12);
+    podHousingGeo.rotateX(Math.PI / 2);
+    const podHousingMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.25, metalness: 0.85 });
+    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xf0fdf4 });
 
-    // Primary High-Lumens Inspection Spotlights
-    const headlight = new THREE.SpotLight(0xf8fafc, 580);
-    headlight.position.set(0, 0.12, 0.38);
-    headlight.target  = spotTarget;
-    headlight.angle   = Math.PI / 3.0;
-    headlight.penumbra = 0.45;
-    headlight.decay   = 1.0;
-    headlight.distance = 68.0;
-    roverGroup.add(headlight);
+    [-0.34, 0.34].forEach(xPos => {
+      const pod = new THREE.Mesh(podHousingGeo, podHousingMat);
+      pod.position.set(xPos, 0.06, 0.33);
+      roverVisuals.add(pod);
+
+      const bulb = new THREE.Mesh(new THREE.CircleGeometry(0.046, 12), bulbMat);
+      bulb.position.set(xPos, 0.06, 0.401);
+      roverVisuals.add(bulb);
+    });
+
+    // 5. Four Ducted Vector Thrusters with Animated Impellers
+    const ductGeo = new THREE.CylinderGeometry(0.078, 0.078, 0.16, 14, 1, true);
+    ductGeo.rotateX(Math.PI / 2);
+    const ductMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.8, side: THREE.DoubleSide });
+
+    const bladeGeo = new THREE.BoxGeometry(0.012, 0.11, 0.025);
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3, metalness: 0.3 });
+
+    const thrusterPositions = [
+      { x: -0.34, y: 0.0,  z: -0.28, isVert: false }, // Port propulsion
+      { x:  0.34, y: 0.0,  z: -0.28, isVert: false }, // Starboard propulsion
+      { x: -0.25, y: 0.22, z:  0.06, isVert: true  }, // Port vertical
+      { x:  0.25, y: 0.22, z:  0.06, isVert: true  }, // Starboard vertical
+    ];
+
+    thrusterPositions.forEach((tp) => {
+      const duct = new THREE.Mesh(ductGeo, ductMat);
+      duct.position.set(tp.x, tp.y, tp.z);
+      if (tp.isVert) duct.rotation.x = Math.PI / 2;
+      roverVisuals.add(duct);
+
+      const hub = new THREE.Group();
+      hub.position.set(tp.x, tp.y, tp.z);
+      hub.add(new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), bladeMat));
+      for (let b = 0; b < 3; b++) {
+        const blade = new THREE.Mesh(bladeGeo, bladeMat);
+        blade.rotation.z = (b * Math.PI * 2) / 3;
+        hub.add(blade);
+      }
+      roverVisuals.add(hub);
+      thrusterImpellers.push({ group: hub, isVert: tp.isVert });
+    });
+
+    // 6. Dual Parallel Green Laser Rangefinder Beams (Subsea defect scaling)
+    const laserMat = new THREE.LineBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.55 });
+    [-0.08, 0.08].forEach(lx => {
+      const pts = [new THREE.Vector3(lx, -0.05, 0.38), new THREE.Vector3(lx, -0.05, 16.0)];
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), laserMat);
+      roverVisuals.add(line);
+    });
+
+    // 7. Trailing Umbilical Tether Cable
+    const tetherPts = [];
+    for (let t = 0; t <= 10; t++) {
+      const tz = -0.38 - (t * 0.42);
+      const sag = Math.sin((t / 10) * Math.PI) * 0.18;
+      tetherPts.push(new THREE.Vector3(0, -0.06 - sag, tz));
+    }
+    const tetherCurve = new THREE.CatmullRomCurve3(tetherPts);
+    const tetherGeo = new THREE.TubeGeometry(tetherCurve, 14, 0.015, 8, false);
+    const tetherMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5, metalness: 0.1 });
+    const tether = new THREE.Mesh(tetherGeo, tetherMat);
+    roverVisuals.add(tether);
+
+    // ── CALIBRATED CINEMATIC ROV LIGHTING ──────────────────────────────────
+    const spotTargetL = new THREE.Object3D();
+    const spotTargetR = new THREE.Object3D();
+    scene.add(spotTargetL);
+    scene.add(spotTargetR);
+
+    // Left Inspection Spotlight (Clean 5500K LED)
+    const spotL = new THREE.SpotLight(0xf0fdf4, 26);
+    spotL.position.set(-0.34, 0.06, 0.35);
+    spotL.target = spotTargetL;
+    spotL.angle = 0.42;
+    spotL.penumbra = 0.65;
+    spotL.decay = 1.0;
+    spotL.distance = 42.0;
+    roverGroup.add(spotL);
+
+    // Right Inspection Spotlight (Clean 5500K LED)
+    const spotR = new THREE.SpotLight(0xf0fdf4, 26);
+    spotR.position.set(0.34, 0.06, 0.35);
+    spotR.target = spotTargetR;
+    spotR.angle = 0.42;
+    spotR.penumbra = 0.65;
+    spotR.decay = 1.0;
+    spotR.distance = 42.0;
+    roverGroup.add(spotR);
 
     // Forward broad flood fill
-    const fillLight = new THREE.PointLight(0x7dd3fc, 45, 28.0);
+    const fillLight = new THREE.PointLight(0x7dd3fc, 8, 20.0);
     fillLight.position.set(0, 0.0, 0.45);
     roverGroup.add(fillLight);
 
-    // Rear vehicle halo & chase camera illumination
-    const chaseFillLight = new THREE.PointLight(0xa5f3fc, 42, 18.0);
-    chaseFillLight.position.set(0, 0.65, -0.6);
+    // Vehicle chase rim light (illuminates rover chassis in 3rd person)
+    const chaseFillLight = new THREE.PointLight(0x38bdf8, 5, 8.0);
+    chaseFillLight.position.set(0, 0.6, -1.0);
     roverGroup.add(chaseFillLight);
 
     scene.add(roverGroup);
 
-    // Global Aquatic Environmental Lighting
-    // Radiant water cyan from tunnel crown, deep indigo navy from invert
-    scene.add(new THREE.HemisphereLight(0x38bdf8, 0x0c1e2e, 1.8));
-    scene.add(new THREE.AmbientLight(0x1e3a5f, 1.25));
+    // Global Aquatic Environmental Lighting (soft cyan from crown, deep indigo navy from invert)
+    scene.add(new THREE.HemisphereLight(0x38bdf8, 0x05101a, 0.5));
+    scene.add(new THREE.AmbientLight(0x0a1e2d, 0.35));
 
-    // Tunnel Architecture Guide Beacons (every 25m along +Z)
-    for (let bz = 20; bz < length; bz += 25) {
-      const guideLight = new THREE.PointLight(0x38bdf8, 12, 22.0);
-      guideLight.position.set(0, 2.7, bz);
+    // Tunnel Architecture Guide Beacons (soft glowing cyan beacons every 25m along crown)
+    for (let bz = 25; bz < length; bz += 25) {
+      const guideLight = new THREE.PointLight(0x38bdf8, 2.2, 12.0);
+      guideLight.position.set(0, 2.75, bz);
       scene.add(guideLight);
     }
 
@@ -577,9 +760,23 @@ export default function TunnelTwin() {
       roverGroup.position.z = Math.max(1.2, Math.min(length - 1.2, roverGroup.position.z));
       roverGroup.rotation.set(roverPitch, roverYaw, roverRoll, 'YXZ');
 
-      // Spotlight aim — reusing pre-allocated _roverFwd
-      _roverFwd.set(0, 0, 24.0).applyQuaternion(roverGroup.quaternion);
-      spotTarget.position.copy(roverGroup.position).add(_roverFwd);
+      // Spotlight aim — dual beam forward convergence
+      _roverFwd.set(-0.15, 0, 25.0).applyQuaternion(roverGroup.quaternion);
+      spotTargetL.position.copy(roverGroup.position).add(_roverFwd);
+      _roverFwd.set(0.15, 0, 25.0).applyQuaternion(roverGroup.quaternion);
+      spotTargetR.position.copy(roverGroup.position).add(_roverFwd);
+
+      // Animate thruster impellers based on vehicle speed
+      const spinSpeed = roverVelocity.length() * 12 + 3.0;
+      thrusterImpellers.forEach(ti => {
+        ti.group.rotation.z += delta * spinSpeed;
+      });
+
+      // Subtle hydrodynamic buoyancy float (idling sway)
+      if (cameraModeRef.current === 'chase') {
+        roverVisuals.position.y = Math.sin(currentTime * 0.002) * 0.012;
+        roverVisuals.rotation.z = Math.sin(currentTime * 0.0015) * 0.006;
+      }
 
       roverVisuals.visible = (cameraModeRef.current === 'chase');
 
