@@ -41,9 +41,9 @@ function createProceduralConcreteTexture() {
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const idx = (y * size + x) * 4;
-      const damp = Math.sin(x * 0.015) * Math.cos(y * 0.015) * 18;
-      const noise = (Math.random() - 0.5) * 32;
-      const base = 85 + damp + noise;
+      const damp = Math.sin(x * 0.015) * Math.cos(y * 0.015) * 16;
+      const noise = (Math.random() - 0.5) * 28;
+      const base = 132 + damp + noise;
       data[idx]     = Math.max(0, Math.min(255, base - 8));  // R (cold tone)
       data[idx + 1] = Math.max(0, Math.min(255, base + 2));  // G
       data[idx + 2] = Math.max(0, Math.min(255, base + 8));  // B (blue-shift)
@@ -53,16 +53,16 @@ function createProceduralConcreteTexture() {
   ctx.putImageData(imgData, 0, 0);
 
   // Ring joint groove
-  ctx.strokeStyle = 'rgba(15, 23, 42, 0.45)';
-  ctx.lineWidth = 6;
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.65)';
+  ctx.lineWidth = 8;
   ctx.beginPath();
   ctx.moveTo(0, size / 2);
   ctx.lineTo(size, size / 2);
   ctx.stroke();
 
   // Longitudinal formwork seam lines
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.lineWidth = 3;
   for (let i = 0; i < 4; i++) {
     const lx = (size / 4) * i;
     ctx.beginPath();
@@ -307,21 +307,39 @@ export default function TunnelTwin() {
     const spotTarget = new THREE.Object3D();
     scene.add(spotTarget);
 
-    const headlight = new THREE.SpotLight(0xf8fafc, 240);
-    headlight.position.set(0, 0.1, 0.38);
+    // Primary High-Lumens Inspection Spotlights
+    const headlight = new THREE.SpotLight(0xf8fafc, 580);
+    headlight.position.set(0, 0.12, 0.38);
     headlight.target  = spotTarget;
-    headlight.angle   = Math.PI / 3.2;
+    headlight.angle   = Math.PI / 3.0;
     headlight.penumbra = 0.45;
-    headlight.decay   = 1.3;
-    headlight.distance = 48.0;
+    headlight.decay   = 1.0;
+    headlight.distance = 68.0;
     roverGroup.add(headlight);
 
-    const fillLight = new THREE.PointLight(0x7dd3fc, 28, 22.0);
+    // Forward broad flood fill
+    const fillLight = new THREE.PointLight(0x7dd3fc, 45, 28.0);
     fillLight.position.set(0, 0.0, 0.45);
     roverGroup.add(fillLight);
 
+    // Rear vehicle halo & chase camera illumination
+    const chaseFillLight = new THREE.PointLight(0xa5f3fc, 42, 18.0);
+    chaseFillLight.position.set(0, 0.65, -0.6);
+    roverGroup.add(chaseFillLight);
+
     scene.add(roverGroup);
-    scene.add(new THREE.AmbientLight(0x0e232e, 0.95));
+
+    // Global Aquatic Environmental Lighting
+    // Radiant water cyan from tunnel crown, deep indigo navy from invert
+    scene.add(new THREE.HemisphereLight(0x38bdf8, 0x0c1e2e, 1.8));
+    scene.add(new THREE.AmbientLight(0x1e3a5f, 1.25));
+
+    // Tunnel Architecture Guide Beacons (every 25m along +Z)
+    for (let bz = 20; bz < length; bz += 25) {
+      const guideLight = new THREE.PointLight(0x38bdf8, 12, 22.0);
+      guideLight.position.set(0, 2.7, bz);
+      scene.add(guideLight);
+    }
 
     // ── RAYCASTER ─────────────────────────────────────────────────────────
     const raycaster  = new THREE.Raycaster();
@@ -600,10 +618,10 @@ export default function TunnelTwin() {
           const pulse = Math.sin(currentTime * 0.006) * 0.5 + 0.5;
           // Halo ring
           cm.haloMesh.visible    = true;
-          cm.haloMat.opacity     = isSel ? 0.92 : 0.3 + pulse * 0.5;
+          cm.haloMat.opacity     = isSel ? 0.95 : 0.4 + pulse * 0.5;
           // Sphere emissive glow
           cm.sphereMesh.visible  = true;
-          cm.sphereMat.emissiveIntensity = isSel ? 0.85 : 0.2 + pulse * 0.55;
+          cm.sphereMat.emissiveIntensity = isSel ? 1.2 : 0.65 + pulse * 0.45;
           // Legacy reticle indicator
           cm.indicatorMesh.visible = true;
           cm.indicatorMat.opacity  = isSel ? 1.0 : 0.5 + pulse * 0.4;
@@ -612,9 +630,9 @@ export default function TunnelTwin() {
           cm.haloMesh.visible      = false;
           cm.indicatorMesh.visible = false;
           cm.highlightMesh.visible = false;
-          // Keep sphere faintly visible at distance
-          cm.sphereMesh.visible = dist <= 35.0;
-          if (cm.sphereMesh.visible) cm.sphereMat.emissiveIntensity = 0.08;
+          // Keep sphere clearly visible as navigational beacon up to 90m
+          cm.sphereMesh.visible = dist <= 90.0;
+          if (cm.sphereMesh.visible) cm.sphereMat.emissiveIntensity = 0.55;
         }
       });
 
@@ -750,12 +768,12 @@ export default function TunnelTwin() {
       const mz        = crack.chainage_m;
       const anchorPos = new THREE.Vector3(mx, my, mz);
 
-      const sphereGeo = new THREE.SphereGeometry(0.16, 16, 12);
+      const sphereGeo = new THREE.SphereGeometry(0.22, 16, 12);
       const sphereMat = new THREE.MeshStandardMaterial({
         color: sev.threeColor,
         emissive: sev.threeColor,
-        emissiveIntensity: 0.12,
-        roughness: 0.28,
+        emissiveIntensity: 0.75,
+        roughness: 0.25,
         metalness: 0.05,
       });
       const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
@@ -1030,7 +1048,76 @@ export default function TunnelTwin() {
             <div><kbd>[</kbd> <kbd>]</kbd> Cycle Defects</div>
             <div><kbd>Enter</kbd> Target Nearest Defect</div>
           </div>
-          <p className="twin-controls-note">Press <kbd>H</kbd> to toggle this help HUD</p>
+          <div className="twin-dpad" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+            <span style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Interactive Steer D-Pad</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                className="twin-btn-hud"
+                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                onMouseDown={() => handleTouchControl('fwd', true)}
+                onMouseUp={() => handleTouchControl('fwd', false)}
+                onMouseLeave={() => handleTouchControl('fwd', false)}
+                title="Forward (W / Up)"
+              >
+                &uarr; FWD
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                className="twin-btn-hud"
+                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                onMouseDown={() => handleTouchControl('left', true)}
+                onMouseUp={() => handleTouchControl('left', false)}
+                onMouseLeave={() => handleTouchControl('left', false)}
+                title="Steer Left (A / Left)"
+              >
+                &larr; LEFT
+              </button>
+              <button
+                className="twin-btn-hud"
+                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                onMouseDown={() => handleTouchControl('back', true)}
+                onMouseUp={() => handleTouchControl('back', false)}
+                onMouseLeave={() => handleTouchControl('back', false)}
+                title="Reverse (S / Down)"
+              >
+                &darr; REV
+              </button>
+              <button
+                className="twin-btn-hud"
+                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                onMouseDown={() => handleTouchControl('right', true)}
+                onMouseUp={() => handleTouchControl('right', false)}
+                onMouseLeave={() => handleTouchControl('right', false)}
+                title="Steer Right (D / Right)"
+              >
+                RIGHT &rarr;
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+              <button
+                className="twin-btn-hud"
+                style={{ padding: '3px 8px', fontSize: '0.7rem' }}
+                onMouseDown={() => handleTouchControl('up', true)}
+                onMouseUp={() => handleTouchControl('up', false)}
+                onMouseLeave={() => handleTouchControl('up', false)}
+                title="Ascend (Space / R)"
+              >
+                &and; UP
+              </button>
+              <button
+                className="twin-btn-hud"
+                style={{ padding: '3px 8px', fontSize: '0.7rem' }}
+                onMouseDown={() => handleTouchControl('down', true)}
+                onMouseUp={() => handleTouchControl('down', false)}
+                onMouseLeave={() => handleTouchControl('down', false)}
+                title="Descend (Ctrl / F)"
+              >
+                &or; DOWN
+              </button>
+            </div>
+          </div>
+          <p className="twin-controls-note" style={{ marginTop: '6px' }}>Press <kbd>H</kbd> to toggle this help HUD</p>
         </aside>
       )}
 

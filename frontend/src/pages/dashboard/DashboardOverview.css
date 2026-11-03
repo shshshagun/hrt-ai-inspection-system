@@ -217,34 +217,61 @@
 /* Defect markers */
 .db-defect-marker {
   position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  z-index: 15;
   transition: transform var(--duration);
 }
 
-.db-defect-marker:hover { transform: scale(1.3); }
+.db-defect-marker:hover {
+  transform: translate(-50%, -50%) scale(1.2);
+}
 
-.db-defect-marker--critical { background: var(--critical); }
-.db-defect-marker--major    { background: var(--major); }
-.db-defect-marker--minor    { background: var(--minor); }
+.db-defect-marker--selected {
+  transform: translate(-50%, -50%) scale(1.35);
+  z-index: 25;
+}
+
+.db-defect-marker__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 0.2s ease;
+}
+
+.db-defect-marker--selected .db-defect-marker__dot {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+  box-shadow: 0 0 12px #38bdf8;
+}
+
+.db-defect-marker__dot--critical { background: var(--critical); }
+.db-defect-marker__dot--major    { background: var(--major); }
+.db-defect-marker__dot--minor    { background: var(--minor); }
 
 .db-defect-marker__pulse {
   position: absolute;
-  width: 100%;
-  height: 100%;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   animation: pulse-ring 2.5s ease-out infinite;
+  z-index: 1;
 }
 
-.db-defect-marker--critical .db-defect-marker__pulse { background: var(--critical); }
-.db-defect-marker--major    .db-defect-marker__pulse { background: var(--major); }
-.db-defect-marker--minor    .db-defect-marker__pulse { background: var(--minor); }
+.db-defect-marker__pulse--critical { background: var(--critical); }
+.db-defect-marker__pulse--major    { background: var(--major); }
+.db-defect-marker__pulse--minor    { background: var(--minor); }
 
 @keyframes pulse-ring {
   0%   { transform: scale(1); opacity: 0.7; }
