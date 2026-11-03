@@ -128,12 +128,22 @@ router.get('/', async (req, res) => {
       return `$${params.length}`;
     }
 
+    // Filter by single detection ID (used by useDetection hook)
+    const targetId = req.query.id || req.query.detection_id;
+    if (targetId) {
+      if (!isValidUUID(targetId)) {
+        return res.status(400).json({ error: 'Invalid id: must be a valid UUID' });
+      }
+      conditions.push(`d.detection_id = ${addParam(targetId)}`);
+    }
+
     // session_id / inspection_id filter
-    if (session_id) {
-      if (!isValidUUID(session_id)) {
+    const activeSessionId = session_id || req.query.inspection_id;
+    if (activeSessionId) {
+      if (!isValidUUID(activeSessionId)) {
         return res.status(400).json({ error: 'Invalid session_id: must be a valid UUID' });
       }
-      conditions.push(`d.inspection_id = ${addParam(session_id)}`);
+      conditions.push(`d.inspection_id = ${addParam(activeSessionId)}`);
     }
 
     // Confidence range (always applied — defaults 0.0–1.0)
@@ -155,10 +165,16 @@ router.get('/', async (req, res) => {
       conditions.push(`d.verified_status = ${addParam(status)}`);
     }
 
-    // Class label (case-insensitive LIKE)
-    if (class_label) {
-      // Use ILIKE with a bound parameter — no direct interpolation
-      conditions.push(`d.class_label ILIKE ${addParam(`%${class_label}%`)}`);
+    // Class label / category (case-insensitive LIKE)
+    const filterClass = class_label || req.query.category;
+    if (filterClass) {
+      conditions.push(`d.class_label ILIKE ${addParam(`%${filterClass}%`)}`);
+    }
+
+    // Free text search (matches class_label or reviewer_notes)
+    if (req.query.search) {
+      const sParam = addParam(`%${req.query.search}%`);
+      conditions.push(`(d.class_label ILIKE ${sParam} OR COALESCE(d.reviewer_notes, '') ILIKE ${sParam})`);
     }
 
     // ── Assemble WHERE string ─────────────────────────────────────────────────
@@ -168,7 +184,9 @@ router.get('/', async (req, res) => {
 
     // ── COUNT query (same WHERE, no limit/offset) ─────────────────────────────
     const countSql = `
-      SELECT COUNT(*) AS total
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE d.confidence >= 0.75) AS critical_count
       FROM   detections d
       ${whereClause}
     `;
@@ -206,8 +224,9 @@ router.get('/', async (req, res) => {
       dbQuery(dataSql,  params),
     ]);
 
-    const total       = parseInt(countResult.rows[0].total, 10);
-    const total_pages = Math.ceil(total / limit);
+    const total          = parseInt(countResult.rows[0].total, 10);
+    const critical_count = parseInt(countResult.rows[0].critical_count || 0, 10);
+    const total_pages    = Math.ceil(total / limit);
 
     // ── Shape each row into the API response format ───────────────────────────
     const data = dataResult.rows.map((row) => ({
@@ -240,6 +259,8 @@ router.get('/', async (req, res) => {
       limit,
       total,
       total_pages,
+      critical_count,
+      criticalCount: critical_count,
       data,
     });
 

@@ -17,10 +17,12 @@
 const express = require('express');
 const router  = express.Router();
 const PDFDocument = require('pdfkit');
+const { isValidUUID } = require('../middleware/validate');
 
 let pool;
 try {
-  pool = require('../db/pool');
+  const db = require('../db/pool');
+  pool = db.pool || db;
 } catch (_) {
   pool = null;
 }
@@ -76,19 +78,38 @@ function demoPayload(inspectionId) {
 
 /** Fetch real data from Postgres; throws if DB unavailable. */
 async function fetchFromDb(inspectionId) {
+  if (!pool || typeof pool.connect !== 'function') return null;
+  if (!inspectionId || !isValidUUID(inspectionId)) return null;
   const client = await pool.connect();
   try {
     const inspRow = await client.query(
-      `SELECT id, section, rov, started_at, coverage_km, status
-       FROM inspections WHERE id = $1`,
+      `SELECT inspection_id AS id,
+              CONCAT(facility_name, ' (', tunnel_id, ')') AS section,
+              COALESCE(operator_name, 'ROV-01') AS rov,
+              start_time AS started_at,
+              total_chainage_m AS coverage_km,
+              CASE WHEN end_time IS NULL THEN 'in_progress' ELSE 'completed' END AS status
+       FROM inspections WHERE inspection_id = $1`,
       [inspectionId],
     );
     if (inspRow.rows.length === 0) return null;
 
     const detRows = await client.query(
-      `SELECT id, category, subtype, severity, confidence,
-              coord_z AS chainage, timestamp, review_status,
-              estimated_size, orientation
+      `SELECT detection_id AS id,
+              class_label AS category,
+              class_label AS subtype,
+              CASE
+                WHEN confidence >= 0.75 THEN 'Critical'
+                WHEN confidence >= 0.50 THEN 'Major'
+                WHEN confidence >= 0.35 THEN 'Minor'
+                ELSE 'Info'
+              END AS severity,
+              confidence,
+              coord_z AS chainage,
+              TO_CHAR(timestamp, 'HH24:MI:SS') AS timestamp,
+              verified_status AS review_status,
+              'N/A' AS estimated_size,
+              'N/A' AS orientation
        FROM detections WHERE inspection_id = $1
        ORDER BY coord_z ASC`,
       [inspectionId],
@@ -141,8 +162,9 @@ function buildCsv({ inspection, detections }) {
 
 // ─── PDF generator ───────────────────────────────────────────────────────────
 
-function streamPdf(res, { inspection, detections }) {
+function streamPdf(res, { inspection, detections = [] }) {
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  doc.pipe(res);
 
   const ts = new Date().toLocaleString('en-IN', {
     day: 'numeric', month: 'long', year: 'numeric',
@@ -209,41 +231,48 @@ function streamPdf(res, { inspection, detections }) {
   });
   doc.moveDown(0.5);
   doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke('#999999');
-  doc.moveDown(0.2);
+  doc.moveDown(0.4);
 
   // data rows
   doc.font('Helvetica').fontSize(8);
-  detections.forEach((d, idx) => {
-    // alternate row shading
-    const rowY = doc.y;
-    if (idx % 2 === 0) {
-      doc.rect(50, rowY - 2, 495, 14).fill('#f5f5f5').stroke('#f5f5f5');
-    }
+  if (!detections || detections.length === 0) {
+    doc.moveDown(0.3);
+    doc.fillColor('#666666').font('Helvetica-Oblique')
+       .text('No defect anomalies detected during this inspection session.', 50, doc.y);
+    doc.moveDown(1.5);
+  } else {
+    detections.forEach((d, idx) => {
+      // alternate row shading
+      const rowY = doc.y;
+      if (idx % 2 === 0) {
+        doc.rect(50, rowY - 2, 495, 14).fill('#f5f5f5').stroke('#f5f5f5');
+      }
 
-    const cells = [
-      d.id,
-      d.subtype || d.category,
-      d.severity,
-      `${Math.round((d.confidence || 0) * 100)}%`,
-      `${parseFloat(d.chainage || 0).toFixed(2)} km`,
-      d.timestamp || '—',
-      d.review_status || '—',
-    ];
+      const cells = [
+        d.id,
+        d.subtype || d.category,
+        d.severity,
+        `${Math.round((d.confidence || 0) * 100)}%`,
+        `${parseFloat(d.chainage || 0).toFixed(2)} km`,
+        d.timestamp || '—',
+        d.review_status || '—',
+      ];
 
-    startX = 50;
-    doc.fillColor('#222222');
-    cells.forEach((cell, i) => {
-      doc.text(cell, startX, rowY, { width: colWidths[i], lineBreak: false });
-      startX += colWidths[i];
+      startX = 50;
+      doc.fillColor('#222222');
+      cells.forEach((cell, i) => {
+        doc.text(cell, startX, rowY, { width: colWidths[i], lineBreak: false });
+        startX += colWidths[i];
+      });
+
+      doc.moveDown(0.7);
+
+      // page break guard
+      if (doc.y > 750 && idx < detections.length - 1) {
+        doc.addPage();
+      }
     });
-
-    doc.moveDown(0.7);
-
-    // page break guard
-    if (doc.y > 750 && idx < detections.length - 1) {
-      doc.addPage();
-    }
-  });
+  }
 
   // ── footer ──
   doc.moveDown(2);
@@ -277,7 +306,7 @@ router.post('/generate', async (req, res) => {
   try {
     let payload;
 
-    if (pool) {
+    if (pool && inspection_id && isValidUUID(inspection_id)) {
       // Try real DB first
       try {
         const dbResult = await fetchFromDb(inspection_id);
@@ -286,7 +315,7 @@ router.post('/generate', async (req, res) => {
         }
         payload = dbResult;
       } catch (dbErr) {
-        console.warn('[Reports] DB unavailable, falling back to demo data:', dbErr.message);
+        console.warn('[Reports] DB query failed, falling back to demo data:', dbErr.message);
         payload = demoPayload(inspection_id);
       }
     } else {
@@ -306,8 +335,7 @@ router.post('/generate', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="HRT_Report_${safeId}.pdf"`);
 
-    const doc = streamPdf(res, payload);
-    doc.pipe(res);
+    streamPdf(res, payload);
 
   } catch (err) {
     console.error('[Reports] Unexpected error:', err);

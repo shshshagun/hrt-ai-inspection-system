@@ -234,7 +234,6 @@ export default function LandingPage() {
     return () => cancelAnimationFrame(rafRef.current);
   }, [drawFrame, preload]);
 
-  const activePanel = panels.find(p => p.visible) || null;
 
   return (
     <div className="lp-root">

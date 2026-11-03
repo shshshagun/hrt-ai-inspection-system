@@ -104,6 +104,12 @@ const detectionValidationRules = [
   body('z')
     .isFloat()
     .withMessage('z (spatial coordinate) must be a float'),
+
+  // --- optional inspection_id ---
+  body('inspection_id')
+    .optional({ nullable: true })
+    .isUUID(4)
+    .withMessage('inspection_id must be a valid UUIDv4'),
 ];
 
 // ---------------------------------------------------------------------------
@@ -161,6 +167,7 @@ router.post(
       x,
       y,
       z,
+      inspection_id = null,
     } = req.body;
 
     const {
@@ -181,6 +188,7 @@ router.post(
     const SQL = `
       INSERT INTO detections (
         detection_id,
+        inspection_id,
         class_label,
         confidence,
         bbox_x1,
@@ -197,10 +205,10 @@ router.post(
         verified_status,
         created_at
       ) VALUES (
-        $1,  $2,  $3,
-        $4,  $5,  $6,  $7,  $8,  $9,
-        $10, $11,
-        $12, $13, $14,
+        $1,  $2,  $3,  $4,
+        $5,  $6,  $7,  $8,  $9,  $10,
+        $11, $12,
+        $13, $14, $15,
         'pending', NOW()
       )
       RETURNING detection_id, created_at;
@@ -208,19 +216,20 @@ router.post(
 
     const params = [
       detection_id,          // $1
-      class_label,           // $2
-      confidence,            // $3
-      bbox_x1,               // $4
-      bbox_y1,               // $5
-      bbox_x2,               // $6
-      bbox_y2,               // $7
-      bbox_width,            // $8  — nullable
-      bbox_height,           // $9  — nullable
-      frame_index,           // $10
-      timestamp,             // $11
-      x,                     // $12 — coord_x
-      y,                     // $13 — coord_y
-      z,                     // $14 — coord_z
+      inspection_id,         // $2  — nullable UUID
+      class_label,           // $3
+      confidence,            // $4
+      bbox_x1,               // $5
+      bbox_y1,               // $6
+      bbox_x2,               // $7
+      bbox_y2,               // $8
+      bbox_width,            // $9  — nullable
+      bbox_height,           // $10 — nullable
+      frame_index,           // $11
+      timestamp,             // $12
+      x,                     // $13 — coord_x
+      y,                     // $14 — coord_y
+      z,                     // $15 — coord_z
     ];
 
     try {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, ChevronUp, ChevronDown, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { Search, Filter, ChevronUp, ChevronDown, ArrowRight, Loader2 } from 'lucide-react';
 import { DEFECT_CATEGORIES, SEVERITY_LEVELS } from '../../data/mockData';
 import { useDetections } from '../../hooks/useApi';
 import './AIDetections.css';

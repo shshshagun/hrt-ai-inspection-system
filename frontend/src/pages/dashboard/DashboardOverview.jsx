@@ -10,7 +10,6 @@ import {
 import { useKpiSummary, useDetections, useDefectDistributions } from '../../hooks/useApi';
 import './DashboardOverview.css';
 
-const HOURS = ['08:00','10:00','12:00','14:00','16:00'];
 const ACTIVITY_DATA = [
   { time: '08:00', detections: 3 },
   { time: '10:00', detections: 7 },
