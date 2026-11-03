@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Box, ClipboardList, Video, Zap,
   MapPin, FileText, HardDrive, Settings, Menu, X, ChevronRight, Compass
 } from 'lucide-react';
+import ErrorBoundary from '../components/ErrorBoundary';
 import './DashboardLayout.css';
 
 const NAV_ITEMS = [
@@ -164,7 +165,9 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <main className="db-content">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>
