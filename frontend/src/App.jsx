@@ -24,12 +24,20 @@ export default function App() {
 
         {/* Immersive 3D Digital Twin Rover Simulator */}
         <Route path="/tunnel-twin" element={<TunnelTwin />} />
+        <Route path="/twin" element={<TunnelTwin />} />
+
+        {/* Route aliases for navigation consistency */}
+        <Route path="/inspection" element={<Navigate to="/dashboard/inspections/videos" replace />} />
+        <Route path="/analytics" element={<Navigate to="/dashboard/tunnel" replace />} />
+        <Route path="/reports" element={<Navigate to="/dashboard/reports" replace />} />
 
         {/* Dashboard — all nested under DashboardLayout */}
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<DashboardOverview />} />
           <Route path="tunnel" element={<TunnelView />} />
           <Route path="tunnel-twin" element={<TunnelTwin />} />
+          <Route path="twin" element={<TunnelTwin />} />
+          <Route path="analytics" element={<TunnelView />} />
           <Route path="inspections" element={<Inspections />} />
           <Route path="inspections/videos" element={<InspectionVideos />} />
           <Route path="detections" element={<AIDetections />} />
