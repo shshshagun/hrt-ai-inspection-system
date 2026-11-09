@@ -32,9 +32,11 @@ function zeroPad(n, width) {
 
 function frameUrl(manifest, frameIdx) {
   if (!manifest) return '';
-  const pad  = manifest.pad  ?? 4;
-  const ext  = manifest.ext  ?? 'webp';
-  return `${FRAME_BASE}frame_${zeroPad(frameIdx, pad)}.${ext}`;
+  const pad   = manifest.pad  ?? 4;
+  const ext   = manifest.ext  ?? 'webp';
+  const total = manifest.frameCount || 192;
+  const n     = Math.max(1, Math.min(total, frameIdx + 1));
+  return `${FRAME_BASE}frame_${zeroPad(n, pad)}.${ext}`;
 }
 
 function formatTime(seconds) {
@@ -147,7 +149,8 @@ export default function InspectionVideos() {
 
   function handleDetClick(det) {
     stopPlayback();
-    const fi = det.frameIndex ?? det.frame_index ?? 0;
+    const rawFi = det.frameIndex ?? det.frame_index ?? 0;
+    const fi = rawFi >= totalFrames ? (rawFi % totalFrames) : Math.max(0, Math.min(totalFrames - 1, rawFi));
     setFrameIdx(fi);
     setSelectedDet(det === selectedDet ? null : det);
   }
@@ -323,7 +326,8 @@ export default function InspectionVideos() {
               >
                 {/* detection markers on the timeline */}
                 {detections.map(d => {
-                  const fi  = d.frameIndex ?? d.frame_index ?? 0;
+                  const rawFi = d.frameIndex ?? d.frame_index ?? 0;
+                  const fi  = rawFi >= totalFrames ? (rawFi % totalFrames) : rawFi;
                   const pct = totalFrames > 1 ? (fi / (totalFrames - 1)) * 100 : 0;
                   const col = d.severity === 'Critical' ? 'var(--critical)'
                             : d.severity === 'Major'    ? 'var(--major)'
