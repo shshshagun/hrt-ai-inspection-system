@@ -13,9 +13,11 @@ Features:
 
 import argparse
 import csv
+import shutil
 import time
 import cv2
 import numpy as np
+import torch
 from pathlib import Path
 from ultralytics import YOLO
 
@@ -140,8 +142,14 @@ def run_inference(
     pixel_pitch: float,
     show: bool,
     api_url: str = None,
+    save_txt: bool = False,
+    save_csv: bool = False,
+    device: str = None,
 ):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if device is None:
+        device = "0" if torch.cuda.is_available() else "cpu"
+
     quantifier = PhysicalCrackQuantifier(
         focal_length_mm=focal_length,
         distance_mm=distance,
@@ -163,14 +171,22 @@ def run_inference(
     print(f"  Focal Length : {focal_length} mm")
     print(f"  Distance     : {distance} mm")
     print(f"  Pixel Pitch  : {pixel_pitch} mm")
+    print(f"  Device       : {device}")
     if api_url:
         print(f"  API Ingestion: {api_url}")
     print("=" * 60)
     print("=" * 60)
 
     model = YOLO(weights)
-    stream_src = int(source) if source.isdigit() else source
+    stream_src = int(source) if str(source).isdigit() else source
     cap = cv2.VideoCapture(stream_src)
+
+    if not cap.isOpened() and str(source) == "0":
+        fallback_video = ROOT / "runs" / "predict" / "annotated_inspection.mp4"
+        if fallback_video.exists():
+            print(f"[!] Webcam '0' not available. Falling back cleanly to sample video: {fallback_video}")
+            stream_src = str(fallback_video)
+            cap = cv2.VideoCapture(stream_src)
 
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video stream or source: {source}")
@@ -182,9 +198,19 @@ def run_inference(
     out_video_path = OUTPUT_DIR / "annotated_inspection.mp4"
     out_csv_path = OUTPUT_DIR / "frame_telemetry.csv"
 
+    # Avoid in-place read/write collision if stream_src resolves to out_video_path
+    is_same_file = False
+    try:
+        if not str(stream_src).isdigit() and Path(stream_src).is_file() and Path(stream_src).resolve() == out_video_path.resolve():
+            is_same_file = True
+    except Exception:
+        pass
+
+    writer_target = OUTPUT_DIR / "temp_annotated.mp4" if is_same_file else out_video_path
+
     # Synchronized Video Export
     writer = cv2.VideoWriter(
-        str(out_video_path),
+        str(writer_target),
         cv2.VideoWriter_fourcc(*"mp4v"),
         fps,
         (frame_w, frame_h),
@@ -220,7 +246,7 @@ def run_inference(
         frame_count += 1
         curr_ts = round(time.time(), 3)
 
-        results = model.predict(frame, conf=conf_thresh, verbose=False, device=model.device)[0]
+        results = model.predict(frame, conf=conf_thresh, verbose=False, device=device)[0]
         for box in results.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
             conf = float(box.conf[0])
@@ -230,6 +256,17 @@ def run_inference(
             # Bounding box sub-image crop
             crop = frame[max(0, y1) : min(frame_h, y2), max(0, x1) : min(frame_w, x2)]
             length_mm, width_mm = quantifier.measure_crop(crop)
+
+            if save_txt:
+                labels_dir = OUTPUT_DIR / "labels"
+                labels_dir.mkdir(parents=True, exist_ok=True)
+                txt_path = labels_dir / f"frame_{frame_count:04d}.txt"
+                norm_x = ((x1 + x2) / 2.0) / frame_w if frame_w > 0 else 0.0
+                norm_y = ((y1 + y2) / 2.0) / frame_h if frame_h > 0 else 0.0
+                norm_w = (x2 - x1) / frame_w if frame_w > 0 else 0.0
+                norm_h = (y2 - y1) / frame_h if frame_h > 0 else 0.0
+                with open(txt_path, "a", encoding="utf-8") as tf:
+                    tf.write(f"{cls_id} {norm_x:.6f} {norm_y:.6f} {norm_w:.6f} {norm_h:.6f} {conf:.4f}\n")
 
             # Draw Neon-Green Bounding Box
             cv2.rectangle(frame, (x1, y1), (x2, y2), neon_green, 2)
@@ -292,6 +329,8 @@ def run_inference(
     cap.release()
     writer.release()
     csv_file.close()
+    if is_same_file and writer_target.exists():
+        shutil.move(str(writer_target), str(out_video_path))
     if show:
         cv2.destroyAllWindows()
 
@@ -316,12 +355,21 @@ def parse_args():
     p.add_argument("--distance", type=float, default=1000.0, help="Distance to target wall in mm")
     p.add_argument("--pixel-pitch", type=float, default=0.00345, help="Sensor pixel pitch in mm/px")
     p.add_argument("--api-url", default=None, help="Backend REST API ingestion URL (e.g. http://localhost:3000/api/detections)")
+    p.add_argument("--no-api", action="store_true", help="Disable API streaming")
+    p.add_argument("--save-txt", action="store_true", help="Save detection results to text file")
+    p.add_argument("--save-csv", action="store_true", help="Save results to CSV file")
+    p.add_argument(
+        "--device",
+        default="0" if torch.cuda.is_available() else "cpu",
+        help="Hardware device to run inference on ('0' or 'cpu')",
+    )
     p.add_argument("--show", action="store_true", help="Display stream window")
     return p.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
+    api_url = None if args.no_api else args.api_url
     run_inference(
         source=args.source,
         weights=args.weights,
@@ -330,5 +378,8 @@ if __name__ == "__main__":
         distance=args.distance,
         pixel_pitch=args.pixel_pitch,
         show=args.show,
-        api_url=args.api_url,
+        api_url=api_url,
+        save_txt=args.save_txt,
+        save_csv=args.save_csv,
+        device=args.device,
     )
