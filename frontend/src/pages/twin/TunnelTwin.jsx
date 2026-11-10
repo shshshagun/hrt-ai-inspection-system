@@ -142,7 +142,6 @@ export default function TunnelTwin() {
 
   const [loading, setLoading] = useState(true);
   const [cracksData, setCracksData] = useState([]);
-  const [dataError, setDataError] = useState(null);
   const [selectedCrack, setSelectedCrack] = useState(null);
 
   // Mirror selectedCrack in a ref so the rAF loop reads it without stale closure

@@ -131,15 +131,147 @@ app.get('/api/detections', async (req, res) => {
   }
 
   try {
+    const { inspection_id, severity, limit = 100 } = req.query;
+    const filter = {};
+    if (inspection_id) filter.inspection_id = inspection_id;
+    if (severity && severity !== 'All') filter.severity = severity;
+
     const detections = await db.collection('detections')
-      .find({})
+      .find(filter)
       .sort({ timestamp: -1 })
-      .limit(100)
+      .limit(parseInt(limit, 10) || 100)
       .toArray();
       
     res.json(detections);
   } catch (error) {
     console.error("Error fetching detections:", error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// ── GET /api/detections/:id ──
+// Returns a single detection by MongoDB _id or string ID
+app.get('/api/detections/:id', async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not initialized or unreachable' });
+  }
+
+  try {
+    const { id } = req.params;
+    let query;
+    try {
+      const { ObjectId } = require('mongodb');
+      query = { $or: [{ _id: new ObjectId(id) }, { id }, { detection_id: id }] };
+    } catch {
+      query = { $or: [{ id }, { detection_id: id }] };
+    }
+
+    const detection = await db.collection('detections').findOne(query);
+    if (!detection) {
+      return res.status(404).json({ error: `Detection ${id} not found` });
+    }
+    res.json(detection);
+  } catch (error) {
+    console.error("Error fetching detection:", error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// ── GET /api/inspections ──
+// Aggregates distinct inspections from live MongoDB detections
+app.get('/api/inspections', async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not initialized or unreachable' });
+  }
+
+  try {
+    const pipeline = [
+      {
+        $group: {
+          _id: "$inspection_id",
+          totalDetections: { $sum: 1 },
+          criticalCount: {
+            $sum: {
+              $cond: [
+                { $or: [{ $eq: ["$severity", "Critical"] }, { $gte: ["$confidence", 0.85] }] },
+                1,
+                0
+              ]
+            }
+          },
+          startTime: { $min: "$timestamp" },
+          endTime: { $max: "$timestamp" },
+          minZ: { $min: "$z" },
+          maxZ: { $max: "$z" }
+        }
+      },
+      { $sort: { startTime: -1 } }
+    ];
+
+    const results = await db.collection('detections').aggregate(pipeline).toArray();
+    const inspections = results.map((r, idx) => {
+      const inspId = r._id || `INSP-LIVE-${idx + 1}`;
+      const coverage = Math.max(0.1, Number((( (r.maxZ || 0) - (r.minZ || 0) ) / 1000).toFixed(2)) || 0.1);
+      return {
+        id: inspId,
+        inspection_id: inspId,
+        label: `ROV Subsea Survey — ${inspId}`,
+        date: r.startTime ? new Date(r.startTime).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+        rov: 'Subsea Phantom ROV v4',
+        coverageKm: coverage,
+        totalDetections: r.totalDetections,
+        criticalCount: r.criticalCount,
+        status: 'completed'
+      };
+    });
+
+    res.json(inspections);
+  } catch (error) {
+    console.error("Error fetching inspections:", error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// ── GET /api/spatial-summary ──
+// Computes chainage-binned spatial risk analytics from live MongoDB detections
+app.get('/api/spatial-summary', async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not initialized or unreachable' });
+  }
+
+  try {
+    const interval_m = Math.max(5, Math.min(50, parseInt(req.query.interval_m || req.query.interval, 10) || 10));
+    const detections = await db.collection('detections').find({}).toArray();
+
+    const binMap = new Map();
+    for (const d of detections) {
+      const z = Number(d.z || d.chainage_z || 0);
+      const binStart = Math.floor(z / interval_m) * interval_m;
+      const binKey = `${binStart}-${binStart + interval_m}`;
+
+      if (!binMap.has(binKey)) {
+        binMap.set(binKey, {
+          bin_start_m: binStart,
+          bin_end_m: binStart + interval_m,
+          defect_count: 0,
+          critical_count: 0,
+          major_count: 0,
+          minor_count: 0
+        });
+      }
+
+      const bin = binMap.get(binKey);
+      bin.defect_count++;
+      const sev = d.severity || (d.confidence >= 0.85 ? 'Critical' : 'Major');
+      if (sev === 'Critical') bin.critical_count++;
+      else if (sev === 'Major') bin.major_count++;
+      else bin.minor_count++;
+    }
+
+    const bins = Array.from(binMap.values()).sort((a, b) => a.bin_start_m - b.bin_start_m);
+    res.json({ interval_m, total_bins: bins.length, bins });
+  } catch (error) {
+    console.error("Error generating spatial summary:", error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
