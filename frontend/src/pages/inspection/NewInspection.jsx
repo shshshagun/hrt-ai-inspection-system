@@ -17,6 +17,9 @@ import {
   Video,
   Film,
   BookmarkPlus,
+  Images,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 import { API_BASE, resolveInferApi } from '../../config/api';
 import { detectVideoFrame, getYoloSession } from '../../utils/yoloBrowserInference';
@@ -62,7 +65,7 @@ function waitForSeek(videoEl, targetTime) {
 export default function NewInspection() {
   const navigate = useNavigate();
 
-  // Mode switcher: 'upload' | 'webcam'
+  // Mode switcher: 'upload' | 'webcam' | 'photo'
   const [sourceMode, setSourceMode] = useState('upload');
 
   // File & video playback state
@@ -72,6 +75,12 @@ export default function NewInspection() {
   const [dragging, setDragging] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
 
+  // Photo batch state
+  const [photoQueue, setPhotoQueue] = useState([]);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  const [processingIndex, setProcessingIndex] = useState(-1);
+  const [photoDragging, setPhotoDragging] = useState(false);
+
   // Webcam state
   const [webcamStream, setWebcamStream] = useState(null);
   const [webcamError, setWebcamError] = useState(null);
@@ -79,7 +88,7 @@ export default function NewInspection() {
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [webcamScanning, setWebcamScanning] = useState(false);
 
-  // Inspection runtime state (shared across upload & webcam)
+  // Inspection runtime state (shared across upload, photo & webcam)
   const [status, setStatus] = useState('idle'); // idle | analyzing | complete | error
   const [engineMsg, setEngineMsg] = useState('Ready — YOLOv8n-seg IN-BROWSER ONNX + MongoDB Atlas Gateway');
   const [dbError, setDbError] = useState(null);
@@ -94,11 +103,24 @@ export default function NewInspection() {
   const videoRef = useRef(null);
   const webcamVideoRef = useRef(null);
   const fileInputRef = useRef(null);
+  const photoFileInputRef = useRef(null);
+  const photoAbortRef = useRef(false);
+  const createdObjectUrlsRef = useRef(new Set());
   const sseRef = useRef(null);
   const abortRef = useRef(false);
   const webcamRunningRef = useRef(false);
   const webcamStreamRef = useRef(null);
   const trackerRef = useRef(null);
+
+  /* ── Revoke a tracked photo object URL ── */
+  const revokePhotoUrl = useCallback((url) => {
+    if (url && createdObjectUrlsRef.current.has(url)) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+      createdObjectUrlsRef.current.delete(url);
+    }
+  }, []);
 
   /* ── Stop hardware webcam tracks cleanly ── */
   const stopWebcamHardware = useCallback(() => {
@@ -114,16 +136,24 @@ export default function NewInspection() {
     }
   }, []);
 
-  // Pre-warm Render MongoDB Gateway & guarantee hardware release on unmount
+  // Pre-warm Render MongoDB Gateway & guarantee hardware/URL release on unmount
   useEffect(() => {
     fetch(`${API_BASE}/health`).catch(() => {});
+    const objectUrls = createdObjectUrlsRef.current;
     return () => {
       abortRef.current = true;
+      photoAbortRef.current = true;
       webcamRunningRef.current = false;
       if (sseRef.current) sseRef.current.close();
       if (webcamStreamRef.current) {
         webcamStreamRef.current.getTracks().forEach((t) => t.stop());
       }
+      objectUrls.forEach((url) => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      });
+      objectUrls.clear();
     };
   }, []);
 
@@ -156,6 +186,7 @@ export default function NewInspection() {
       severity: det.severity,
       crack_width_mm: det.width_mm || 2.5,
       crack_length_mm: det.height_mm || 150.0,
+      crack_area_mm2: det.area_mm2 || null,
       frame_index: det.frame_index ?? 0,
       video_time: det.video_time ?? 0,
       video_name: sourceLabel || null,
@@ -177,9 +208,10 @@ export default function NewInspection() {
           body: JSON.stringify(payload),
         });
         if (res.ok) {
+          const savedData = await res.json().catch(() => null);
           setSyncedToDb((prev) => prev + 1);
           setDbError(null);
-          return true;
+          return savedData || true;
         }
         const errBody = await res.text();
         if (attempt === 3) {
@@ -200,6 +232,7 @@ export default function NewInspection() {
     (nextMode) => {
       if (nextMode === sourceMode) return;
       abortRef.current = true;
+      photoAbortRef.current = true;
       if (sseRef.current) {
         sseRef.current.close();
         sseRef.current = null;
@@ -216,11 +249,22 @@ export default function NewInspection() {
       setSyncedToDb(0);
       setDbError(null);
       setWebcamError(null);
-      setJobId(nextMode === 'webcam' ? makeSessionId('CAM') : null);
+      setProcessingIndex(-1);
+
+      const newJobId =
+        nextMode === 'webcam'
+          ? makeSessionId('CAM')
+          : nextMode === 'photo'
+            ? makeSessionId('PHOTO')
+            : null;
+      setJobId(newJobId);
+
       setEngineMsg(
         nextMode === 'webcam'
           ? 'Live Camera ready — enable webcam to detect cracks on photos or video'
-          : 'Ready — YOLOv8n-seg IN-BROWSER ONNX + MongoDB Atlas Gateway'
+          : nextMode === 'photo'
+            ? 'Photo Batch ready — upload JPG, PNG, or WebP crack photos to begin inference'
+            : 'Ready — YOLOv8n-seg IN-BROWSER ONNX + MongoDB Atlas Gateway'
       );
     },
     [sourceMode, stopWebcamHardware]
@@ -472,6 +516,341 @@ export default function NewInspection() {
     [handleSelectFile]
   );
 
+  /* ── Photo Batch File Selection & Ingestion ── */
+  const handleSelectPhotoFiles = useCallback((fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const rawFiles = Array.from(fileList);
+    const validMimes = ['image/jpeg', 'image/png', 'image/webp'];
+    const validExts = /\.(jpe?g|png|webp)$/i;
+
+    const accepted = [];
+    let rejected = 0;
+
+    for (const f of rawFiles) {
+      if (validMimes.includes(f.type) || validExts.test(f.name)) {
+        accepted.push(f);
+      } else {
+        rejected++;
+      }
+    }
+
+    if (rejected > 0) {
+      setEngineMsg(`Skipped ${rejected} non-image file(s). Supported formats: JPG, PNG, WebP.`);
+    }
+
+    if (accepted.length === 0) return;
+
+    const newItems = accepted.map((f, idx) => {
+      const url = URL.createObjectURL(f);
+      createdObjectUrlsRef.current.add(url);
+      return {
+        id: `photo-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+        file: f,
+        name: f.name,
+        size: f.size,
+        previewUrl: url,
+        status: 'queued', // queued | processing | completed | error
+        detections: [],
+        error: null,
+        chainageZ: 0,
+        dims: null,
+      };
+    });
+
+    setPhotoQueue((prev) => {
+      const combined = [...prev, ...newItems];
+      return combined.map((item, i) => ({
+        ...item,
+        chainageZ: Number((i * 2.5).toFixed(2)),
+      }));
+    });
+
+    setJobId((prev) => (prev && prev.startsWith('PHOTO-') ? prev : makeSessionId('PHOTO')));
+    setStatus('idle');
+    setEngineMsg(`Loaded ${accepted.length} photo(s) into queue — ready for batch detection`);
+  }, []);
+
+  const handlePhotoDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      setPhotoDragging(false);
+      if (e.dataTransfer.files?.length) {
+        handleSelectPhotoFiles(e.dataTransfer.files);
+      }
+    },
+    [handleSelectPhotoFiles]
+  );
+
+  const handleRemovePhoto = useCallback(
+    (e, photoIndex) => {
+      e.stopPropagation();
+      const targetPhoto = photoQueue[photoIndex];
+      if (targetPhoto) {
+        if (targetPhoto.previewUrl) revokePhotoUrl(targetPhoto.previewUrl);
+        // Remove detections by unique immutable photoId instead of stale photoIndex
+        setDetections((prev) => prev.filter((d) => d.photoId !== targetPhoto.id));
+        // Decrement syncedToDb if photo had persisted defects
+        const persistedCount = targetPhoto.detections?.filter((d) => d.persisted)?.length || 0;
+        if (persistedCount > 0) {
+          setSyncedToDb((prev) => Math.max(0, prev - persistedCount));
+        }
+      }
+
+      setPhotoQueue((prev) => {
+        const updated = prev.filter((_, idx) => idx !== photoIndex);
+        return updated.map((item, i) => ({
+          ...item,
+          chainageZ: Number((i * 2.5).toFixed(2)),
+        }));
+      });
+
+      setSelectedPhotoIndex((prev) => {
+        if (prev >= photoIndex) return Math.max(0, prev - 1);
+        return prev;
+      });
+
+      setActiveOverlays([]);
+    },
+    [photoQueue, revokePhotoUrl]
+  );
+
+  const handleClearPhotoBatch = useCallback(() => {
+    photoAbortRef.current = true;
+    photoQueue.forEach((p) => {
+      if (p.previewUrl) revokePhotoUrl(p.previewUrl);
+    });
+    setPhotoQueue([]);
+    setSelectedPhotoIndex(0);
+    setProcessingIndex(-1);
+    setStatus('idle');
+    setProgress(0);
+    setDetections([]);
+    setActiveOverlays([]);
+    setSyncedToDb(0);
+    setJobId(makeSessionId('PHOTO'));
+    setEngineMsg('Photo queue cleared — upload JPG, PNG, or WebP crack photos to begin');
+  }, [photoQueue, revokePhotoUrl]);
+
+  const handleSelectPhotoThumbnail = useCallback(
+    (index) => {
+      setSelectedPhotoIndex(index);
+      const photo = photoQueue[index];
+      if (photo?.dims) {
+        setVideoDims({
+          width: photo.dims.width,
+          height: photo.dims.height,
+          duration: 0,
+        });
+      }
+      if (photo?.detections?.length > 0) {
+        setActiveOverlays(photo.detections);
+      } else {
+        setActiveOverlays([]);
+      }
+    },
+    [photoQueue]
+  );
+
+  /* ── Execute Sequential YOLOv8n-seg Detection on Photo Batch ── */
+  const handleStartPhotoBatch = useCallback(async () => {
+    if (photoQueue.length === 0 || status === 'analyzing') return;
+
+    photoAbortRef.current = false;
+    const inspId = jobId && jobId.startsWith('PHOTO-') ? jobId : makeSessionId('PHOTO');
+    setJobId(inspId);
+    setStatus('analyzing');
+    setProgress(0);
+    setDbError(null);
+
+    try {
+      await getYoloSession((msg) => setEngineMsg(msg));
+      if (photoAbortRef.current) return;
+
+      const total = photoQueue.length;
+      setTotalFrames(total);
+      let allHits = [];
+
+      for (let i = 0; i < total; i++) {
+        if (photoAbortRef.current) break;
+
+        const item = photoQueue[i];
+        setProcessingIndex(i);
+        setSelectedPhotoIndex(i);
+        setCurrentFrame(i + 1);
+        setEngineMsg(`Analyzing photo [${i + 1}/${total}]: ${item.name}…`);
+
+        setPhotoQueue((prev) =>
+          prev.map((p, idx) => (idx === i ? { ...p, status: 'processing', error: null } : p))
+        );
+
+        try {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = item.previewUrl;
+          await new Promise((resolve, reject) => {
+            if (img.complete && img.naturalWidth > 0) resolve();
+            else {
+              img.onload = () => resolve();
+              img.onerror = () => reject(new Error(`Failed to decode photo "${item.name}"`));
+            }
+          });
+
+          if ('decode' in img) {
+            try {
+              await img.decode();
+            } catch {
+              // Non-fatal if decode fails in headless/offscreen
+            }
+          }
+
+          if (photoAbortRef.current) break;
+
+          const naturalW = img.naturalWidth || 1280;
+          const naturalH = img.naturalHeight || 720;
+          setVideoDims({
+            width: naturalW,
+            height: naturalH,
+            duration: 0,
+          });
+
+          const chainageZ = item.chainageZ ?? Number((i * 2.5).toFixed(2));
+          const { detections: frameHits, snapshotUrl } = await detectVideoFrame(img, {
+            frameIndex: i + 1,
+            videoTime: 0,
+            chainageZ,
+            confThreshold: 0.22,
+            tiled: true,
+          });
+
+          if (photoAbortRef.current) break;
+
+          const enrichedHits = frameHits.map((hit, hIdx) => ({
+            ...hit,
+            localId: `PHOTO-${i + 1}-DET-${hIdx + 1}`,
+            photoId: item.id,
+            photoName: item.name,
+            photoIndex: i,
+            chainage_z: chainageZ,
+            image_url: hit.image_url || snapshotUrl || item.previewUrl,
+          }));
+
+          const persistedHits = [];
+          for (const hit of enrichedHits) {
+            const saved = await persistToGateway(hit, inspId, item.name);
+            persistedHits.push({
+              ...hit,
+              persisted: !!saved,
+              dbId: typeof saved === 'object' && saved?._id ? String(saved._id) : null,
+            });
+          }
+
+          setPhotoQueue((prev) =>
+            prev.map((p, idx) =>
+              idx === i
+                ? {
+                    ...p,
+                    status: 'completed',
+                    detections: persistedHits,
+                    dims: { width: naturalW, height: naturalH },
+                  }
+                : p
+            )
+          );
+
+          setActiveOverlays(persistedHits);
+          allHits = [...allHits, ...persistedHits];
+          setDetections(allHits);
+        } catch (itemErr) {
+          console.error(`Error analyzing photo ${item.name}:`, itemErr);
+          setPhotoQueue((prev) =>
+            prev.map((p, idx) =>
+              idx === i ? { ...p, status: 'error', error: itemErr.message } : p
+            )
+          );
+        }
+
+        setProgress(Math.round(((i + 1) / total) * 100));
+        await new Promise((r) => setTimeout(r, 60));
+      }
+
+      setProcessingIndex(-1);
+      if (!photoAbortRef.current) {
+        setStatus('complete');
+        setEngineMsg(
+          `Photo batch complete — ${allHits.length} defect(s) detected across ${total} photo(s)`
+        );
+      } else {
+        setStatus('complete');
+        setEngineMsg(`Photo batch paused — ${allHits.length} defect(s) logged`);
+      }
+    } catch (err) {
+      setProcessingIndex(-1);
+      setStatus('error');
+      setEngineMsg(`Batch analysis error: ${err.message}`);
+    }
+  }, [photoQueue, status, jobId, persistToGateway]);
+
+  /* ── Stop Photo Batch Scan ── */
+  const handleStopPhotoBatch = useCallback(() => {
+    photoAbortRef.current = true;
+    setProcessingIndex(-1);
+    setStatus('complete');
+    setEngineMsg('Photo batch analysis stopped');
+  }, []);
+
+  /* ── Dismiss a defect (false positive removal) ── */
+  const handleDismissDefect = useCallback(async (detToDismiss) => {
+    const targetId = detToDismiss.localId || detToDismiss._id || detToDismiss.id;
+
+    // 1. Remove from detections list
+    setDetections((prev) => prev.filter((d) => (d.localId || d._id || d.id) !== targetId));
+
+    // 2. Remove from active overlays
+    setActiveOverlays((prev) => prev.filter((d) => (d.localId || d._id || d.id) !== targetId));
+
+    // 3. Remove from photoQueue item detections
+    if (detToDismiss.photoId) {
+      setPhotoQueue((prev) =>
+        prev.map((item) =>
+          item.id === detToDismiss.photoId
+            ? {
+                ...item,
+                detections: (item.detections || []).filter(
+                  (d) => (d.localId || d._id || d.id) !== targetId
+                ),
+              }
+            : item
+        )
+      );
+    }
+
+    // 4. If persisted to MongoDB, issue background delete
+    const dbKey = detToDismiss.dbId || detToDismiss._id;
+    if (dbKey) {
+      try {
+        await fetch(`${API_BASE}/api/detections/${encodeURIComponent(dbKey)}`, {
+          method: 'DELETE',
+        });
+        setSyncedToDb((prev) => Math.max(0, prev - 1));
+      } catch {
+        // Non-blocking cleanup
+      }
+    }
+  }, []);
+
+  /* ── Explicit Save / Commit of Verified Photo Batch Session ── */
+  const handleSavePhotoSession = useCallback(async () => {
+    if (detections.length === 0) return;
+    const inspId = jobId || makeSessionId('PHOTO');
+    setEngineMsg(`Committing ${detections.length} verified defect(s) to session ${inspId}…`);
+    for (const det of detections) {
+      if (!det.persisted) {
+        await persistToGateway(det, inspId, det.photoName || det.video_name || 'photo_batch');
+      }
+    }
+    setEngineMsg(`Session ${inspId} saved with ${detections.length} verified defect(s) in MongoDB Atlas`);
+  }, [detections, jobId, persistToGateway]);
+
   /* ── Execute Real YOLOv8 Inspection on Uploaded Video ── */
   const handleStartInspection = useCallback(async () => {
     if (!file || !videoRef.current) return;
@@ -629,9 +1008,25 @@ export default function NewInspection() {
     setEngineMsg('Scan stopped — unique tracked defects persisted');
   }, []);
 
-  /* ── Jump uploaded video or highlight bounding box from manifest click ── */
+  /* ── Jump uploaded video or select photo and highlight bounding box from manifest click ── */
   const handleInspectDefect = useCallback(
     (det) => {
+      if (sourceMode === 'photo') {
+        const photoIdx = photoQueue.findIndex((p) => p.id === det.photoId);
+        if (photoIdx !== -1) {
+          setSelectedPhotoIndex(photoIdx);
+          const photo = photoQueue[photoIdx];
+          if (photo?.dims) {
+            setVideoDims({
+              width: photo.dims.width,
+              height: photo.dims.height,
+              duration: 0,
+            });
+          }
+          setActiveOverlays(photo?.detections?.length > 0 ? photo.detections : [det]);
+          return;
+        }
+      }
       if (sourceMode === 'upload' && videoRef.current && det.video_time != null) {
         videoRef.current.pause();
         videoRef.current.currentTime = det.video_time;
@@ -642,7 +1037,7 @@ export default function NewInspection() {
       );
       setActiveOverlays(coLocated.length > 0 ? coLocated : [det]);
     },
-    [detections, sourceMode]
+    [detections, sourceMode, photoQueue]
   );
 
   /* ── Download JSON Inspection Audit Report ── */
@@ -650,15 +1045,26 @@ export default function NewInspection() {
     const reportData = {
       system: 'HRT Subsea AI Inspection System',
       model: 'YOLOv8n-seg (ONNX Web Runtime) + Laplacian Spall Analyzer',
-      mode: sourceMode === 'webcam' ? 'Live Webcam Feed' : 'Video Upload Scan',
+      mode:
+        sourceMode === 'webcam'
+          ? 'Live Webcam Feed'
+          : sourceMode === 'photo'
+            ? 'Photo Batch Upload'
+            : 'Video Upload Scan',
       inspectionId: jobId || 'INSP-MANUAL',
       timestamp: new Date().toISOString(),
-      sourceMedia: sourceMode === 'webcam' ? `Live Camera (${jobId})` : file?.name || 'uploaded_video.mp4',
+      sourceMedia:
+        sourceMode === 'webcam'
+          ? `Live Camera (${jobId})`
+          : sourceMode === 'photo'
+            ? `Batch of ${photoQueue.length} photo(s)`
+            : file?.name || 'uploaded_video.mp4',
       summary: {
         totalDefects: detections.length,
         critical: detections.filter((d) => d.severity === 'Critical').length,
         major: detections.filter((d) => d.severity === 'Major').length,
         minor: detections.filter((d) => d.severity === 'Minor').length,
+        photosProcessed: sourceMode === 'photo' ? photoQueue.length : undefined,
       },
       defectManifest: detections.map(({ image_url: _img, ...rest }) => rest),
     };
@@ -670,17 +1076,21 @@ export default function NewInspection() {
     link.download = `HRT_Inspection_Report_${jobId || 'Bore'}.json`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [detections, file, jobId, sourceMode]);
+  }, [detections, file, jobId, photoQueue.length, sourceMode]);
 
   const criticalCount = useMemo(
     () => detections.filter((d) => d.severity === 'Critical').length,
     [detections]
   );
 
-  const currentChainage = useMemo(
-    () => (currentTime * (sourceMode === 'webcam' ? 0.4 : 1.6)).toFixed(1),
-    [currentTime, sourceMode]
-  );
+  const currentPhoto = photoQueue[selectedPhotoIndex] || null;
+
+  const currentChainage = useMemo(() => {
+    if (sourceMode === 'photo') {
+      return (photoQueue[selectedPhotoIndex]?.chainageZ ?? 0).toFixed(1);
+    }
+    return (currentTime * (sourceMode === 'webcam' ? 0.4 : 1.6)).toFixed(1);
+  }, [currentTime, sourceMode, photoQueue, selectedPhotoIndex]);
 
   const videoAspect = videoDims.width / Math.max(1, videoDims.height);
   const stageStyle =
@@ -715,7 +1125,9 @@ export default function NewInspection() {
             </span>
           </div>
           <span className="insp-reticle-metric">
-            {det.width_mm}×{det.height_mm}mm · {det.clock_pos.split(' ')[0]} {det.clock_pos.split(' ')[1]}
+            {det.width_mm}×{det.height_mm}mm
+            {det.area_mm2 > 0 ? ` · ${det.area_mm2}mm²` : ''}
+            {det.clock_pos ? ` · ${det.clock_pos.split(' ')[0]} ${det.clock_pos.split(' ')[1] || ''}` : ''}
           </span>
         </div>
       );
@@ -730,9 +1142,9 @@ export default function NewInspection() {
             <span className="insp-status-badge__dot" />
             <span className="insp-status-badge__text">YOLOv8n-seg ONNX VISION · LIVE</span>
           </div>
-          <h1 className="insp-console__title">Concrete Inspection & Live Camera Detection</h1>
+          <h1 className="insp-console__title">Concrete Inspection & AI Crack Detection</h1>
           <p className="insp-console__desc">
-            Upload tunnel footage or use a live webcam feed to show cracks directly from an image or video, track unique anomalies, and log them into a dedicated MongoDB Atlas session.
+            Upload tunnel footage, inspect batches of still photos, or use a live webcam feed to detect cracks, compute surface area in mm², review findings, and log them into MongoDB Atlas.
           </p>
         </div>
 
@@ -763,6 +1175,15 @@ export default function NewInspection() {
             onClick={() => handleSwitchMode('upload')}
           >
             <Film size={15} /> UPLOAD VIDEO FILE
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sourceMode === 'photo'}
+            className={`insp-mode-tab ${sourceMode === 'photo' ? 'insp-mode-tab--active' : ''}`}
+            onClick={() => handleSwitchMode('photo')}
+          >
+            <Images size={15} /> PHOTO BATCH UPLOAD
           </button>
           <button
             type="button"
@@ -938,6 +1359,205 @@ export default function NewInspection() {
                 </div>
               </div>
             )
+          ) : sourceMode === 'photo' ? (
+            /* ── PHOTO BATCH MODE VIEWPORT ── */
+            photoQueue.length === 0 ? (
+              <div
+                className={`insp-dropzone ${photoDragging ? 'insp-dropzone--active' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setPhotoDragging(true);
+                }}
+                onDragLeave={() => setPhotoDragging(false)}
+                onDrop={handlePhotoDrop}
+                onClick={() => photoFileInputRef.current?.click()}
+              >
+                <input
+                  ref={photoFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleSelectPhotoFiles(e.target.files)}
+                />
+                <div className="insp-dropzone__reticle">
+                  <Images size={48} className="insp-dropzone__icon" />
+                </div>
+                <h3 className="insp-dropzone__heading">Drop Subsea Tunnel Inspection Photos Here</h3>
+                <p className="insp-dropzone__sub">
+                  JPG, PNG, or WebP · Client-Side YOLOv8n-seg Segmentation & Crack Area (mm²)
+                </p>
+
+                <button
+                  type="button"
+                  className="insp-btn insp-btn--primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    photoFileInputRef.current?.click();
+                  }}
+                >
+                  <Upload size={16} /> Select Photo Files
+                </button>
+              </div>
+            ) : (
+              <div className="insp-viewport">
+                <div className={`insp-engine-banner ${dbError || status === 'error' ? 'insp-engine-banner--error' : ''}`}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {dbError || status === 'error' ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
+                    {dbError || engineMsg}
+                  </span>
+                  <span>
+                    {videoDims.width}×{videoDims.height}
+                  </span>
+                </div>
+
+                <div className="insp-viewport__screen">
+                  <div className="insp-video-stage" style={stageStyle}>
+                    {currentPhoto && (
+                      <img
+                        src={currentPhoto.previewUrl}
+                        alt={currentPhoto.name}
+                        className="insp-photo-player"
+                        onLoad={(e) => {
+                          setVideoDims({
+                            width: e.currentTarget.naturalWidth || 1280,
+                            height: e.currentTarget.naturalHeight || 720,
+                            duration: 0,
+                          });
+                        }}
+                      />
+                    )}
+
+                    {status === 'analyzing' && <div className="insp-laser-scanner" />}
+                    {renderBoundingBoxes()}
+                  </div>
+
+                  <div className="insp-hud-top">
+                    <span className="insp-hud-tag">
+                      <Layers size={12} /> {currentPhoto ? currentPhoto.name : 'NO PHOTO'}
+                    </span>
+                    <span className="insp-hud-tag">
+                      <Crosshair size={12} /> CH: {currentChainage} m
+                    </span>
+                    <span className="insp-hud-tag insp-hud-tag--cyan">
+                      PHOTO {selectedPhotoIndex + 1} / {photoQueue.length}
+                    </span>
+                  </div>
+
+                  <div className="insp-hud-bottom">
+                    <span>SESSION: {jobId}</span>
+                    <span>SYNCED TO DB: {syncedToDb} RECORDS</span>
+                  </div>
+                </div>
+
+                {/* ── Photo Filmstrip Carousel ── */}
+                <div className="insp-photo-strip-wrap">
+                  <div className="insp-photo-strip-header">
+                    <span>PHOTO QUEUE ({photoQueue.length} ITEMS)</span>
+                    <span>CLICK THUMBNAIL TO INSPECT</span>
+                  </div>
+                  <div className="insp-photo-strip">
+                    {photoQueue.map((item, idx) => {
+                      const isActive = idx === selectedPhotoIndex;
+                      const isProcessing = idx === processingIndex;
+                      const defectCount = item.detections?.length || 0;
+                      return (
+                        <div
+                          key={item.id}
+                          className={`insp-photo-card ${isActive ? 'insp-photo-card--active' : ''} ${isProcessing ? 'insp-photo-card--processing' : ''}`}
+                          onClick={() => handleSelectPhotoThumbnail(idx)}
+                          title={`${item.name} (${defectCount} defects)`}
+                        >
+                          <img src={item.previewUrl} alt={item.name} className="insp-photo-card__img" />
+                          <button
+                            type="button"
+                            className="insp-photo-card__remove"
+                            title="Remove photo from queue"
+                            onClick={(e) => handleRemovePhoto(e, idx)}
+                          >
+                            ×
+                          </button>
+                          <span
+                            className={`insp-photo-card__badge ${defectCount > 0 ? 'insp-photo-card__badge--has-defects' : ''}`}
+                          >
+                            {isProcessing
+                              ? 'SCANNING'
+                              : item.status === 'completed'
+                                ? `${defectCount} D`
+                                : item.status === 'error'
+                                  ? 'ERR'
+                                  : `#${idx + 1}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      className="insp-photo-add-card"
+                      onClick={() => photoFileInputRef.current?.click()}
+                      title="Add more photos"
+                    >
+                      <Plus size={16} />
+                      <span>Add</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── Photo Viewport Controls ── */}
+                <div className="insp-viewport__controls">
+                  <div className="insp-playback-btns">
+                    {status === 'analyzing' ? (
+                      <button className="insp-ctrl-btn insp-ctrl-btn--danger" onClick={handleStopPhotoBatch}>
+                        <StopCircle size={16} /> Stop Batch
+                      </button>
+                    ) : (
+                      <button className="insp-ctrl-btn insp-ctrl-btn--primary" onClick={handleStartPhotoBatch}>
+                        <Play size={16} /> {status === 'complete' ? 'Re-run Batch Detection' : 'Execute Batch Detection'}
+                      </button>
+                    )}
+
+                    <input
+                      ref={photoFileInputRef}
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                      style={{ display: 'none' }}
+                      onChange={(e) => handleSelectPhotoFiles(e.target.files)}
+                    />
+
+                    <button
+                      type="button"
+                      className="insp-ctrl-btn"
+                      onClick={() => photoFileInputRef.current?.click()}
+                      title="Add more photos to current batch"
+                    >
+                      <Upload size={14} /> Add Photos
+                    </button>
+
+                    <button
+                      type="button"
+                      className="insp-ctrl-btn"
+                      onClick={handleClearPhotoBatch}
+                      title="Clear photo queue and reset session"
+                    >
+                      <RefreshCw size={14} /> Clear Queue
+                    </button>
+                  </div>
+
+                  <div className="insp-progress-metric">
+                    <div className="insp-progress-text">
+                      <span>PROGRESS: {progress}%</span>
+                      <span>
+                        PHOTO {processingIndex >= 0 ? processingIndex + 1 : selectedPhotoIndex + 1} / {photoQueue.length}
+                      </span>
+                    </div>
+                    <div className="insp-progress-track">
+                      <div className="insp-progress-fill" style={{ width: `${progress}%` }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
           ) : /* ── WEBCAM MODE VIEWPORT ── */
           !webcamStream ? (
             <div className="insp-dropzone" style={{ cursor: 'default' }}>
@@ -1104,17 +1724,21 @@ export default function NewInspection() {
                   <Activity size={28} className="insp-feed-empty__icon" />
                   <p>
                     {status === 'analyzing'
-                      ? 'Scanning live video frames…'
-                      : sourceMode === 'webcam'
-                        ? 'Awaiting camera session'
-                        : 'Awaiting inspection run'}
+                      ? 'Scanning inspection media…'
+                      : sourceMode === 'photo'
+                        ? 'Awaiting photo batch detection'
+                        : sourceMode === 'webcam'
+                          ? 'Awaiting camera session'
+                          : 'Awaiting inspection run'}
                   </p>
                   <span>
                     {status === 'analyzing'
-                      ? 'Hold a crack image or play footage cleanly in front of the detector.'
-                      : sourceMode === 'webcam'
-                        ? 'Enable your camera and start a live session to detect & log cracks into a new session.'
-                        : 'Select an inspection video and click Execute AI Detection.'}
+                      ? 'YOLOv8n-seg inference active…'
+                      : sourceMode === 'photo'
+                        ? 'Upload tunnel photos and click Execute Batch Detection to identify and review cracks.'
+                        : sourceMode === 'webcam'
+                          ? 'Enable your camera and start a live session to detect & log cracks into a new session.'
+                          : 'Select an inspection video and click Execute AI Detection.'}
                   </span>
                 </div>
               ) : (
@@ -1123,17 +1747,37 @@ export default function NewInspection() {
                     key={det.localId || `${det.frame_index}-${idx}`}
                     className={`insp-defect-item insp-defect-item--${det.severity?.toLowerCase()}`}
                     onClick={() => handleInspectDefect(det)}
-                    title={sourceMode === 'upload' ? 'Click to jump video to this exact defect frame' : 'Highlight bounding box'}
+                    title={
+                      sourceMode === 'photo'
+                        ? 'Click to inspect photo and highlight bounding reticle'
+                        : sourceMode === 'upload'
+                          ? 'Click to jump video to this exact defect frame'
+                          : 'Highlight bounding box'
+                    }
                   >
                     <div className="insp-defect-item__top">
                       <span className="insp-defect-item__badge" style={{ color: SEVERITY_COLORS[det.severity] }}>
                         {det.severity}
                       </span>
                       <span className="insp-defect-item__class">
-                        {det.class.toUpperCase()} · t={det.video_time}s{det.observations > 1 ? ` · ${det.observations}f` : ''}
+                        {det.class.toUpperCase()} · {det.photoName || (det.video_time != null ? `t=${det.video_time}s` : '')}
+                        {det.observations > 1 ? ` · ${det.observations}f` : ''}
                         {det.persisted ? ' · DB ✓' : ''}
                       </span>
-                      <span className="insp-defect-item__conf">{Math.round(det.confidence * 100)}%</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span className="insp-defect-item__conf">{Math.round(det.confidence * 100)}%</span>
+                        <button
+                          type="button"
+                          className="insp-defect-item__delete-btn"
+                          title="Dismiss false positive defect"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDismissDefect(det);
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="insp-defect-item__specs">
@@ -1142,6 +1786,11 @@ export default function NewInspection() {
                       <span>
                         DIM: {det.width_mm}×{det.height_mm}mm
                       </span>
+                      {det.area_mm2 > 0 && (
+                        <span style={{ color: '#00d4ff', fontWeight: 600 }}>
+                          AREA: {det.area_mm2} mm²
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))
@@ -1151,6 +1800,16 @@ export default function NewInspection() {
             {/* Completion / Export Action Dock */}
             {detections.length > 0 && (
               <div className="insp-action-dock">
+                {sourceMode === 'photo' && (
+                  <button
+                    type="button"
+                    className="insp-btn insp-btn--full insp-btn--primary"
+                    onClick={handleSavePhotoSession}
+                    disabled={status === 'analyzing'}
+                  >
+                    <BookmarkPlus size={16} /> Save Verified Inspection Session ({detections.length} Defects)
+                  </button>
+                )}
                 <button
                   type="button"
                   className="insp-btn insp-btn--full insp-btn--cyan"

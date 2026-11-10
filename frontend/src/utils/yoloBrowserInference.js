@@ -8,7 +8,7 @@
  */
 
 import * as ort from 'onnxruntime-web/wasm';
-import { boxIoU, consolidateBoxes } from './defectTracker';
+import { boxIoU, consolidateBoxes } from './defectTracker.js';
 
 let sessionPromise = null;
 
@@ -109,6 +109,8 @@ function prepareTileTensor(srcCanvas, x0, y0, cropW, cropH, workCanvas, workCtx)
     scale,
     dw,
     dh,
+    nw,
+    nh,
   };
 }
 
@@ -232,14 +234,117 @@ export function captureSnapshot(srcCanvas) {
 }
 
 /**
+ * Decodes the prototype mask for a single bounding box detection.
+ * Computes dot product between 32 coefficients and prototype tensor subgrid,
+ * applies logit > 0.0 thresholding, identifies 4-connected contour pixels,
+ * and renders an offscreen canvas with semi-transparent fill and neon contour.
+ *
+ * @param {Float32Array} protoData - Flat [32, 160, 160] prototype tensor
+ * @param {Float32Array} maskCoeffs - 32 mask coefficients
+ * @param {Object} bounds - { px1, py1, px2, py2, pw, ph }
+ * @param {boolean} isCritical - Whether detection is critical severity
+ * @returns {{ maskUrl: string|null, maskCanvas: HTMLCanvasElement|null, activePixels: number }}
+ */
+export function decodeInstanceMask(protoData, maskCoeffs, { px1, py1, px2, py2, pw, ph }, isCritical = false) {
+  if (!protoData || !maskCoeffs || pw <= 0 || ph <= 0) {
+    return { maskUrl: null, maskCanvas: null, activePixels: 0 };
+  }
+
+  const maskGrid = new Uint8Array(pw * ph);
+  let activePixels = 0;
+
+  for (let py = py1; py < py2; py++) {
+    const rowOffset = py * 160;
+    const gridRow = (py - py1) * pw;
+
+    for (let px = px1; px < px2; px++) {
+      let logit = 0.0;
+      const spatialIdx = rowOffset + px;
+
+      for (let k = 0; k < 32; k++) {
+        logit += maskCoeffs[k] * protoData[k * 25600 + spatialIdx];
+      }
+
+      // Sigmoid threshold: sigmoid(logit) > 0.5 <=> logit > 0.0
+      if (logit > 0.0) {
+        maskGrid[gridRow + (px - px1)] = 1;
+        activePixels++;
+      }
+    }
+  }
+
+  if (activePixels === 0) {
+    return { maskUrl: null, maskCanvas: null, activePixels: 0 };
+  }
+
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = pw;
+  maskCanvas.height = ph;
+  const maskCtx = maskCanvas.getContext('2d');
+  const imgData = maskCtx.createImageData(pw, ph);
+  const rgba = imgData.data;
+
+  // Styling Palette:
+  // Neon Cyan (Standard/Major): fill rgba(0, 240, 255, 0.40), stroke rgba(0, 240, 255, 0.95)
+  // Warning Red (Critical):     fill rgba(239, 68, 68, 0.45), stroke rgba(239, 68, 68, 0.95)
+  const r = isCritical ? 239 : 0;
+  const g = isCritical ? 68 : 240;
+  const b = isCritical ? 68 : 255;
+  const fillAlpha = isCritical ? 115 : 102; // ~0.45 or ~0.40
+  const strokeAlpha = 242;                 // 0.95
+
+  for (let ly = 0; ly < ph; ly++) {
+    const row = ly * pw;
+    for (let lx = 0; lx < pw; lx++) {
+      const pIdx = row + lx;
+      if (maskGrid[pIdx] === 0) continue;
+
+      // 4-connected boundary check
+      const isContour =
+        lx === 0 ||
+        lx === pw - 1 ||
+        ly === 0 ||
+        ly === ph - 1 ||
+        maskGrid[pIdx - 1] === 0 ||
+        maskGrid[pIdx + 1] === 0 ||
+        maskGrid[pIdx - pw] === 0 ||
+        maskGrid[pIdx + pw] === 0;
+
+      const offset = pIdx * 4;
+      rgba[offset] = r;
+      rgba[offset + 1] = g;
+      rgba[offset + 2] = b;
+      rgba[offset + 3] = isContour ? strokeAlpha : fillAlpha;
+    }
+  }
+
+  maskCtx.putImageData(imgData, 0, 0);
+  const maskUrl = maskCanvas.toDataURL('image/png');
+
+  return { maskCanvas, maskUrl, activePixels };
+}
+
+/**
+ * Computes physical crack surface area (mm²) from prototype pixel count
+ * calibrated to ROV camera optics (f=8mm, D=1000mm, pitch=0.00345mm/px).
+ */
+export function calculateCrackAreaMm2(activePixels, scale = 1.0) {
+  if (!activePixels || activePixels <= 0) return 0.0;
+  const s = Math.max(0.001, scale);
+  const area = (activePixels * 2.9756) / (s * s);
+  return Number(area.toFixed(1));
+}
+
+/**
  * Run YOLOv8n-seg ONNX (tiled for deep scan, or fast single-frame for live webcam) on a video element or canvas.
  */
 export async function detectVideoFrame(
   videoEl,
   { frameIndex = 0, videoTime = 0, chainageZ = 0, confThreshold = 0.25, tiled = true } = {}
 ) {
-  const W = videoEl.videoWidth || videoEl.width || 640;
-  const H = videoEl.videoHeight || videoEl.height || 360;
+  const mediaSource = videoEl;
+  const W = mediaSource.videoWidth || mediaSource.naturalWidth || mediaSource.width || 640;
+  const H = mediaSource.videoHeight || mediaSource.naturalHeight || mediaSource.height || 360;
   if (!W || !H) return { detections: [], snapshotUrl: null };
 
   const srcCanvas = document.createElement('canvas');
@@ -281,8 +386,10 @@ export async function detectVideoFrame(
     );
 
     const results = await session.run({ [inputName]: tensor });
-    const out0 = results[session.outputNames[0]]; // shape [1, 37, 8400]
+    const out0 = results[session.outputNames[0]] || results['output0']; // shape [1, 37, 8400]
+    const out1 = results[session.outputNames[1]] || results['output1']; // shape [1, 32, 160, 160]
     const data = out0.data;
+    const protoData = out1 ? out1.data : null;
     const anchors = out0.dims[2] || 8400;
 
     for (let a = 0; a < anchors; a++) {
@@ -304,7 +411,65 @@ export async function detectVideoFrame(
       if (boxW < 8 || boxH < 8) continue;
       if (boxW > W * 0.85 && boxH > H * 0.85) continue;
 
-      rawBoxes.push({ x1, y1, x2, y2, confidence: conf, class: 'crack' });
+      let maskCanvas = null;
+      let maskUrl = null;
+      let activePixels = 0;
+      let area_mm2 = 0;
+      let destBox = null;
+
+      if (protoData) {
+        const maskCoeffs = new Float32Array(32);
+        for (let k = 0; k < 32; k++) {
+          maskCoeffs[k] = data[(5 + k) * anchors + a];
+        }
+
+        const mx1 = Math.max(0, Math.min(640, cx - bw / 2));
+        const my1 = Math.max(0, Math.min(640, cy - bh / 2));
+        const mx2 = Math.max(0, Math.min(640, cx + bw / 2));
+        const my2 = Math.max(0, Math.min(640, cy + bh / 2));
+
+        const px1 = Math.max(0, Math.min(159, Math.floor(mx1 / 4)));
+        const py1 = Math.max(0, Math.min(159, Math.floor(my1 / 4)));
+        const px2 = Math.max(px1 + 1, Math.min(160, Math.ceil(mx2 / 4)));
+        const py2 = Math.max(py1 + 1, Math.min(160, Math.ceil(my2 / 4)));
+        const pw = px2 - px1;
+        const ph = py2 - py1;
+
+        const isCritical = conf >= 0.60;
+        const maskResult = decodeInstanceMask(
+          protoData,
+          maskCoeffs,
+          { px1, py1, px2, py2, pw, ph },
+          isCritical
+        );
+
+        maskCanvas = maskResult.maskCanvas;
+        maskUrl = maskResult.maskUrl;
+        activePixels = maskResult.activePixels;
+
+        if (activePixels > 0) {
+          area_mm2 = calculateCrackAreaMm2(activePixels, scale);
+          const destX = Math.max(0, ((px1 * 4 - dw) / scale) + tile.x0);
+          const destY = Math.max(0, ((py1 * 4 - dh) / scale) + tile.y0);
+          const destW = (pw * 4) / scale;
+          const destH = (ph * 4) / scale;
+          destBox = { destX, destY, destW, destH };
+        }
+      }
+
+      rawBoxes.push({
+        x1,
+        y1,
+        x2,
+        y2,
+        confidence: conf,
+        class: 'crack',
+        maskCanvas,
+        maskUrl,
+        activePixels,
+        area_mm2,
+        destBox,
+      });
     }
   }
 
@@ -314,6 +479,19 @@ export async function detectVideoFrame(
 
   if (combined.length === 0) {
     return { detections: [], snapshotUrl: null };
+  }
+
+  // Paint mask overlays for winning detections directly onto srcCanvas before snapshot capture
+  for (const cand of combined) {
+    if (cand.maskCanvas && cand.destBox && cand.destBox.destW > 0 && cand.destBox.destH > 0) {
+      srcCtx.drawImage(
+        cand.maskCanvas,
+        cand.destBox.destX,
+        cand.destBox.destY,
+        cand.destBox.destW,
+        cand.destBox.destH
+      );
+    }
   }
 
   const snapshotUrl = captureSnapshot(srcCanvas);
@@ -349,6 +527,13 @@ export async function detectVideoFrame(
             ? 'Circumferential Wall Crack'
             : 'Branching Fracture Network';
 
+    const area_mm2 =
+      box.class === 'spalling'
+        ? Number((spatial.width_mm * spatial.height_mm * 0.65).toFixed(1))
+        : (box.area_mm2 && box.area_mm2 > 0)
+          ? box.area_mm2
+          : Number((spatial.width_mm * spatial.height_mm * 0.40).toFixed(1));
+
     return {
       localId: `DET-${frameIndex}-${idx}`,
       class: box.class,
@@ -364,6 +549,8 @@ export async function detectVideoFrame(
       chainage_z: spatial.chainage_z,
       width_mm: spatial.width_mm,
       height_mm: spatial.height_mm,
+      area_mm2,
+      maskUrl: box.maskUrl || null,
       image_url: snapshotUrl,
       bbox: {
         x1: Math.round((box.x1 / W) * 640),

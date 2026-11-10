@@ -823,3 +823,165 @@
   flex-direction: column;
   gap: var(--space-2);
 }
+
+/* ── Photo Batch Upload & Filmstrip Styles ── */
+.insp-photo-player {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.insp-photo-strip-wrap {
+  background: #0d1117;
+  border-top: 1px solid #1f2530;
+  padding: 8px 12px;
+}
+
+.insp-photo-strip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--ink-2);
+}
+
+.insp-photo-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.insp-photo-strip::-webkit-scrollbar {
+  height: 5px;
+}
+
+.insp-photo-strip::-webkit-scrollbar-thumb {
+  background: #1f2530;
+  border-radius: 3px;
+}
+
+.insp-photo-card {
+  position: relative;
+  flex: 0 0 96px;
+  height: 64px;
+  border: 1px solid #1f2530;
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #111318;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.insp-photo-card:hover {
+  border-color: rgba(0, 212, 255, 0.5);
+}
+
+.insp-photo-card--active {
+  border-color: #00d4ff;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.4);
+}
+
+.insp-photo-card--processing {
+  border-color: #ff9500;
+  animation: insp-pulse 1.5s infinite alternate;
+}
+
+.insp-photo-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.insp-photo-card__badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px solid #1f2530;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  padding: 1px 3px;
+  border-radius: 2px;
+  color: #00d4ff;
+}
+
+.insp-photo-card__badge--has-defects {
+  background: rgba(239, 68, 68, 0.85);
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+.insp-photo-card__remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  background: rgba(13, 17, 23, 0.85);
+  color: #94a3b8;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.insp-photo-card:hover .insp-photo-card__remove {
+  opacity: 1;
+}
+
+.insp-photo-card__remove:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.insp-photo-add-card {
+  flex: 0 0 80px;
+  height: 64px;
+  border: 1px dashed #1f2530;
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--ink-2);
+  cursor: pointer;
+  background: transparent;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  transition: all 0.15s ease;
+}
+
+.insp-photo-add-card:hover {
+  border-color: #00d4ff;
+  color: #00d4ff;
+}
+
+.insp-defect-item__delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.insp-defect-item__delete-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
