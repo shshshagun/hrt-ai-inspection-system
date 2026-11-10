@@ -5,7 +5,7 @@ const express = require('express');
 const { MongoClient } = require('mongodb');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // In-memory rate limiting to protect API from denial-of-service
 const rateLimitMap = new Map();
@@ -39,7 +39,7 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', origin || '*');
   }
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -67,13 +67,17 @@ async function connectDB() {
 connectDB();
 
 // ── POST /api/detections ──
-// Receives JSON from predict.py and inserts it into MongoDB
+// Receives JSON from inference (browser ONNX or Python) and inserts it into MongoDB
 app.post('/api/detections', async (req, res) => {
   const {
     class_label,
+    subtype,
     confidence,
     bbox,
     frame_index,
+    video_time,
+    video_name,
+    image_url,
     timestamp,
     x,
     y,
@@ -99,13 +103,17 @@ app.post('/api/detections', async (req, res) => {
 
     const detection = {
       class_label,
+      subtype: subtype || `${class_label.charAt(0).toUpperCase() + class_label.slice(1)} Surface Defect`,
       confidence: Number(confidence),
       severity: severity || (Number(confidence) >= 0.85 ? 'Critical' : 'Major'),
       crack_width_mm: crack_width_mm !== undefined ? Number(crack_width_mm) : 3.2,
       crack_length_mm: crack_length_mm !== undefined ? Number(crack_length_mm) : 180.0,
       clock_pos: clock_pos || "12 o'clock (Crown)",
       inspection_id: inspection_id || 'LIVE-ROV',
-      bbox,
+      video_name: video_name || null,
+      video_time: video_time !== undefined ? Number(video_time) : 0,
+      image_url: typeof image_url === 'string' ? image_url : null,
+      bbox: bbox || null,
       frame_index: frame_index !== undefined ? Number(frame_index) : 0,
       timestamp: safeTimestamp,
       x: x !== undefined ? Number(x) : 0,
@@ -199,6 +207,7 @@ app.get('/api/inspections', async (req, res) => {
               ]
             }
           },
+          videoName: { $first: "$video_name" },
           startTime: { $min: "$timestamp" },
           endTime: { $max: "$timestamp" },
           minZ: { $min: "$z" },
@@ -211,13 +220,14 @@ app.get('/api/inspections', async (req, res) => {
     const results = await db.collection('detections').aggregate(pipeline).toArray();
     const inspections = results.map((r, idx) => {
       const inspId = r._id || `INSP-LIVE-${idx + 1}`;
-      const coverage = Math.max(0.1, Number((( (r.maxZ || 0) - (r.minZ || 0) ) / 1000).toFixed(2)) || 0.1);
+      const coverage = Math.max(0.05, Number((((r.maxZ || 0) - (r.minZ || 0)) / 1000).toFixed(3)) || 0.05);
       return {
         id: inspId,
         inspection_id: inspId,
-        label: `ROV Subsea Survey — ${inspId}`,
+        videoName: r.videoName || null,
+        label: r.videoName ? `${r.videoName} (${inspId})` : `ROV Subsea Survey — ${inspId}`,
         date: r.startTime ? new Date(r.startTime).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-        rov: 'Subsea Phantom ROV v4',
+        rov: 'YOLOv8n-seg Subsea Scanner',
         coverageKm: coverage,
         totalDetections: r.totalDetections,
         criticalCount: r.criticalCount,
@@ -228,6 +238,28 @@ app.get('/api/inspections', async (req, res) => {
     res.json(inspections);
   } catch (error) {
     console.error("Error fetching inspections:", error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// ── DELETE /api/inspections/:id ──
+// Removes all detections for a given inspection_id
+app.delete('/api/inspections/:id', async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not initialized or unreachable' });
+  }
+  try {
+    const { id } = req.params;
+    const filter =
+      id === 'ALL'
+        ? {}
+        : id === 'INSP-LIVE-1'
+          ? { $or: [{ inspection_id: id }, { inspection_id: null }, { inspection_id: { $exists: false } }] }
+          : { inspection_id: id };
+    const result = await db.collection('detections').deleteMany(filter);
+    res.json({ deletedCount: result.deletedCount });
+  } catch (error) {
+    console.error("Error deleting inspection:", error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });

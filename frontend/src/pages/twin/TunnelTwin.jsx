@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import * as THREE from 'three';
 import { TUNNEL_CONFIG } from './tunnel.config';
+import { API_BASE } from '../../config/api';
 import './TunnelTwin.css';
 
 // ─── Severity visual tokens ───────────────────────────────────────────────────
@@ -193,10 +194,8 @@ export default function TunnelTwin() {
   // ── 1. Fetch live defect telemetry from MongoDB Gateway ──────────────────
   useEffect(() => {
     let active = true;
-    const GATEWAY = (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL))
-      || 'https://hrt-mongo-gateway.onrender.com';
 
-    fetch(`${GATEWAY}/api/detections`)
+    fetch(`${API_BASE}/api/detections`)
       .then(res => res.ok ? res.json() : [])
       .then(dets => {
         if (!active) return;

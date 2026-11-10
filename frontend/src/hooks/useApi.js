@@ -19,9 +19,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { API_BASE } from '../config/api';
 
-export const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL))
-  || 'http://localhost:3000';
+export { API_BASE };
 
 // ─── Data Normalization Helpers ─────────────────────────────────────────────
 
@@ -43,15 +43,16 @@ export function normalizeDetection(raw) {
 
   const severity = raw.severity || (conf >= 0.85 ? 'Critical' : conf >= 0.70 ? 'Major' : 'Minor');
 
-  const bbox = raw.bbox || {
-    x1: raw.bbox_x1 ?? 140,
-    y1: raw.bbox_y1 ?? 120,
-    x2: raw.bbox_x2 ?? 380,
-    y2: raw.bbox_y2 ?? 290,
-  };
+  const bbox = raw.bbox || (raw.bbox_x1 != null ? {
+    x1: raw.bbox_x1,
+    y1: raw.bbox_y1 ?? 0,
+    x2: raw.bbox_x2 ?? 0,
+    y2: raw.bbox_y2 ?? 0,
+  } : null);
 
   const width_mm = raw.crack_width_mm || raw.width_mm || 3.2;
   const length_mm = raw.crack_length_mm || raw.height_mm || 180.0;
+  const detectedAt = raw.detectedAt || raw.timestamp || raw.created_at || new Date().toISOString();
 
   return {
     ...raw,
@@ -67,13 +68,17 @@ export function normalizeDetection(raw) {
     chainage_m: chainage,
     frameIndex,
     frame_index: frameIndex,
+    videoTime: raw.video_time ?? raw.videoTime ?? 0,
+    videoName: raw.video_name ?? raw.videoName ?? null,
+    imageUrl: raw.image_url || raw.imageUrl || null,
+    image_url: raw.image_url || raw.imageUrl || null,
     inspectionId,
     inspection_id: inspectionId,
     reviewStatus: status,
     verified_status: status,
     estimatedSize: `${width_mm} mm x ${length_mm} mm`,
     orientation: raw.clock_pos || "12 o'clock (Crown)",
-    notes: raw.notes || raw.reviewer_notes || 'Confirmed surface fracture during automated subsea inspection.',
+    notes: raw.notes || raw.reviewer_notes || 'Confirmed surface anomaly from YOLOv8n-seg subsea inspection.',
     reviewer_notes: raw.reviewer_notes || raw.notes || '',
     bbox,
     coordinates: raw.coordinates || {
@@ -81,8 +86,9 @@ export function normalizeDetection(raw) {
       y: raw.y ?? raw.coord_y ?? 2.95,
       z: chainage,
     },
-    timestamp: raw.timestamp || new Date().toISOString(),
-    created_at: raw.created_at || raw.timestamp || new Date().toISOString(),
+    detectedAt,
+    timestamp: detectedAt,
+    created_at: raw.created_at || detectedAt,
   };
 }
 

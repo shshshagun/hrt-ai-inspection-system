@@ -1,13 +1,26 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, PlusCircle, Video } from 'lucide-react';
-import { useInspections } from '../../hooks/useApi';
+import { Loader2, PlusCircle, Video, Trash2 } from 'lucide-react';
+import { useInspections, API_BASE } from '../../hooks/useApi';
 import './SharedPages.css';
 
 export default function Inspections() {
   const navigate = useNavigate();
-  const { data: rawInspections, loading } = useInspections();
+  const { data: rawInspections, loading, refetch } = useInspections();
+  const [deletingId, setDeletingId] = useState(null);
   const inspections = rawInspections || [];
   const statusColor = { completed: 'var(--teal)', pending: 'var(--minor)', in_progress: 'var(--info)' };
+
+  async function handleDelete(e, id) {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await fetch(`${API_BASE}/api/inspections/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      refetch?.();
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="sp-page">
@@ -107,7 +120,26 @@ export default function Inspections() {
                       {insp.status}
                     </span>
                   </td>
-                  <td className="sp-td sp-td--arrow">→</td>
+                  <td className="sp-td sp-td--arrow" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDelete(e, insp.id)}
+                      disabled={deletingId === insp.id}
+                      title="Remove inspection from database"
+                      aria-label={`Delete inspection ${insp.id}`}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--db-ink-3)',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        display: 'inline-flex',
+                      }}
+                    >
+                      {deletingId === insp.id ? <Loader2 size={14} className="sp-dl-btn__spin" /> : <Trash2 size={14} />}
+                    </button>
+                    <span>→</span>
+                  </td>
                 </tr>
               ))}
             </tbody>

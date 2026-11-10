@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { API_BASE } from '../../config/api';
 import './SharedPages.css';
 
 export default function Settings() {
@@ -124,7 +125,7 @@ export default function Settings() {
                 id="s-api"
                 type="url"
                 className="sp-input"
-                defaultValue="http://localhost:3000/api"
+                defaultValue={API_BASE}
                 aria-label="Backend API URL"
               />
             </div>

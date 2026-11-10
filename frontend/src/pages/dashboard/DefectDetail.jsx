@@ -34,13 +34,14 @@ function adaptApiDetection(api) {
     estimatedSize: api.estimatedSize || `${api.crack_width_mm || 3.2} mm x ${api.crack_length_mm || 180.0} mm`,
     orientation: api.orientation || api.clock_pos || "12 o'clock (Crown)",
     detectedAt: api.created_at || api.timestamp || new Date().toISOString(),
-    aiModel: api.aiModel || 'YOLOv8s Subsea Pipeline',
+    aiModel: api.aiModel || 'YOLOv8n-seg Subsea Pipeline',
     reviewStatus: api.verified_status || api.reviewStatus || 'confirmed',
     notes: api.notes || api.reviewer_notes || 'Confirmed concrete anomaly from live subsea inspection stream.',
     inspectionId: api.inspection_id || api.inspectionId || 'INSP-LIVE-ROV',
     timestamp: api.timestamp ? new Date(api.timestamp).toLocaleTimeString() : '10:14:22',
-    frameIndex: api.frame_index ?? api.frameIndex ?? 84,
-    bbox: api.bbox,
+    frameIndex: api.frame_index ?? api.frameIndex ?? 0,
+    imageUrl: api.image_url || api.imageUrl || null,
+    bbox: api.bbox || null,
   };
 }
 
@@ -124,65 +125,81 @@ export default function DefectDetail() {
       <div className="dd-layout">
         {/* ── Left: evidence images ── */}
         <div className="dd-evidence">
-          {/* Primary evidence image — Real subsea concrete lining photograph with bounding box overlay */}
+          {/* Primary evidence image — Actual captured frame from uploaded video */}
           <div className="dd-main-img" aria-label="Detection evidence image">
-            <div className="dd-img-container">
-              <img
-                src={detection.imageUrl || detection.image_url || `/frames/desktop/frame_${String(Math.max(1, Math.min(192, (frameIndex % 192) || 84))).padStart(4, '0')}.webp`}
-                alt="Tunnel Concrete Lining Evidence"
-                className="dd-concrete-photo"
-              />
-              <div className="dd-img-placeholder__annotations">
-                <span className="dd-img-ann">
-                  CLASSIFICATION : {category.toUpperCase()}<br />
-                  SEVERITY       : {severity.toUpperCase()}<br />
-                  DIMENSIONS     : {estimatedSize}<br />
-                  CONFIDENCE     : {Math.round(confidence * 100)}%
-                </span>
+            {detection.imageUrl ? (
+              <div className="dd-img-container">
+                <img
+                  src={detection.imageUrl}
+                  alt={`Captured concrete lining frame #${frameIndex}`}
+                  className="dd-concrete-photo"
+                />
+                <div className="dd-img-placeholder__annotations">
+                  <span className="dd-img-ann">
+                    CLASSIFICATION : {category.toUpperCase()}<br />
+                    SEVERITY       : {severity.toUpperCase()}<br />
+                    DIMENSIONS     : {estimatedSize}<br />
+                    CONFIDENCE     : {Math.round(confidence * 100)}%
+                  </span>
+                </div>
+                {detection.bbox && (
+                  <div
+                    className="dd-img-placeholder__bbox"
+                    style={
+                      detection.bbox.left_pct != null
+                        ? {
+                            left: `${detection.bbox.left_pct}%`,
+                            top: `${detection.bbox.top_pct}%`,
+                            width: `${detection.bbox.width_pct}%`,
+                            height: `${detection.bbox.height_pct}%`,
+                          }
+                        : {
+                            left: `${(detection.bbox.x1 / 640) * 100}%`,
+                            top: `${(detection.bbox.y1 / 480) * 100}%`,
+                            width: `${((detection.bbox.x2 - detection.bbox.x1) / 640) * 100}%`,
+                            height: `${((detection.bbox.y2 - detection.bbox.y1) / 480) * 100}%`,
+                          }
+                    }
+                    aria-label="Bounding box"
+                  />
+                )}
               </div>
-              {detection.bbox ? (
-                <div
-                  className="dd-img-placeholder__bbox"
-                  style={{
-                    left: `${(detection.bbox.x1 / 640) * 100}%`,
-                    top: `${(detection.bbox.y1 / 480) * 100}%`,
-                    width: `${((detection.bbox.x2 - detection.bbox.x1) / 640) * 100}%`,
-                    height: `${((detection.bbox.y2 - detection.bbox.y1) / 480) * 100}%`,
-                  }}
-                  aria-label="Bounding box"
-                />
-              ) : (
-                <div
-                  className="dd-img-placeholder__bbox"
-                  style={{ left: '32%', top: '28%', width: '36%', height: '44%' }}
-                  aria-label="Targeting Box"
-                />
-              )}
-            </div>
+            ) : (
+              <div
+                className="dd-img-container"
+                style={{
+                  minHeight: '320px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '32px',
+                  textAlign: 'center',
+                  color: 'var(--db-ink-3)',
+                }}
+              >
+                <p style={{ margin: '0 0 6px 0', color: 'var(--db-ink-2)', fontWeight: 600 }}>
+                  Telemetry-Only Record (No Video Snapshot Archived)
+                </p>
+                <p style={{ margin: 0, fontSize: '0.8rem', maxWidth: '340px' }}>
+                  Run a video scan in New Inspection to automatically archive annotated concrete frame evidence.
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* Thumbnail strip */}
-          <div className="dd-thumbs" aria-label="Additional evidence thumbnails">
-            {[1, 2, 3].map(i => {
-              const thumbIdx = Math.max(1, Math.min(192, ((frameIndex + (i - 1) * 8) % 192) || (84 + i)));
-              return (
-                <button
-                  key={i}
-                  className={`dd-thumb ${i === 1 ? 'dd-thumb--active' : ''}`}
-                  aria-label={`View evidence image ${i}`}
-                >
-                  <img
-                    src={`/frames/mobile/frame_${String(thumbIdx).padStart(4, '0')}.webp`}
-                    alt={`Evidence angle ${i}`}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                </button>
-              );
-            })}
-            <button className="dd-thumb dd-thumb--add" aria-label="Add evidence">
-              +
-            </button>
-          </div>
+          {/* Captured Frame Metadata Strip */}
+          {detection.imageUrl && (
+            <div className="dd-thumbs" aria-label="Captured frame info">
+              <button className="dd-thumb dd-thumb--active" aria-label="Captured frame thumbnail">
+                <img
+                  src={detection.imageUrl}
+                  alt="Captured defect snapshot"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Right: metadata ── */}

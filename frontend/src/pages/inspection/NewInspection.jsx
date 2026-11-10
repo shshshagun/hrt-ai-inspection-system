@@ -1,128 +1,146 @@
-/**
- * NewInspection.jsx
- * ─────────────────────────────────────────────────────────────────────────────
- * Subsea ROV Video Ingestion & Real-Time AI Defect Detection Console.
- * Supports:
- *  - Native MP4 / MOV / WebM video file upload or one-click sample video loading.
- *  - Real-time video player with HUD telemetry overlay and laser scanning reticle.
- *  - Live SSE streaming from FastAPI YOLOv8 inference server.
- *  - Resilient synchronized telemetry playback if backend is offline.
- *  - Direct persistence to MongoDB Gateway so new defects immediately appear on the 3D Twin.
- *  - Instant JSON inspection report download and jump to 3D Digital Twin.
- */
-
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Upload, Film, Play,
-  Download, StopCircle, Compass, ShieldAlert, Activity,
-  RefreshCw, Layers, Crosshair
+  Upload,
+  Play,
+  StopCircle,
+  Compass,
+  Download,
+  Crosshair,
+  ShieldAlert,
+  Layers,
+  Activity,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
+import { API_BASE, resolveInferApi } from '../../config/api';
+import { detectVideoFrame, getYoloSession } from '../../utils/yoloBrowserInference';
 import './NewInspection.css';
-
-/* ── Environment & Gateway Endpoints ── */
-const INFER_API = import.meta.env.VITE_INFER_API_URL || 'http://localhost:8000';
-const GATEWAY_API = import.meta.env.VITE_API_URL || 'https://hrt-mongo-gateway.onrender.com';
 
 const SEVERITY_COLORS = {
   Critical: '#ef4444',
-  Major:    '#ff9500',
-  Minor:    '#eab308',
-  Info:     '#00d4ff',
+  Major: '#ff9500',
+  Minor: '#eab308',
+  Info: '#00d4ff',
 };
 
 function formatTimecode(seconds) {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 100);
+  const safe = Number.isFinite(seconds) && seconds >= 0 ? seconds : 0;
+  const m = Math.floor(safe / 60);
+  const s = Math.floor(safe % 60);
+  const ms = Math.floor((safe % 1) * 100);
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
 }
 
-/* ── Pre-packaged sample inspection data ── */
-const SAMPLE_INSPECTION_PRESETS = [
-  {
-    id: 'sample-tunnel-bore-4',
-    title: 'ROV Dive 04 — Head Race Tunnel Invert (Ch 12.0m - 38.5m)',
-    sourceName: 'rov_bore4_inspection_1080p.mp4',
-    sizeBytes: 18450000,
-    totalFrames: 360,
-    durationSec: 15,
-    sampleDetections: [
-      { class: 'crack', confidence: 0.94, severity: 'Critical', frame_index: 34, chainage_z: 14.2, clock_pos: "12 o'clock (Crown)", width_mm: 3.2, height_mm: 184.0, x: 0.0, y: 2.95 },
-      { class: 'spalling', confidence: 0.88, severity: 'Major', frame_index: 86, chainage_z: 18.7, clock_pos: "3 o'clock (Right Wall)", width_mm: 14.5, height_mm: 82.0, x: 2.95, y: 0.0 },
-      { class: 'leakage', confidence: 0.82, severity: 'Major', frame_index: 145, chainage_z: 23.4, clock_pos: "6 o'clock (Invert)", width_mm: 8.0, height_mm: 310.0, x: 0.0, y: -2.95 },
-      { class: 'crack', confidence: 0.91, severity: 'Critical', frame_index: 210, chainage_z: 28.9, clock_pos: "9 o'clock (Left Wall)", width_mm: 2.6, height_mm: 220.0, x: -2.95, y: 0.0 },
-      { class: 'erosion', confidence: 0.79, severity: 'Minor', frame_index: 280, chainage_z: 34.1, clock_pos: "2 o'clock (Upper Haunch)", width_mm: 22.0, height_mm: 95.0, x: 2.08, y: 2.08 },
-      { class: 'crack', confidence: 0.96, severity: 'Critical', frame_index: 330, chainage_z: 37.8, clock_pos: "11 o'clock (Crown)", width_mm: 4.1, height_mm: 412.0, x: -0.76, y: 2.85 },
-    ]
-  }
-];
+function waitForSeek(videoEl, targetTime) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      videoEl.removeEventListener('seeked', finish);
+      resolve();
+    };
+    videoEl.addEventListener('seeked', finish, { once: true });
+    videoEl.currentTime = targetTime;
+    setTimeout(finish, 1800);
+  });
+}
 
 export default function NewInspection() {
   const navigate = useNavigate();
 
-  // File & playback state
+  // File & video playback state
   const [file, setFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
+  const [videoDims, setVideoDims] = useState({ width: 1280, height: 720, duration: 10 });
   const [dragging, setDragging] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
 
   // Inspection runtime state
   const [status, setStatus] = useState('idle'); // idle | analyzing | complete | error
+  const [engineMsg, setEngineMsg] = useState('Ready — YOLOv8n-seg IN-BROWSER ONNX + MongoDB Atlas Gateway');
+  const [dbError, setDbError] = useState(null);
   const [progress, setProgress] = useState(0);
   const [currentFrame, setCurrentFrame] = useState(0);
-  const [totalFrames, setTotalFrames] = useState(300);
+  const [totalFrames, setTotalFrames] = useState(24);
   const [detections, setDetections] = useState([]);
-  const [activeDefect, setActiveDefect] = useState(null);
+  const [activeOverlays, setActiveOverlays] = useState([]);
   const [jobId, setJobId] = useState(null);
   const [syncedToDb, setSyncedToDb] = useState(0);
 
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
   const sseRef = useRef(null);
-  const simTimerRef = useRef(null);
+  const abortRef = useRef(false);
 
-  // Clean up object URLs
+  // Pre-warm Render MongoDB Gateway & load inspection session smoothly
+  useEffect(() => {
+    fetch(`${API_BASE}/health`).catch(() => {});
+    return () => {
+      abortRef.current = true;
+      if (sseRef.current) sseRef.current.close();
+    };
+  }, []);
+
+  // Revoke object URL on change/unmount
   useEffect(() => {
     return () => {
       if (videoUrl && videoUrl.startsWith('blob:')) {
         URL.revokeObjectURL(videoUrl);
       }
-      if (sseRef.current) sseRef.current.close();
-      if (simTimerRef.current) clearInterval(simTimerRef.current);
     };
   }, [videoUrl]);
 
-  /* ── Save detection to MongoDB Gateway ── */
-  const persistToGateway = useCallback(async (det) => {
-    try {
-      const payload = {
-        class_label: det.class || 'crack',
-        confidence: det.confidence,
-        severity: det.severity,
-        crack_width_mm: det.width_mm || 2.5,
-        crack_length_mm: det.height_mm || 150.0,
-        frame_index: det.frame_index,
-        timestamp: new Date().toISOString(),
-        clock_pos: det.clock_pos,
-        x: det.x ?? 0,
-        y: det.y ?? 2.95,
-        z: det.chainage_z ?? 10.0,
-        inspection_id: 'LIVE-' + (jobId || 'RUN'),
-      };
+  /* ── Persist verified detection directly to MongoDB Gateway (with Render cold-start retry) ── */
+  const persistToGateway = useCallback(async (det, inspId, videoName) => {
+    const payload = {
+      class_label: det.class || 'crack',
+      subtype: det.subtype || undefined,
+      confidence: det.confidence,
+      severity: det.severity,
+      crack_width_mm: det.width_mm || 2.5,
+      crack_length_mm: det.height_mm || 150.0,
+      frame_index: det.frame_index ?? 0,
+      video_time: det.video_time ?? 0,
+      video_name: videoName || null,
+      image_url: det.image_url || null,
+      bbox: det.bbox || null,
+      timestamp: new Date().toISOString(),
+      clock_pos: det.clock_pos || "12 o'clock (Crown)",
+      x: det.x ?? 0,
+      y: det.y ?? 2.95,
+      z: det.chainage_z ?? 0,
+      inspection_id: inspId,
+    };
 
-      await fetch(`${GATEWAY_API}/api/detections`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      setSyncedToDb((prev) => prev + 1);
-    } catch (e) {
-      // Gateway error logged silently, local UI unaffected
-      console.debug('Gateway sync skipped:', e.message);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await fetch(`${API_BASE}/api/detections`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          setSyncedToDb((prev) => prev + 1);
+          setDbError(null);
+          return true;
+        }
+        const errBody = await res.text();
+        if (attempt === 3) {
+          setDbError(`Gateway returned HTTP ${res.status}: ${errBody.slice(0, 80)}`);
+        }
+      } catch (e) {
+        if (attempt === 3) {
+          setDbError(`Database sync error (${API_BASE}): ${e.message}`);
+        }
+      }
+      // Wait briefly before retry (handles Render free-tier wake-up)
+      await new Promise((r) => setTimeout(r, 2500));
     }
-  }, [jobId]);
+    return false;
+  }, []);
 
   /* ── File selection ── */
   const handleSelectFile = useCallback((selectedFile) => {
@@ -130,14 +148,18 @@ export default function NewInspection() {
     if (videoUrl && videoUrl.startsWith('blob:')) URL.revokeObjectURL(videoUrl);
 
     const url = URL.createObjectURL(selectedFile);
+    const tsId = `INSP-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${String(Date.now()).slice(-4)}`;
     setFile(selectedFile);
     setVideoUrl(url);
     setStatus('idle');
     setProgress(0);
+    setCurrentFrame(0);
     setDetections([]);
-    setActiveDefect(null);
+    setActiveOverlays([]);
     setSyncedToDb(0);
-    setJobId('INSP-' + Date.now().toString().slice(-6));
+    setDbError(null);
+    setEngineMsg('Video loaded — ready to run real YOLOv8n-seg inspection');
+    setJobId(tsId);
   }, [videoUrl]);
 
   const handleDrop = useCallback((e) => {
@@ -147,54 +169,34 @@ export default function NewInspection() {
     if (dropped) handleSelectFile(dropped);
   }, [handleSelectFile]);
 
-  /* ── Load pre-configured sample video ── */
-  const handleLoadSample = useCallback((preset) => {
-    setFile({
-      name: preset.sourceName,
-      size: preset.sizeBytes,
-      type: 'video/mp4',
-    });
-    setVideoUrl(null); // will use procedural canvas stream
-    setStatus('idle');
-    setProgress(0);
-    setDetections([]);
-    setActiveDefect(null);
-    setTotalFrames(preset.totalFrames);
-    setJobId(preset.id);
-  }, []);
-
-  /* ── Start Live Inspection ── */
+  /* ── Execute Real YOLOv8 Inspection on Uploaded Video ── */
   const handleStartInspection = useCallback(async () => {
-    if (!file && !videoUrl) return;
+    if (!file || !videoRef.current) return;
 
+    abortRef.current = false;
+    const inspId = jobId || `INSP-${String(Date.now()).slice(-6)}`;
+    setJobId(inspId);
     setStatus('analyzing');
     setProgress(0);
+    setCurrentFrame(0);
     setDetections([]);
+    setActiveOverlays([]);
     setSyncedToDb(0);
+    setDbError(null);
 
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
-    }
-
-    // Try cloud/local inference API if a real file was uploaded
-    let apiStarted = false;
-    if (file && file instanceof File) {
+    const inferApi = resolveInferApi();
+    if (inferApi) {
       try {
+        setEngineMsg(`Connecting to FastAPI inference server (${inferApi})…`);
         const formData = new FormData();
         formData.append('video', file);
-        const res = await fetch(`${INFER_API}/infer`, {
-          method: 'POST',
-          body: formData,
-        });
-
+        const res = await fetch(`${inferApi}/infer`, { method: 'POST', body: formData });
         if (res.ok) {
           const data = await res.json();
-          const jid = data.job_id;
-          setJobId(jid);
+          const remoteJobId = data.job_id;
           setTotalFrames(data.total_frames || 300);
 
-          const es = new EventSource(`${INFER_API}/infer/stream/${jid}`);
+          const es = new EventSource(`${inferApi}/infer/stream/${remoteJobId}`);
           sseRef.current = es;
 
           es.onmessage = (ev) => {
@@ -205,95 +207,136 @@ export default function NewInspection() {
                 setProgress(Math.round((msg.frame_index / (msg.total_frames || 300)) * 100));
               } else if (msg.type === 'detection') {
                 setDetections((prev) => [msg, ...prev]);
-                setActiveDefect(msg);
-                persistToGateway(msg);
+                setActiveOverlays([msg]);
+                persistToGateway(msg, inspId, file.name);
               } else if (msg.type === 'done') {
                 es.close();
                 setProgress(100);
                 setStatus('complete');
+                setEngineMsg('FastAPI YOLOv8 scan complete');
               }
-            } catch {}
+            } catch {
+              // ignore malformed SSE chunk
+            }
           };
-
           es.onerror = () => {
             es.close();
+            setStatus('error');
           };
-          apiStarted = true;
+          return;
         }
-      } catch (err) {
-        console.info('Inference API unavailable, using high-speed telemetry playback:', err.message);
+      } catch {
+        // Fall through cleanly to In-Browser YOLOv8n-seg ONNX engine
       }
     }
 
-    // High-speed simulated inspection fallback (guaranteed demo success anywhere)
-    if (!apiStarted) {
-      const sampleDets = SAMPLE_INSPECTION_PRESETS[0].sampleDetections;
-      const totalSteps = 300;
-      let step = 0;
+    // ── Primary Serverless Path: In-Browser YOLOv8n-seg ONNX Runtime ──
+    try {
+      const videoEl = videoRef.current;
+      videoEl.pause();
 
-      if (simTimerRef.current) clearInterval(simTimerRef.current);
+      await getYoloSession((msg) => setEngineMsg(msg));
+      if (abortRef.current) return;
 
-      simTimerRef.current = setInterval(() => {
-        step += 4;
-        const pct = Math.min(100, Math.round((step / totalSteps) * 100));
-        setProgress(pct);
-        setCurrentFrame(step);
+      const duration = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 8;
+      // Sample evenly spaced keyframes across the uploaded footage (min 12, max 24 steps)
+      const steps = Math.min(24, Math.max(12, Math.round(duration * 2)));
+      setTotalFrames(steps);
 
-        // Check if any sample defect matches this frame milestone
-        const hit = sampleDets.find((d) => Math.abs(d.frame_index - step) <= 2);
-        if (hit && !detections.some((d) => d.frame_index === hit.frame_index)) {
-          setDetections((prev) => [hit, ...prev]);
-          setActiveDefect(hit);
-          persistToGateway(hit);
+      const recordedKeys = new Map();
+      const pendingSaves = [];
+
+      for (let step = 0; step < steps; step++) {
+        if (abortRef.current) break;
+
+        const targetTime = steps === 1 ? 0 : (step / (steps - 1)) * Math.max(0.1, duration - 0.15);
+        setEngineMsg(`Seeking & scanning frame ${step + 1} / ${steps} (t = ${targetTime.toFixed(1)}s)…`);
+        await waitForSeek(videoEl, targetTime);
+        if (abortRef.current) break;
+
+        setCurrentTime(targetTime);
+        setCurrentFrame(step + 1);
+
+        const chainageZ = Number((targetTime * 1.6).toFixed(2));
+        const { detections: frameHits } = await detectVideoFrame(videoEl, {
+          frameIndex: step + 1,
+          videoTime: targetTime,
+          chainageZ,
+          confThreshold: 0.25,
+        });
+
+        setActiveOverlays(frameHits);
+
+        for (const hit of frameHits) {
+          // Deduplicate same tunnel clock-hour & class across neighboring <1.8s frames
+          const zoneKey = `${hit.class}-${hit.clock_pos}`;
+          const lastHit = recordedKeys.get(zoneKey);
+          if (!lastHit || Math.abs(targetTime - lastHit.video_time) >= 1.8) {
+            recordedKeys.set(zoneKey, hit);
+            setDetections((prev) => [hit, ...prev]);
+            pendingSaves.push(persistToGateway(hit, inspId, file.name));
+          }
         }
 
-        if (step >= totalSteps) {
-          clearInterval(simTimerRef.current);
-          setProgress(100);
-          setStatus('complete');
-          if (videoRef.current) videoRef.current.pause();
-        }
-      }, 120);
+        setProgress(Math.round(((step + 1) / steps) * 100));
+        // Brief yield so React paints the live bounding boxes smoothly on each step
+        await new Promise((r) => setTimeout(r, 40));
+      }
+
+      if (!abortRef.current) {
+        setEngineMsg('Finalizing MongoDB Atlas persistence…');
+        await Promise.allSettled(pendingSaves);
+        setProgress(100);
+        setStatus('complete');
+        setEngineMsg(`YOLOv8n-seg scan complete — ${recordedKeys.size} real defect zone(s) verified`);
+      }
+    } catch (err) {
+      console.error('[NewInspection YOLOv8 ONNX Error]', err);
+      setStatus('error');
+      setEngineMsg(`AI Vision error: ${err.message}`);
     }
-  }, [file, videoUrl, persistToGateway, detections]);
+  }, [file, jobId, persistToGateway]);
 
-  /* ── Stop inspection ── */
+  /* ── Stop scan ── */
   const handleStopInspection = useCallback(() => {
+    abortRef.current = true;
     if (sseRef.current) {
       sseRef.current.close();
       sseRef.current = null;
     }
-    if (simTimerRef.current) {
-      clearInterval(simTimerRef.current);
-      simTimerRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.pause();
-    }
+    if (videoRef.current) videoRef.current.pause();
     setStatus('complete');
+    setEngineMsg('Scan stopped by inspector');
   }, []);
+
+  /* ── Inspect any logged defect frame on click ── */
+  const handleInspectDefect = useCallback((det) => {
+    if (videoRef.current && det.video_time != null) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = det.video_time;
+      setCurrentTime(det.video_time);
+    }
+    const coLocated = detections.filter(
+      (d) => Math.abs((d.video_time ?? 0) - (det.video_time ?? 0)) < 0.05
+    );
+    setActiveOverlays(coLocated.length > 0 ? coLocated : [det]);
+  }, [detections]);
 
   /* ── Download JSON Inspection Audit Report ── */
   const handleDownloadReport = useCallback(() => {
     const reportData = {
       system: 'HRT Subsea AI Inspection System',
-      auditVersion: '2.4-ISO19011',
+      model: 'YOLOv8n-seg (ONNX Web Runtime) + Laplacian Spall Analyzer',
       inspectionId: jobId || 'INSP-MANUAL',
       timestamp: new Date().toISOString(),
-      sourceMedia: file?.name || 'tunnel_bore_live_stream.mp4',
-      telemetry: {
-        totalFramesInspected: currentFrame,
-        tunnelRadiusMeters: 2.95,
-        opticalFocalLengthMm: 8.0,
-        pixelPitchMm: 0.00345,
-      },
+      sourceMedia: file?.name || 'uploaded_video.mp4',
       summary: {
         totalDefects: detections.length,
         critical: detections.filter((d) => d.severity === 'Critical').length,
         major: detections.filter((d) => d.severity === 'Major').length,
         minor: detections.filter((d) => d.severity === 'Minor').length,
       },
-      defectManifest: detections,
+      defectManifest: detections.map(({ image_url: _img, ...rest }) => rest),
     };
 
     const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
@@ -303,11 +346,20 @@ export default function NewInspection() {
     link.download = `HRT_Inspection_Report_${jobId || 'Bore'}.json`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [currentFrame, detections, file, jobId]);
+  }, [detections, file, jobId]);
 
-  // Derived KPI calculations
-  const criticalCount = useMemo(() => detections.filter((d) => d.severity === 'Critical').length, [detections]);
-  const currentChainage = useMemo(() => ((currentFrame / totalFrames) * 38.5).toFixed(1), [currentFrame, totalFrames]);
+  const criticalCount = useMemo(
+    () => detections.filter((d) => d.severity === 'Critical').length,
+    [detections]
+  );
+
+  const currentChainage = useMemo(() => (currentTime * 1.6).toFixed(1), [currentTime]);
+
+  const videoAspect = videoDims.width / Math.max(1, videoDims.height);
+  const stageStyle =
+    videoAspect >= 16 / 9
+      ? { width: '100%', height: 'auto', aspectRatio: `${videoDims.width} / ${videoDims.height}` }
+      : { height: '100%', width: 'auto', aspectRatio: `${videoDims.width} / ${videoDims.height}` };
 
   return (
     <div className="insp-console">
@@ -316,22 +368,22 @@ export default function NewInspection() {
         <div className="insp-console__title-group">
           <div className="insp-status-badge">
             <span className="insp-status-badge__dot" />
-            <span className="insp-status-badge__text">ROV VISION PIPELINE · ACTIVE</span>
+            <span className="insp-status-badge__text">YOLOv8n-seg ONNX VISION · LIVE</span>
           </div>
-          <h1 className="insp-console__title">Subsea Video Inspection & Live Quantification</h1>
+          <h1 className="insp-console__title">Subsea Video Inspection & Live Crack Detection</h1>
           <p className="insp-console__desc">
-            Ingest underwater ROV video feeds, detect concrete fractures via YOLOv8s, compute millimeter dimensions, and stream 3D coordinates straight to the Digital Twin.
+            Upload tunnel footage to run real trained YOLOv8n-seg neural inference directly on video frames, plot exact defect bounds, and persist anomalies to MongoDB Atlas.
           </p>
         </div>
 
         <div className="insp-console__meta-ribbon">
           <div className="insp-meta-chip">
-            <span className="insp-meta-chip__label">MODEL</span>
-            <span className="insp-meta-chip__val">YOLOv8s Subsea</span>
+            <span className="insp-meta-chip__label">ENGINE</span>
+            <span className="insp-meta-chip__val">YOLOv8n-seg ONNX</span>
           </div>
           <div className="insp-meta-chip">
-            <span className="insp-meta-chip__label">OPTICS</span>
-            <span className="insp-meta-chip__val">f=8mm Pinhole</span>
+            <span className="insp-meta-chip__label">GATEWAY</span>
+            <span className="insp-meta-chip__val">MongoDB Atlas</span>
           </div>
           <div className="insp-meta-chip">
             <span className="insp-meta-chip__label">3D BORE</span>
@@ -344,8 +396,7 @@ export default function NewInspection() {
       <div className="insp-deck">
         {/* Left Column: Viewport & Dropzone */}
         <div className="insp-deck__left">
-          {!videoUrl && !file ? (
-            /* Upload Dropzone */
+          {!videoUrl || !file ? (
             <div
               className={`insp-dropzone ${dragging ? 'insp-dropzone--active' : ''}`}
               onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -364,8 +415,10 @@ export default function NewInspection() {
                 <Crosshair size={48} className="insp-dropzone__icon" />
               </div>
               <h3 className="insp-dropzone__heading">Drop Subsea Tunnel Footage Here</h3>
-              <p className="insp-dropzone__sub">MP4, MOV, or WebM · Pinhole Metric Quantification Enabled</p>
-              
+              <p className="insp-dropzone__sub">
+                MP4, MOV, or WebM · Runs Real YOLOv8n-seg Neural Network In-Browser (No Demo Data)
+              </p>
+
               <button
                 type="button"
                 className="insp-btn insp-btn--primary"
@@ -373,79 +426,95 @@ export default function NewInspection() {
               >
                 <Upload size={16} /> Select Video File
               </button>
-
-              <div className="insp-dropzone__presets" onClick={(e) => e.stopPropagation()}>
-                <span className="insp-presets-label">OR TEST WITH SAMPLE FOOTAGE:</span>
-                <div className="insp-presets-grid">
-                  {SAMPLE_INSPECTION_PRESETS.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="insp-preset-card"
-                      onClick={() => handleLoadSample(p)}
-                    >
-                      <Film size={14} className="insp-preset-card__icon" />
-                      <div className="insp-preset-card__info">
-                        <span className="insp-preset-card__title">{p.title}</span>
-                        <span className="insp-preset-card__meta">{p.durationSec}s footage · {p.sampleDetections.length} defect zones</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           ) : (
-            /* Active Subsea Video Viewport */
             <div className="insp-viewport">
+              {/* Engine & Sync Status Bar */}
+              <div className={`insp-engine-banner ${dbError || status === 'error' ? 'insp-engine-banner--error' : ''}`}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {dbError || status === 'error' ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
+                  {dbError || engineMsg}
+                </span>
+                <span>{videoDims.width}×{videoDims.height}</span>
+              </div>
+
               <div className="insp-viewport__screen">
-                {videoUrl ? (
+                <div className="insp-video-stage" style={stageStyle}>
                   <video
                     ref={videoRef}
                     src={videoUrl}
                     className="insp-video-player"
                     playsInline
-                    onTimeUpdate={() => {
+                    muted
+                    controls={status !== 'analyzing'}
+                    onLoadedMetadata={() => {
                       if (videoRef.current) {
-                        setCurrentTime(videoRef.current.currentTime);
+                        setVideoDims({
+                          width: videoRef.current.videoWidth || 1280,
+                          height: videoRef.current.videoHeight || 720,
+                          duration: videoRef.current.duration || 10,
+                        });
+                      }
+                    }}
+                    onTimeUpdate={() => {
+                      if (videoRef.current && status !== 'analyzing') {
+                        const t = videoRef.current.currentTime;
+                        setCurrentTime(t);
+                        // Show overlays belonging to nearby playback time if available
+                        const near = detections.filter((d) => Math.abs((d.video_time ?? 0) - t) <= 0.45);
+                        if (near.length > 0) setActiveOverlays(near);
+                        else if (status === 'complete') setActiveOverlays([]);
                       }
                     }}
                   />
-                ) : (
-                  <div className="insp-viewport__procedural-feed">
-                    <div className="insp-procedural-tunnel">
-                      <div className="insp-procedural-ring" />
-                      <div className="insp-procedural-ring insp-procedural-ring--2" />
-                      <div className="insp-procedural-water-grain" />
-                    </div>
-                  </div>
-                )}
 
-                {/* Laser Scanning Line Overlay */}
-                {status === 'analyzing' && <div className="insp-laser-scanner" />}
+                  {/* Laser Scanner Line Overlay */}
+                  {status === 'analyzing' && <div className="insp-laser-scanner" />}
 
-                {/* Target Reticle Overlay for Active Defect */}
-                {activeDefect && (
-                  <div className="insp-reticle-box">
-                    <div className="insp-reticle-tag">
-                      <ShieldAlert size={12} />
-                      <span>{activeDefect.class.toUpperCase()} [{activeDefect.severity}]</span>
-                    </div>
-                    <span className="insp-reticle-metric">
-                      {activeDefect.width_mm}mm × {activeDefect.height_mm}mm · {Math.round(activeDefect.confidence * 100)}%
-                    </span>
-                  </div>
-                )}
+                  {/* Real Pixel-Aligned Bounding Boxes from YOLOv8 ONNX */}
+                  {activeOverlays.map((det, idx) => {
+                    if (!det.bbox || det.bbox.left_pct == null) return null;
+                    const sevClass =
+                      det.severity === 'Major'
+                        ? 'insp-reticle-box--major'
+                        : det.severity === 'Minor'
+                          ? 'insp-reticle-box--minor'
+                          : '';
+                    return (
+                      <div
+                        key={det.localId || `${det.frame_index}-${idx}`}
+                        className={`insp-reticle-box ${sevClass}`}
+                        style={{
+                          left: `${det.bbox.left_pct}%`,
+                          top: `${det.bbox.top_pct}%`,
+                          width: `${det.bbox.width_pct}%`,
+                          height: `${det.bbox.height_pct}%`,
+                        }}
+                      >
+                        <div className="insp-reticle-tag">
+                          <ShieldAlert size={11} />
+                          <span>
+                            {det.class.toUpperCase()} {Math.round(det.confidence * 100)}%
+                          </span>
+                        </div>
+                        <span className="insp-reticle-metric">
+                          {det.width_mm}×{det.height_mm}mm · {det.clock_pos.split(' ')[0]} {det.clock_pos.split(' ')[1]}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
 
                 {/* Tactical HUD Header */}
                 <div className="insp-hud-top">
-                  <span className="insp-hud-tag"><Layers size={12} /> {file?.name || 'LIVE_FEED_STREAM'}</span>
+                  <span className="insp-hud-tag"><Layers size={12} /> {file.name}</span>
                   <span className="insp-hud-tag"><Crosshair size={12} /> CH: {currentChainage} m</span>
                   <span className="insp-hud-tag insp-hud-tag--cyan">TC: {formatTimecode(currentTime)}</span>
                 </div>
 
                 {/* Tactical HUD Footer */}
                 <div className="insp-hud-bottom">
-                  <span>FOV: 84° · ROV CRUISE: 0.35 m/s</span>
+                  <span>JOB: {jobId}</span>
                   <span>SYNCED TO DB: {syncedToDb} RECORDS</span>
                 </div>
               </div>
@@ -466,10 +535,15 @@ export default function NewInspection() {
                   <button
                     className="insp-ctrl-btn"
                     onClick={() => {
+                      abortRef.current = true;
+                      if (videoUrl && videoUrl.startsWith('blob:')) URL.revokeObjectURL(videoUrl);
                       setFile(null);
                       setVideoUrl(null);
                       setStatus('idle');
                       setDetections([]);
+                      setActiveOverlays([]);
+                      setSyncedToDb(0);
+                      setDbError(null);
                     }}
                   >
                     <RefreshCw size={14} /> Change Source
@@ -479,7 +553,7 @@ export default function NewInspection() {
                 <div className="insp-progress-metric">
                   <div className="insp-progress-text">
                     <span>PROGRESS: {progress}%</span>
-                    <span>FRAME {currentFrame} / {totalFrames}</span>
+                    <span>KEYFRAME {currentFrame} / {totalFrames}</span>
                   </div>
                   <div className="insp-progress-track">
                     <div className="insp-progress-fill" style={{ width: `${progress}%` }} />
@@ -513,7 +587,7 @@ export default function NewInspection() {
                 <span className="insp-kpi-cell__val">{currentChainage} m</span>
               </div>
               <div className="insp-kpi-cell">
-                <span className="insp-kpi-cell__label">TWIN PERSIST</span>
+                <span className="insp-kpi-cell__label">DB SYNCED</span>
                 <span className="insp-kpi-cell__val insp-kpi-cell__val--cyan">{syncedToDb}</span>
               </div>
             </div>
@@ -523,25 +597,30 @@ export default function NewInspection() {
               {detections.length === 0 ? (
                 <div className="insp-feed-empty">
                   <Activity size={28} className="insp-feed-empty__icon" />
-                  <p>Awaiting video processing...</p>
-                  <span>Detected concrete cracks and spalls will stream here in real time.</span>
+                  <p>{status === 'analyzing' ? 'Scanning video frames…' : 'Awaiting inspection run'}</p>
+                  <span>
+                    {status === 'analyzing'
+                      ? 'YOLOv8n-seg is inspecting keyframes for fractures & spalling.'
+                      : 'Select an inspection video and click Execute AI Detection.'}
+                  </span>
                 </div>
               ) : (
                 detections.map((det, idx) => (
                   <div
-                    key={`${det.frame_index}-${idx}`}
+                    key={det.localId || `${det.frame_index}-${idx}`}
                     className={`insp-defect-item insp-defect-item--${det.severity?.toLowerCase()}`}
-                    onClick={() => setActiveDefect(det)}
+                    onClick={() => handleInspectDefect(det)}
+                    title="Click to jump video to this exact defect frame"
                   >
                     <div className="insp-defect-item__top">
                       <span className="insp-defect-item__badge" style={{ color: SEVERITY_COLORS[det.severity] }}>
                         {det.severity}
                       </span>
                       <span className="insp-defect-item__class">
-                        {det.class.toUpperCase()}
+                        {det.class.toUpperCase()} · t={det.video_time}s
                       </span>
                       <span className="insp-defect-item__conf">
-                        {Math.round(det.confidence * 100)}% Conf
+                        {Math.round(det.confidence * 100)}%
                       </span>
                     </div>
 
@@ -561,9 +640,16 @@ export default function NewInspection() {
                 <button
                   type="button"
                   className="insp-btn insp-btn--full insp-btn--cyan"
-                  onClick={() => navigate('/twin')}
+                  onClick={() => navigate('/tunnel-twin')}
                 >
                   <Compass size={16} /> View Defects on 3D Digital Twin
+                </button>
+                <button
+                  type="button"
+                  className="insp-btn insp-btn--full insp-btn--outline"
+                  onClick={() => navigate('/dashboard/detections')}
+                >
+                  <Activity size={16} /> Open AI Detections & Reports
                 </button>
                 <button
                   type="button"
