@@ -143,6 +143,7 @@ export default function TunnelTwin() {
 
   const [loading, setLoading] = useState(true);
   const [cracksData, setCracksData] = useState([]);
+  const [dataError, setDataError] = useState(null);
   const [selectedCrack, setSelectedCrack] = useState(null);
 
   // Mirror selectedCrack in a ref so the rAF loop reads it without stale closure
@@ -227,6 +228,7 @@ export default function TunnelTwin() {
       .catch(err => {
         if (active) {
           console.warn('MongoDB Gateway fetch notice:', err.message);
+          setDataError(err.message || 'Unable to connect to telemetry gateway');
           setCracksData([]);
           setLoading(false);
         }
@@ -943,7 +945,7 @@ export default function TunnelTwin() {
   // ── 3. Build 3D defect markers whenever cracksData changes ────────────────
   useEffect(() => {
     const scene = sceneRef.current;
-    if (!scene || !cracksData.length) return;
+    if (!scene) return;
 
     // Dispose and remove previous markers
     crackMeshesRef.current.forEach(cm => {
@@ -956,6 +958,8 @@ export default function TunnelTwin() {
       cm.hitGeo?.dispose(); cm.hitMat?.dispose();
     });
     crackMeshesRef.current = [];
+
+    if (!cracksData.length) return;
 
     const rSurface = TUNNEL_CONFIG.radius_m - 0.025; // 2.5cm inset from wall
 
@@ -1273,7 +1277,7 @@ export default function TunnelTwin() {
         <div className="twin-brand-block">
           <div className="twin-brand-title">
             <span>HRT 3D DIGITAL TWIN</span>
-            <span className="twin-badge-sample">SAMPLE DATA</span>
+            <span className="twin-badge-sample">LIVE TELEMETRY</span>
           </div>
           <p className="twin-disclaimer">Parametric model — not a survey-accurate reconstruction.</p>
         </div>
