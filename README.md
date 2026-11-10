@@ -543,6 +543,9 @@ Being honest about the gaps is important for anyone looking to extend or deploy 
 
 **Devansh Geria**
 📧 devanshgeria510@gmail.com
+**Shagun Soni**
+📧 shagunsoni197@gmail.com
+
 
 ---
 
