@@ -8,6 +8,7 @@
  */
 
 import * as ort from 'onnxruntime-web/wasm';
+import { boxIoU, consolidateBoxes } from './defectTracker';
 
 let sessionPromise = null;
 
@@ -71,52 +72,13 @@ function computeSpatialProps(cxNorm, cyNorm, bwNorm, bhNorm, chainageZ) {
 
   return {
     clock_pos: CLOCK_LABELS[hourIdx],
+    angle_deg: Number(deg.toFixed(1)),
     x,
     y,
     chainage_z: Number(chainageZ.toFixed(2)),
     width_mm,
     height_mm,
   };
-}
-
-function iou(a, b) {
-  const x1 = Math.max(a.x1, b.x1);
-  const y1 = Math.max(a.y1, b.y1);
-  const x2 = Math.min(a.x2, b.x2);
-  const y2 = Math.min(a.y2, b.y2);
-  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-  if (inter <= 0) return 0;
-  const areaA = Math.max(1, (a.x2 - a.x1) * (a.y2 - a.y1));
-  const areaB = Math.max(1, (b.x2 - b.x1) * (b.y2 - b.y1));
-  return inter / (areaA + areaB - inter);
-}
-
-function nms(boxes, iouThresh = 0.42) {
-  const sorted = [...boxes].sort((a, b) => b.confidence - a.confidence);
-  const kept = [];
-
-  for (const cand of sorted) {
-    let suppress = false;
-    for (const k of kept) {
-      if (iou(cand, k) > iouThresh) {
-        suppress = true;
-        break;
-      }
-      // Suppress smaller box nested > 75% inside an already-kept box
-      const x1 = Math.max(cand.x1, k.x1);
-      const y1 = Math.max(cand.y1, k.y1);
-      const x2 = Math.min(cand.x2, k.x2);
-      const y2 = Math.min(cand.y2, k.y2);
-      const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-      const areaCand = Math.max(1, (cand.x2 - cand.x1) * (cand.y2 - cand.y1));
-      if (inter / areaCand > 0.72) {
-        suppress = true;
-        break;
-      }
-    }
-    if (!suppress) kept.push(cand);
-  }
-  return kept;
 }
 
 /** Letterbox a region of source canvas into reusable 640x640 NCHW Float32 tensor */
@@ -246,7 +208,7 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
       const conf = Number(Math.min(0.92, 0.58 + (avgVar - 165) / 450).toFixed(2));
 
       const cand = { x1, y1, x2, y2, confidence: conf, class: 'spalling' };
-      const overlapsYolo = existingBoxes.some((b) => iou(cand, b) > 0.35);
+      const overlapsYolo = existingBoxes.some((b) => boxIoU(cand, b) > 0.35);
       if (!overlapsYolo) clusters.push(cand);
     }
   }
@@ -341,7 +303,7 @@ export async function detectVideoFrame(videoEl, { frameIndex = 0, videoTime = 0,
     }
   }
 
-  const mergedCracks = nms(rawBoxes, 0.42);
+  const mergedCracks = consolidateBoxes(rawBoxes, W, H, 0.35);
   const spallClusters = detectSpallingClusters(srcCanvas, mergedCracks, W, H);
   const combined = [...mergedCracks, ...spallClusters].slice(0, 6);
 
@@ -391,6 +353,7 @@ export async function detectVideoFrame(videoEl, { frameIndex = 0, videoTime = 0,
       frame_index: frameIndex,
       video_time: Number(videoTime.toFixed(2)),
       clock_pos: spatial.clock_pos,
+      angle_deg: spatial.angle_deg,
       x: spatial.x,
       y: spatial.y,
       chainage_z: spatial.chainage_z,
