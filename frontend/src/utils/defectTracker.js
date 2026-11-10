@@ -167,7 +167,7 @@ export function createDefectTracker({
     for (const tr of tracks) {
       if (excludeIds.has(tr.trackId)) continue;
       if (tr.class !== hit.class) continue;
-      if (tr.flushed) continue; // already exited camera view and finalized
+      if (tr.exited) continue; // already exited camera view
 
       const timeGap = t - tr.lastTime;
       if (timeGap < 0 || timeGap > maxGapSeconds) continue;
@@ -211,17 +211,19 @@ export function createDefectTracker({
           match.angleDeg = hitAngle;
           match.hitCount += 1;
 
-          // Upgrade snapshot & confidence if this angle is clearer
+          // Upgrade snapshot & confidence if this angle is clearer (keep persisted flag)
           if (hit.confidence >= match.bestDetection.confidence) {
             match.bestDetection = {
               ...hit,
               localId: match.trackId,
               observations: match.hitCount,
+              persisted: match.persisted,
             };
           } else {
             match.bestDetection = {
               ...match.bestDetection,
               observations: match.hitCount,
+              persisted: match.persisted,
             };
           }
         } else {
@@ -236,11 +238,13 @@ export function createDefectTracker({
             lastChainageZ: hit.chainage_z ?? 0,
             lastBbox: hit.bbox || null,
             hitCount: 1,
-            flushed: false,
+            exited: false,
+            persisted: false,
             bestDetection: {
               ...hit,
               localId: trackId,
               observations: 1,
+              persisted: false,
             },
           });
         }
@@ -249,24 +253,43 @@ export function createDefectTracker({
       return this.getManifest();
     },
 
-    /** Return tracks that have exited camera view (unseen > maxGapSeconds) and mark flushed. */
+    /** Return tracks that have exited camera view (unseen > maxGapSeconds) and mark exited+persisted. */
     popExitedTracks(currentTime) {
       const ready = [];
       for (const tr of tracks) {
-        if (!tr.flushed && currentTime - tr.lastTime > maxGapSeconds) {
-          tr.flushed = true;
-          ready.push(tr.bestDetection);
+        if (!tr.exited && currentTime - tr.lastTime > maxGapSeconds) {
+          tr.exited = true;
+          if (!tr.persisted) {
+            tr.persisted = true;
+            tr.bestDetection = { ...tr.bestDetection, persisted: true };
+            ready.push(tr.bestDetection);
+          }
         }
       }
       return ready;
     },
 
-    /** Flush all remaining tracks at end of scan / stop scan. */
+    /** Immediately persist current visible un-persisted tracks WITHOUT marking exited (prevents re-logging while still in view). */
+    flushPendingNow() {
+      const batch = [];
+      for (const tr of tracks) {
+        if (!tr.persisted) {
+          tr.persisted = true;
+          tr.bestDetection = { ...tr.bestDetection, persisted: true };
+          batch.push(tr.bestDetection);
+        }
+      }
+      return batch;
+    },
+
+    /** Flush all remaining un-persisted tracks at end of scan / stop scan. */
     flushAll() {
       const remaining = [];
       for (const tr of tracks) {
-        if (!tr.flushed) {
-          tr.flushed = true;
+        tr.exited = true;
+        if (!tr.persisted) {
+          tr.persisted = true;
+          tr.bestDetection = { ...tr.bestDetection, persisted: true };
           remaining.push(tr.bestDetection);
         }
       }

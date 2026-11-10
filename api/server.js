@@ -220,14 +220,19 @@ app.get('/api/inspections', async (req, res) => {
     const results = await db.collection('detections').aggregate(pipeline).toArray();
     const inspections = results.map((r, idx) => {
       const inspId = r._id || `INSP-LIVE-${idx + 1}`;
+      const isWebcam = String(inspId).startsWith('CAM-');
       const coverage = Math.max(0.05, Number((((r.maxZ || 0) - (r.minZ || 0)) / 1000).toFixed(3)) || 0.05);
       return {
         id: inspId,
         inspection_id: inspId,
         videoName: r.videoName || null,
-        label: r.videoName ? `${r.videoName} (${inspId})` : `ROV Subsea Survey — ${inspId}`,
+        label: isWebcam
+          ? `Live Webcam Session — ${inspId}`
+          : r.videoName
+            ? `${r.videoName} (${inspId})`
+            : `ROV Subsea Survey — ${inspId}`,
         date: r.startTime ? new Date(r.startTime).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-        rov: 'YOLOv8n-seg Subsea Scanner',
+        rov: isWebcam ? 'Live Optical Camera · YOLOv8n-seg' : 'YOLOv8n-seg Subsea Scanner',
         coverageKm: coverage,
         totalDetections: r.totalDetections,
         criticalCount: r.criticalCount,
