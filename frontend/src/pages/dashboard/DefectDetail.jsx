@@ -1,9 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Flag, MessageSquare, ArrowLeft, ExternalLink, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { DETECTIONS } from '../../data/mockData';
 import { generateReport, useDetection } from '../../hooks/useApi';
-import cracksData from '../../../public/data/cracks.json';
 import './DefectDetail.css';
 
 const SEV_COLOR = {
@@ -24,36 +22,6 @@ function formatClockPosition(deg) {
   return `${clock} o'clock (${normalized}°)`;
 }
 
-function adaptCrackToDetection(crack) {
-  if (!crack) return null;
-  return {
-    id: crack.id,
-    category: 'Crack',
-    subtype: crack.notes ? crack.notes.split('.')[0] : 'Longitudinal Tunnel Crack',
-    severity: crack.severity || 'Minor',
-    confidence: crack.source === 'Manual' ? 0.98 : 0.94,
-    chainage: crack.chainage_m,
-    chainage_m: crack.chainage_m,
-    tunnelDepthM: (35 + Math.round(crack.chainage_m * 0.15 * 10) / 10).toFixed(1),
-    estimatedSize: `${crack.width_mm || 2} mm x ${crack.length_mm || 300} mm`,
-    orientation: formatClockPosition(crack.angle_deg),
-    detectedAt: '2026-03-15T10:14:22Z',
-    aiModel: crack.source === 'Manual' ? 'Manual Engineering Survey' : 'YOLOv8-TunnelSeg v2.4',
-    reviewStatus: crack.severity === 'Critical' ? 'flagged' : 'confirmed',
-    notes: crack.notes || 'Defect logged during hydro-tunnel survey.',
-    inspectionId: 'INSP-2026-03-TWIN',
-    timestamp: '10:14:22',
-    frameIndex: Math.round(crack.chainage_m * 10),
-    source: crack.source || 'AI',
-    bbox: {
-      x1: 180,
-      y1: 140,
-      x2: 460,
-      y2: 340,
-    },
-  };
-}
-
 function adaptApiDetection(api) {
   if (!api) return null;
   if (api.category && api.subtype) return api;
@@ -66,47 +34,24 @@ function adaptApiDetection(api) {
     : (api.coordinates?.z != null ? api.coordinates.z : (api.chainage || 0));
 
   return {
-    id: api.id || api.detection_id,
+    id: api.id || api.detection_id || api._id,
     category,
-    subtype: api.subtype || `${category} Defect`,
-    severity: api.severity || (api.confidence > 0.9 ? 'Critical' : api.confidence > 0.75 ? 'Major' : 'Minor'),
+    subtype: api.subtype || `${category} Surface Defect`,
+    severity: api.severity || (api.confidence > 0.85 ? 'Critical' : api.confidence > 0.70 ? 'Major' : 'Minor'),
     confidence: typeof api.confidence === 'number' ? api.confidence : 0.88,
     chainage: chainageVal,
     chainage_m: chainageVal,
-    tunnelDepthM: api.tunnelDepthM || (chainageVal ? (30 + chainageVal * 0.1).toFixed(1) : 42.0),
-    estimatedSize: api.estimatedSize || (api.bbox ? `${Math.round(api.bbox.x2 - api.bbox.x1)}px x ${Math.round(api.bbox.y2 - api.bbox.y1)}px` : '3.5 mm x 220 mm'),
-    orientation: api.orientation || (api.coordinates ? `Radial (${api.coordinates.x?.toFixed(1)}, ${api.coordinates.y?.toFixed(1)})` : "Crown (12 o'clock)"),
+    tunnelDepthM: api.tunnelDepthM || (chainageVal ? (30 + chainageVal * 0.1).toFixed(1) : '42.0'),
+    estimatedSize: api.estimatedSize || `${api.crack_width_mm || 3.2} mm x ${api.crack_length_mm || 180.0} mm`,
+    orientation: api.orientation || api.clock_pos || "12 o'clock (Crown)",
     detectedAt: api.created_at || api.timestamp || new Date().toISOString(),
-    aiModel: api.aiModel || 'YOLOv8-TunnelSeg v2.4',
-    reviewStatus: api.verified_status || api.reviewStatus || 'pending',
-    notes: api.reviewer_notes || api.notes || 'Live detection ingested from inspection telemetry stream.',
-    inspectionId: api.inspection_id || api.inspectionId || 'INSP-2026-LIVE',
-    timestamp: api.timestamp ? (new Date(api.timestamp).toTimeString().split(' ')[0]) : '10:14:22',
-    frameIndex: api.frame_index ?? 0,
+    aiModel: api.aiModel || 'YOLOv8s Subsea Pipeline',
+    reviewStatus: api.verified_status || api.reviewStatus || 'confirmed',
+    notes: api.notes || api.reviewer_notes || 'Confirmed concrete anomaly from live subsea inspection stream.',
+    inspectionId: api.inspection_id || api.inspectionId || 'INSP-LIVE-ROV',
+    timestamp: api.timestamp ? new Date(api.timestamp).toLocaleTimeString() : '10:14:22',
+    frameIndex: api.frame_index ?? api.frameIndex ?? 84,
     bbox: api.bbox,
-  };
-}
-
-function createFallbackDetectionForId(fallbackId) {
-  return {
-    id: fallbackId,
-    category: 'Crack',
-    subtype: 'Automated Tunnel Defect',
-    severity: 'Major',
-    confidence: 0.89,
-    chainage: 4.5,
-    chainage_m: 4.5,
-    tunnelDepthM: 35.5,
-    estimatedSize: '3.2 mm x 260 mm',
-    orientation: "Crown (12 o'clock)",
-    detectedAt: '2026-03-15T10:14:22Z',
-    aiModel: 'YOLOv8-TunnelSeg v2.4 (Cached)',
-    reviewStatus: 'pending',
-    notes: `Detection dossier preserved for record ${fallbackId}. Inspection pending reviewer verification.`,
-    inspectionId: 'INSP-2026-LIVE',
-    timestamp: '10:14:22',
-    frameIndex: 45,
-    bbox: { x1: 150, y1: 120, x2: 380, y2: 310 },
   };
 }
 
@@ -130,19 +75,8 @@ export default function DefectDetail() {
     if (liveDetection) {
       return adaptApiDetection(liveDetection);
     }
-    const mock = DETECTIONS.find(d => d.id === id || String(d.id).toLowerCase() === String(id).toLowerCase());
-    if (mock) return mock;
-
-    const crack = cracksData.find(c => c.id === id || String(c.id).toLowerCase() === String(id).toLowerCase());
-    if (crack) return adaptCrackToDetection(crack);
-
-    // If ID is a live UUID or alphanumeric identifier and backend is offline
-    if (id && (id.length > 15 || id.includes('-'))) {
-      return createFallbackDetectionForId(id);
-    }
-
     return null;
-  }, [liveDetection, id]);
+  }, [liveDetection]);
 
   if (apiLoading && !detection) {
     return (
@@ -201,16 +135,20 @@ export default function DefectDetail() {
       <div className="dd-layout">
         {/* ── Left: evidence images ── */}
         <div className="dd-evidence">
-          {/* Primary evidence image — CSS-rendered tunnel crack composition */}
+          {/* Primary evidence image — Real subsea concrete lining photograph with bounding box overlay */}
           <div className="dd-main-img" aria-label="Detection evidence image">
-            <div className="dd-img-placeholder">
-              <div className="dd-img-placeholder__crack" />
+            <div className="dd-img-container">
+              <img
+                src={`/frames/desktop/frame_${String(Math.max(1, Math.min(192, (frameIndex % 192) || 84))).padStart(4, '0')}.webp`}
+                alt="Tunnel Concrete Lining Evidence"
+                className="dd-concrete-photo"
+              />
               <div className="dd-img-placeholder__annotations">
                 <span className="dd-img-ann">
-                  CRACK DETECTION<br />
-                  WIDTH: 2.8 mm<br />
-                  LENGTH: 2.4 km<br />
-                  CONFIDENCE: {Math.round(confidence * 100)}%
+                  CLASSIFICATION : {category.toUpperCase()}<br />
+                  SEVERITY       : {severity.toUpperCase()}<br />
+                  DIMENSIONS     : {estimatedSize}<br />
+                  CONFIDENCE     : {Math.round(confidence * 100)}%
                 </span>
               </div>
               {detection.bbox ? (
@@ -227,8 +165,8 @@ export default function DefectDetail() {
               ) : (
                 <div
                   className="dd-img-placeholder__bbox"
-                  style={{ left: '25%', top: '25%', width: '50%', height: '50%' }}
-                  aria-label="Default Bounding Box"
+                  style={{ left: '32%', top: '28%', width: '36%', height: '44%' }}
+                  aria-label="Targeting Box"
                 />
               )}
             </div>

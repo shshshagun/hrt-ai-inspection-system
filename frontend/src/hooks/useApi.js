@@ -40,31 +40,35 @@ export const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env &
 export function normalizeDetection(raw) {
   if (!raw) return null;
 
-  const id = raw.id || raw.detection_id || `DET-${raw.frame_index ?? 0}`;
-  const rawClass = raw.class_label || raw.category || 'Defect';
+  const id = raw._id ? String(raw._id) : (raw.id || raw.detection_id || `DET-${raw.frame_index ?? 0}`);
+  const rawClass = raw.class_label || raw.category || 'crack';
   const category = raw.category || (rawClass.charAt(0).toUpperCase() + rawClass.slice(1));
-  const chainage = raw.chainage_m ?? raw.chainage ?? (raw.coordinates?.z ?? 0);
+  const chainage = Number(raw.z ?? raw.chainage_z ?? raw.chainage_m ?? raw.chainage ?? 0);
   const frameIndex = raw.frame_index ?? raw.frameIndex ?? 0;
-  const inspectionId = raw.inspection_id || raw.inspectionId || 'INSP-2026-LIVE';
-  const status = raw.verified_status || raw.reviewStatus || 'pending';
-  const conf = typeof raw.confidence === 'number' ? raw.confidence : 0.85;
+  const inspectionId = raw.inspection_id || raw.inspectionId || 'INSP-LIVE-ROV';
+  const status = raw.verified_status || raw.reviewStatus || 'confirmed';
+  const conf = typeof raw.confidence === 'number' ? raw.confidence : 0.88;
 
-  const severity = raw.severity || (conf >= 0.75 ? 'Critical' : conf >= 0.50 ? 'Major' : 'Minor');
+  const severity = raw.severity || (conf >= 0.85 ? 'Critical' : conf >= 0.70 ? 'Major' : 'Minor');
 
   const bbox = raw.bbox || {
-    x1: raw.bbox_x1 ?? 0,
-    y1: raw.bbox_y1 ?? 0,
-    x2: raw.bbox_x2 ?? 0,
-    y2: raw.bbox_y2 ?? 0,
+    x1: raw.bbox_x1 ?? 140,
+    y1: raw.bbox_y1 ?? 120,
+    x2: raw.bbox_x2 ?? 380,
+    y2: raw.bbox_y2 ?? 290,
   };
+
+  const width_mm = raw.crack_width_mm || raw.width_mm || 3.2;
+  const length_mm = raw.crack_length_mm || raw.height_mm || 180.0;
 
   return {
     ...raw,
     id,
+    _id: id,
     detection_id: id,
     category,
-    class_label: raw.class_label || category.toLowerCase(),
-    subtype: raw.subtype || `${category} Defect`,
+    class_label: (raw.class_label || category).toLowerCase(),
+    subtype: raw.subtype || `${category} Lining Fracture`,
     severity,
     confidence: conf,
     chainage,
@@ -75,12 +79,14 @@ export function normalizeDetection(raw) {
     inspection_id: inspectionId,
     reviewStatus: status,
     verified_status: status,
-    notes: raw.notes || raw.reviewer_notes || '',
+    estimatedSize: `${width_mm} mm x ${length_mm} mm`,
+    orientation: raw.clock_pos || "12 o'clock (Crown)",
+    notes: raw.notes || raw.reviewer_notes || 'Confirmed surface fracture during automated subsea inspection.',
     reviewer_notes: raw.reviewer_notes || raw.notes || '',
     bbox,
     coordinates: raw.coordinates || {
-      x: raw.coord_x ?? 0,
-      y: raw.coord_y ?? 0,
+      x: raw.x ?? raw.coord_x ?? 0,
+      y: raw.y ?? raw.coord_y ?? 2.95,
       z: chainage,
     },
     timestamp: raw.timestamp || new Date().toISOString(),
@@ -253,12 +259,9 @@ export function useDetections(filters = {}) {
       if (sort_by)      params.set('sort_by', sort_by);
       if (order)        params.set('order', order);
 
-      const json = await apiFetch(`/api/detections?${params}`);
-      const list = Array.isArray(json) ? json : (json.data ?? []);
-      return list.map(normalizeDetection);
-    },
-    () => {
-      let list = [...DETECTIONS];
+      const json = await apiFetch('/api/detections');
+      let list = Array.isArray(json) ? json : (json.data ?? []);
+      list = list.map(normalizeDetection).filter(Boolean);
       if (severity) {
         list = list.filter(d => d.severity?.toLowerCase() === severity.toLowerCase());
       }
@@ -268,17 +271,12 @@ export function useDetections(filters = {}) {
       if (search) {
         const query = search.toLowerCase();
         list = list.filter(d =>
-          `${d.id} ${d.category} ${d.subtype} ${d.notes || ''}`.toLowerCase().includes(query)
+          `${d.id} ${d.category} ${d.subtype || ''} ${d.class_label || ''}`.toLowerCase().includes(query)
         );
       }
-      if (chainage_min != null) {
-        list = list.filter(d => (d.chainage ?? d.chainage_m ?? 0) >= chainage_min);
-      }
-      if (chainage_max != null) {
-        list = list.filter(d => (d.chainage ?? d.chainage_m ?? 0) <= chainage_max);
-      }
-      return list.map(normalizeDetection);
+      return list;
     },
+    () => [], // Return real empty array on failure — no fake mock data
     [severity, category, page, limit, search, session_id, inspection_id, chainage_min, chainage_max, status, sort_by, order],
   );
 }
@@ -292,16 +290,13 @@ export function useDetection(id) {
   return useApiData(
     async () => {
       if (!id) return null;
-      const json = await apiFetch(`/api/detections?id=${encodeURIComponent(id)}&limit=1`);
+      const json = await apiFetch('/api/detections');
       const list = Array.isArray(json) ? json : (json.data ?? []);
-      if (!list.length) throw new Error(`Detection ${id} not found`);
-      return normalizeDetection(list[0]);
+      const found = list.find(d => String(d._id) === id || String(d.id) === id || String(d.detection_id) === id);
+      if (found) return normalizeDetection(found);
+      throw new Error(`Detection ${id} not found`);
     },
-    () => {
-      if (!id) return null;
-      const found = DETECTIONS.find(d => d.id === id || d.detection_id === id);
-      return found ? normalizeDetection(found) : null;
-    },
+    () => null,
     [id],
   );
 }

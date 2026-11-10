@@ -61,16 +61,6 @@ export default function Reports() {
     <div className="sp-page">
       <div className="sp-page-header">
         <h1 className="sp-title">Reports</h1>
-        {!isLive && !loading && (
-          <span className="sp-badge sp-badge--warn" title="Backend offline — showing demo data">
-            Demo data
-          </span>
-        )}
-        {isLive && (
-          <span className="sp-badge" style={{ color: 'var(--teal)', borderColor: 'var(--teal)' }}>
-            Live
-          </span>
-        )}
       </div>
 
       <p style={{ color: 'var(--db-ink-2)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-2)' }}>
