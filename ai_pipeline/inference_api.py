@@ -269,8 +269,26 @@ async def _run_inference(job_id: str) -> None:
         return
 
     FRAME_STEP = max(1, total // 150)   # process at most ~150 frames
+    fps        = max(cap.get(cv2.CAP_PROP_FPS), 1.0)
     frame_idx  = 0
     det_count  = 0
+    tracks: list[dict] = []
+
+    def _box_angle(cx: float, cy: float, w: int, h: int) -> float:
+        return math.degrees(math.atan2(cx - w / 2, -(cy - h / 2))) % 360
+
+    def _ang_diff(a: float, b: float) -> float:
+        return abs(((a - b + 180) % 360) - 180)
+
+    def _iou(b1: list[float], b2: list[float]) -> float:
+        ix1, iy1 = max(b1[0], b2[0]), max(b1[1], b2[1])
+        ix2, iy2 = min(b1[2], b2[2]), min(b1[3], b2[3])
+        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+        if inter <= 0:
+            return 0.0
+        a1 = max(1.0, (b1[2] - b1[0]) * (b1[3] - b1[1]))
+        a2 = max(1.0, (b2[2] - b2[0]) * (b2[3] - b2[1]))
+        return inter / (a1 + a2 - inter)
 
     try:
         while True:
@@ -279,31 +297,31 @@ async def _run_inference(job_id: str) -> None:
                 break
 
             if frame_idx % FRAME_STEP == 0:
-                # Progress event
+                cur_t = round(frame_idx / fps, 2)
                 await queue.put({
                     "type":         "progress",
                     "frame_index":  frame_idx,
                     "total_frames": total,
                 })
 
-                # Run YOLO on this frame
                 img_h, img_w = frame.shape[:2]
                 results = model(frame, verbose=False)[0]
+                matched_this_frame: set[int] = set()
 
                 for box in results.boxes:
-                    cls_id  = int(box.cls[0])
+                    cls_id   = int(box.cls[0])
                     cls_name = model.names.get(cls_id, str(cls_id)).lower()
                     conf     = round(float(box.conf[0]), 3)
                     if conf < 0.25:
                         continue
 
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
-                    cx = (x1 + x2) / 2
-                    cy = (y1 + y2) / 2
+                    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+                    ang    = _box_angle(cx, cy, img_w, img_h)
                     clock  = _bbox_to_clock(cx, cy, img_w, img_h)
                     w_mm, h_mm = _bbox_to_mm(x1, y1, x2, y2)
-
                     pos = telem.position_at(frame_idx) if telem else {"x": 0, "y": 0, "z": 0}
+                    norm_box = [x1 / max(img_w, 1), y1 / max(img_h, 1), x2 / max(img_w, 1), y2 / max(img_h, 1)]
 
                     detection = {
                         "type":        "detection",
@@ -311,7 +329,7 @@ async def _run_inference(job_id: str) -> None:
                         "confidence":  conf,
                         "severity":    _SEVERITY.get(cls_name, "Info"),
                         "frame_index": frame_idx,
-                        "timestamp":   round(frame_idx / max(cap.get(cv2.CAP_PROP_FPS), 1), 2),
+                        "timestamp":   cur_t,
                         "bbox":        [round(v) for v in (x1, y1, x2, y2)],
                         "clock_pos":   clock,
                         "width_mm":    w_mm,
@@ -323,14 +341,57 @@ async def _run_inference(job_id: str) -> None:
                         "job_id":      job_id,
                     }
 
-                    await queue.put(detection)
-                    asyncio.create_task(_push_detection(detection))
-                    det_count += 1
+                    match_idx = None
+                    for ti, tr in enumerate(tracks):
+                        if ti in matched_this_frame or tr["flushed"] or tr["class"] != cls_name:
+                            continue
+                        if cur_t - tr["last_t"] > 3.5:
+                            continue
+                        if _iou(norm_box, tr["box"]) >= 0.08 or (
+                            _ang_diff(ang, tr["ang"]) <= 42 and abs(pos["z"] - tr["z"]) <= 5.5
+                        ):
+                            match_idx = ti
+                            break
 
-                # Yield control so the event loop can flush SSE events
+                    if match_idx is not None:
+                        matched_this_frame.add(match_idx)
+                        tr = tracks[match_idx]
+                        tr["last_t"] = cur_t
+                        tr["ang"] = ang
+                        tr["z"] = pos["z"]
+                        tr["box"] = norm_box
+                        if conf >= tr["best"]["confidence"]:
+                            tr["best"] = detection
+                    else:
+                        new_idx = len(tracks)
+                        matched_this_frame.add(new_idx)
+                        tracks.append({
+                            "class": cls_name,
+                            "last_t": cur_t,
+                            "ang": ang,
+                            "z": pos["z"],
+                            "box": norm_box,
+                            "flushed": False,
+                            "best": detection,
+                        })
+
+                for tr in tracks:
+                    if not tr["flushed"] and (cur_t - tr["last_t"] > 3.5):
+                        tr["flushed"] = True
+                        await queue.put(tr["best"])
+                        asyncio.create_task(_push_detection(tr["best"]))
+                        det_count += 1
+
                 await asyncio.sleep(0)
 
             frame_idx += 1
+
+        for tr in tracks:
+            if not tr["flushed"]:
+                tr["flushed"] = True
+                await queue.put(tr["best"])
+                asyncio.create_task(_push_detection(tr["best"]))
+                det_count += 1
 
     finally:
         cap.release()

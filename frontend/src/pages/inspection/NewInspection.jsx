@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { API_BASE, resolveInferApi } from '../../config/api';
 import { detectVideoFrame, getYoloSession } from '../../utils/yoloBrowserInference';
+import { createDefectTracker } from '../../utils/defectTracker';
 import './NewInspection.css';
 
 const SEVERITY_COLORS = {
@@ -74,6 +75,7 @@ export default function NewInspection() {
   const fileInputRef = useRef(null);
   const sseRef = useRef(null);
   const abortRef = useRef(false);
+  const trackerRef = useRef(null);
 
   // Pre-warm Render MongoDB Gateway & load inspection session smoothly
   useEffect(() => {
@@ -184,6 +186,11 @@ export default function NewInspection() {
     setSyncedToDb(0);
     setDbError(null);
 
+    // If re-running on the same jobId, clean previous entries for idempotency
+    if (syncedToDb > 0) {
+      await fetch(`${API_BASE}/api/inspections/${encodeURIComponent(inspId)}`, { method: 'DELETE' }).catch(() => {});
+    }
+
     const inferApi = resolveInferApi();
     if (inferApi) {
       try {
@@ -196,6 +203,8 @@ export default function NewInspection() {
           const remoteJobId = data.job_id;
           setTotalFrames(data.total_frames || 300);
 
+          const sseTracker = createDefectTracker();
+          trackerRef.current = sseTracker;
           const es = new EventSource(`${inferApi}/infer/stream/${remoteJobId}`);
           sseRef.current = es;
 
@@ -206,11 +215,17 @@ export default function NewInspection() {
                 setCurrentFrame(msg.frame_index);
                 setProgress(Math.round((msg.frame_index / (msg.total_frames || 300)) * 100));
               } else if (msg.type === 'detection') {
-                setDetections((prev) => [msg, ...prev]);
+                const manifest = sseTracker.ingestFrame([msg]);
+                setDetections(manifest);
                 setActiveOverlays([msg]);
-                persistToGateway(msg, inspId, file.name);
+                for (const flushed of sseTracker.popExitedTracks(msg.video_time ?? msg.timestamp ?? 0)) {
+                  persistToGateway(flushed, inspId, file.name);
+                }
               } else if (msg.type === 'done') {
                 es.close();
+                for (const rem of sseTracker.flushAll()) {
+                  persistToGateway(rem, inspId, file.name);
+                }
                 setProgress(100);
                 setStatus('complete');
                 setEngineMsg('FastAPI YOLOv8 scan complete');
@@ -243,14 +258,19 @@ export default function NewInspection() {
       const steps = Math.min(24, Math.max(12, Math.round(duration * 2)));
       setTotalFrames(steps);
 
-      const recordedKeys = new Map();
+      const tracker = createDefectTracker({
+        maxGapSeconds: 3.5,
+        maxAngleDiffDeg: 42,
+        maxChainageJumpM: 5.5,
+      });
+      trackerRef.current = tracker;
       const pendingSaves = [];
 
       for (let step = 0; step < steps; step++) {
         if (abortRef.current) break;
 
         const targetTime = steps === 1 ? 0 : (step / (steps - 1)) * Math.max(0.1, duration - 0.15);
-        setEngineMsg(`Seeking & scanning frame ${step + 1} / ${steps} (t = ${targetTime.toFixed(1)}s)…`);
+        setEngineMsg(`Seeking & tracking frame ${step + 1} / ${steps} (t = ${targetTime.toFixed(1)}s)…`);
         await waitForSeek(videoEl, targetTime);
         if (abortRef.current) break;
 
@@ -267,15 +287,13 @@ export default function NewInspection() {
 
         setActiveOverlays(frameHits);
 
-        for (const hit of frameHits) {
-          // Deduplicate same tunnel clock-hour & class across neighboring <1.8s frames
-          const zoneKey = `${hit.class}-${hit.clock_pos}`;
-          const lastHit = recordedKeys.get(zoneKey);
-          if (!lastHit || Math.abs(targetTime - lastHit.video_time) >= 1.8) {
-            recordedKeys.set(zoneKey, hit);
-            setDetections((prev) => [hit, ...prev]);
-            pendingSaves.push(persistToGateway(hit, inspId, file.name));
-          }
+        // Consolidate multi-frame detections of the same physical defect into one track
+        const uniqueManifest = tracker.ingestFrame(frameHits);
+        setDetections(uniqueManifest);
+
+        // Flush tracks that left camera view so only their single clearest snapshot persists
+        for (const readyDet of tracker.popExitedTracks(targetTime)) {
+          pendingSaves.push(persistToGateway(readyDet, inspId, file.name));
         }
 
         setProgress(Math.round(((step + 1) / steps) * 100));
@@ -283,19 +301,26 @@ export default function NewInspection() {
         await new Promise((r) => setTimeout(r, 40));
       }
 
+      // Flush remaining active tracks once video scan finishes (or stopped)
+      for (const finalDet of tracker.flushAll()) {
+        pendingSaves.push(persistToGateway(finalDet, inspId, file.name));
+      }
+
+      setEngineMsg('Finalizing MongoDB Atlas persistence…');
+      await Promise.allSettled(pendingSaves);
+
       if (!abortRef.current) {
-        setEngineMsg('Finalizing MongoDB Atlas persistence…');
-        await Promise.allSettled(pendingSaves);
+        const finalCount = tracker.getManifest().length;
         setProgress(100);
         setStatus('complete');
-        setEngineMsg(`YOLOv8n-seg scan complete — ${recordedKeys.size} real defect zone(s) verified`);
+        setEngineMsg(`YOLOv8n-seg scan complete — ${finalCount} unique physical defect(s) verified`);
       }
     } catch (err) {
       console.error('[NewInspection YOLOv8 ONNX Error]', err);
       setStatus('error');
       setEngineMsg(`AI Vision error: ${err.message}`);
     }
-  }, [file, jobId, persistToGateway]);
+  }, [file, jobId, syncedToDb, persistToGateway]);
 
   /* ── Stop scan ── */
   const handleStopInspection = useCallback(() => {
@@ -306,7 +331,7 @@ export default function NewInspection() {
     }
     if (videoRef.current) videoRef.current.pause();
     setStatus('complete');
-    setEngineMsg('Scan stopped by inspector');
+    setEngineMsg('Scan stopped — unique tracked defects persisted');
   }, []);
 
   /* ── Inspect any logged defect frame on click ── */
@@ -617,7 +642,7 @@ export default function NewInspection() {
                         {det.severity}
                       </span>
                       <span className="insp-defect-item__class">
-                        {det.class.toUpperCase()} · t={det.video_time}s
+                        {det.class.toUpperCase()} · t={det.video_time}s{det.observations > 1 ? ` · ${det.observations}f` : ''}
                       </span>
                       <span className="insp-defect-item__conf">
                         {Math.round(det.confidence * 100)}%
