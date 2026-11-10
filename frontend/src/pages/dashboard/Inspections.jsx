@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, PlusCircle, Video, Trash2 } from 'lucide-react';
-import { useInspections, API_BASE } from '../../hooks/useApi';
+import { useInspections, deleteInspectionSession } from '../../hooks/useApi';
 import './SharedPages.css';
 
 export default function Inspections() {
   const navigate = useNavigate();
   const { data: rawInspections, loading, refetch } = useInspections();
   const [deletingId, setDeletingId] = useState(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
   const inspections = rawInspections || [];
   const statusColor = { completed: 'var(--teal)', pending: 'var(--minor)', in_progress: 'var(--info)' };
 
@@ -15,29 +17,88 @@ export default function Inspections() {
     e.stopPropagation();
     setDeletingId(id);
     try {
-      await fetch(`${API_BASE}/api/inspections/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await deleteInspectionSession(id);
       refetch?.();
     } finally {
       setDeletingId(null);
     }
   }
 
+  async function handleClearAll() {
+    if (!confirmClearAll) {
+      setConfirmClearAll(true);
+      return;
+    }
+    setClearingAll(true);
+    try {
+      await deleteInspectionSession('ALL');
+      setConfirmClearAll(false);
+      refetch?.();
+    } finally {
+      setClearingAll(false);
+    }
+  }
+
   return (
     <div className="sp-page">
-      <div className="sp-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+      <div className="sp-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: 'var(--space-6)' }}>
         <div>
           <h1 className="sp-title">Inspections</h1>
           <p style={{ color: 'var(--db-ink-2)', fontSize: 'var(--text-sm)', margin: '4px 0 0 0' }}>
-            Live subsea ROV inspection logs and session archives.
+            Live subsea ROV &amp; camera inspection logs and session archives.
           </p>
         </div>
-        <button
-          className="db-btn-primary"
-          onClick={() => navigate('/inspection/new')}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-        >
-          <PlusCircle size={16} /> New Inspection
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {inspections.length > 0 && (
+            <>
+              {confirmClearAll && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearAll(false)}
+                  style={{
+                    background: '#111318',
+                    border: '1px solid #1f2530',
+                    color: '#94a3b8',
+                    padding: '7px 12px',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleClearAll}
+                disabled={clearingAll}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: confirmClearAll ? '#ef4444' : '#1a1114',
+                  border: '1px solid rgba(239, 68, 68, 0.45)',
+                  color: confirmClearAll ? '#ffffff' : '#f87171',
+                  padding: '7px 12px',
+                  borderRadius: '4px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {clearingAll ? <Loader2 size={14} className="sp-dl-btn__spin" /> : <Trash2 size={14} />}
+                {confirmClearAll ? 'Confirm Clear All' : 'Clear All'}
+              </button>
+            </>
+          )}
+          <button
+            className="db-btn-primary"
+            onClick={() => navigate('/inspection/new')}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <PlusCircle size={16} /> New Inspection
+          </button>
+        </div>
       </div>
 
       {loading && (
