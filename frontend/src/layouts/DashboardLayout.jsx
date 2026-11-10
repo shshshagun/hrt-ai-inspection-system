@@ -44,15 +44,15 @@ function getPageTitle(pathname) {
 }
 
 function getBreadcrumbs(pathname) {
-  const crumbs = [{ label: 'HRT', to: '/dashboard' }];
   if (pathname === '/dashboard') return [];
-  const segments = pathname.replace('/dashboard/', '').split('/');
-  let path = '/dashboard';
+  const crumbs = [{ label: 'HRT', to: '/dashboard' }];
+  const clean = pathname.replace(/^\//, '').replace(/\/$/, '');
+  const segments = clean.split('/').filter(Boolean);
+  let current = '';
   for (const seg of segments) {
-    path += '/' + seg;
-    const label = seg.replace(/-/g, ' ')
-      .replace(/\b\w/g, c => c.toUpperCase());
-    crumbs.push({ label, to: path });
+    current += '/' + seg;
+    const label = seg.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    crumbs.push({ label, to: current });
   }
   return crumbs;
 }
