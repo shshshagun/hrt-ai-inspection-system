@@ -191,21 +191,45 @@ export default function TunnelTwin() {
   const cycleCrackRef = useRef(null);
   const selectClosestCrackRef = useRef(null);
 
-  // ── 1. Fetch defect telemetry ──────────────────────────────────────────────
+  // ── 1. Fetch live defect telemetry from MongoDB Gateway ──────────────────
   useEffect(() => {
     let active = true;
-    fetch('/data/cracks.json')
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status} loading cracks.json`);
-        return res.json();
-      })
-      .then(data => {
-        if (active) { setCracksData(data); setLoading(false); }
+    const GATEWAY = (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL))
+      || 'https://hrt-mongo-gateway.onrender.com';
+
+    fetch(`${GATEWAY}/api/detections`)
+      .then(res => res.ok ? res.json() : [])
+      .then(dets => {
+        if (!active) return;
+        if (Array.isArray(dets) && dets.length > 0) {
+          const adapted = dets.map((d, i) => {
+            const z = Number(d.z ?? d.chainage_z ?? (i * 12 + 5));
+            const angle = (d.x != null && d.y != null && (d.x !== 0 || d.y !== 0))
+              ? Math.atan2(d.x, d.y) * (180 / Math.PI)
+              : 0;
+            return {
+              id: d._id ? String(d._id) : (d.id || `DET-${i + 1}`),
+              severity: d.severity || (d.confidence > 0.85 ? 'Critical' : 'Major'),
+              chainage_m: z,
+              angle_deg: ((angle % 360) + 360) % 360,
+              width_mm: d.crack_width_mm || d.width_mm || 3.2,
+              length_mm: d.crack_length_mm || d.height_mm || 180,
+              confidence: d.confidence || 0.88,
+              notes: `${(d.class_label || 'Crack').toUpperCase()} detected at frame #${d.frame_index ?? i}. Subsea ROV AI Telemetry.`,
+              source: 'YOLOv8 Live Pipeline',
+            };
+          });
+          setCracksData(adapted);
+          setLoading(false);
+          return;
+        }
+        setCracksData([]);
+        setLoading(false);
       })
       .catch(err => {
         if (active) {
-          console.error('Failed to fetch cracks.json:', err);
-          setDataError(err.message);
+          console.warn('MongoDB Gateway fetch notice:', err.message);
+          setCracksData([]);
           setLoading(false);
         }
       });

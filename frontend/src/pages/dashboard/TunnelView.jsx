@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, ShieldCheck, Flame, Eye } from 'lucide-react';
 import { useDetections } from '../../hooks/useApi';
-import { DETECTIONS, TUNNEL_META } from '../../data/mockData';
+import { TUNNEL_META } from '../../data/mockData';
 import './TunnelView.css';
 
 // ─── Severity Weights for Structural Risk Calculation ──────────
@@ -24,7 +24,7 @@ function getRiskCategory(score) {
 export default function TunnelView() {
   const navigate = useNavigate();
   const { data: apiDetections } = useDetections({ limit: 100 });
-  const detections = apiDetections || DETECTIONS;
+  const detections = apiDetections || [];
 
   const [activeSectionId, setActiveSectionId] = useState('s01');
   const [selectedBin, setSelectedBin] = useState(null);

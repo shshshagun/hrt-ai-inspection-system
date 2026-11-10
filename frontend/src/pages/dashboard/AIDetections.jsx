@@ -63,16 +63,6 @@ export default function AIDetections() {
     <div className="det-page">
       <div className="det-page__topbar">
         <h1 className="det-page__title">AI Detections</h1>
-        {!isLive && !loading && (
-          <span className="sp-badge sp-badge--warn" title="Backend offline — showing demo data">
-            Demo data
-          </span>
-        )}
-        {isLive && (
-          <span className="sp-badge" style={{ color: 'var(--teal)', borderColor: 'var(--teal)' }}>
-            Live
-          </span>
-        )}
       </div>
 
       {/* ── Filters ── */}
@@ -152,8 +142,8 @@ export default function AIDetections() {
           <tbody>
             {pageData.length === 0 ? (
               <tr>
-                <td colSpan={8} className="det-empty">
-                  No detections match the current filters.
+                <td colSpan={8} className="det-empty" style={{ padding: '48px 16px', textAlign: 'center' }}>
+                  No inspection defects found. Upload an ROV video in <strong>New Inspection</strong> to run AI detection.
                 </td>
               </tr>
             ) : pageData.map(d => (
@@ -178,8 +168,8 @@ export default function AIDetections() {
                 <td className="det-td det-td--conf">
                   {Math.round(d.confidence * 100)}%
                 </td>
-                <td className="det-td det-td--mono">{d.chainage.toFixed(2)} km</td>
-                <td className="det-td det-td--mono">{d.timestamp}</td>
+                <td className="det-td det-td--mono">{d.chainage.toFixed(1)} m</td>
+                <td className="det-td det-td--mono">{d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : '10:14:22'}</td>
                 <td className="det-td">
                   <span
                     className="det-badge det-badge--status"

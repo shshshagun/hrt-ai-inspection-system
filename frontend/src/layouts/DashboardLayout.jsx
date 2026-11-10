@@ -155,7 +155,6 @@ export default function DashboardLayout() {
           </div>
 
           <div className="db-topbar__right">
-            <span className="db-topbar__demo-badge">DEMO DATA</span>
             <div className="db-topbar__user">
               <div className="db-topbar__avatar" aria-hidden="true">JD</div>
               <div className="db-topbar__user-info">

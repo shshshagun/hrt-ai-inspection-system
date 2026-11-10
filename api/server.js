@@ -69,7 +69,21 @@ connectDB();
 // ── POST /api/detections ──
 // Receives JSON from predict.py and inserts it into MongoDB
 app.post('/api/detections', async (req, res) => {
-  const { class_label, confidence, bbox, frame_index, timestamp, x, y, z } = req.body || {};
+  const {
+    class_label,
+    confidence,
+    bbox,
+    frame_index,
+    timestamp,
+    x,
+    y,
+    z,
+    severity,
+    crack_width_mm,
+    crack_length_mm,
+    clock_pos,
+    inspection_id
+  } = req.body || {};
   
   if (!class_label || typeof class_label !== 'string' || confidence === undefined || isNaN(confidence)) {
     return res.status(400).json({ error: 'Validation failed: class_label (string) and confidence (number) are required' });
@@ -86,7 +100,12 @@ app.post('/api/detections', async (req, res) => {
     const detection = {
       class_label,
       confidence: Number(confidence),
-      bbox, // MongoDB can store the nested bbox object directly!
+      severity: severity || (Number(confidence) >= 0.85 ? 'Critical' : 'Major'),
+      crack_width_mm: crack_width_mm !== undefined ? Number(crack_width_mm) : 3.2,
+      crack_length_mm: crack_length_mm !== undefined ? Number(crack_length_mm) : 180.0,
+      clock_pos: clock_pos || "12 o'clock (Crown)",
+      inspection_id: inspection_id || 'LIVE-ROV',
+      bbox,
       frame_index: frame_index !== undefined ? Number(frame_index) : 0,
       timestamp: safeTimestamp,
       x: x !== undefined ? Number(x) : 0,

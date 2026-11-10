@@ -58,54 +58,48 @@ function SeverityDot({ level }) {
 export default function DashboardOverview() {
   const navigate = useNavigate();
 
-  // Module 8 — live API data with graceful fallbacks
-  const { data: kpi }   = useKpiSummary();
-  const { data: dists } = useDefectDistributions();
-  const { data: dets }  = useDetections();
+  // Module 8 — live API data directly from MongoDB
+  const { data: dets } = useDetections();
+  const detData = dets ?? [];
 
-  const kpiData    = kpi   ?? KPI_SUMMARY;
-  const distData   = dists ?? { typeDistribution: DEFECT_TYPE_DISTRIBUTION };
-  const detData    = dets  ?? DETECTIONS;
+  const totalDefects = detData.length;
+  const criticalCount = detData.filter(d => d.severity === 'Critical').length;
+  const maxChainageM = detData.length > 0
+    ? Math.max(...detData.map(d => Number(d.chainage_m || d.chainage || d.z || 0)))
+    : 0;
+  const inspectedKm = (maxChainageM / 1000).toFixed(2);
+  const totalKm = 27.3;
+  const pct = maxChainageM > 0 ? Math.min(100, Math.round((maxChainageM / (totalKm * 1000)) * 100)) : 0;
 
-  const pct        = Math.round((kpiData.inspectedKm / kpiData.tunnelLengthKm) * 100);
   const recentDets = detData.slice(0, 3);
   const [activeDefectMarker, setActiveDefectMarker] = useState(null);
 
-  const schematicDefects = [
-    {
-      id: 'DET-4782',
-      type: 'Structural Crack',
-      severity: 'Critical',
-      chainage: 2.14,
-      confidence: 0.92,
-      top: '38%',
-      left: '28%',
-      color: 'var(--critical)',
-      cssClass: 'critical',
-    },
-    {
-      id: 'DET-4781',
-      type: 'Surface Spalling',
-      severity: 'Major',
-      chainage: 2.43,
-      confidence: 0.87,
-      top: '60%',
-      left: '58%',
-      color: 'var(--major)',
-      cssClass: 'major',
-    },
-    {
-      id: 'DET-4780',
-      type: 'Seepage / Leakage',
-      severity: 'Minor',
-      chainage: 3.12,
-      confidence: 0.81,
-      top: '25%',
-      left: '68%',
-      color: 'var(--minor)',
-      cssClass: 'minor',
-    },
+  const typeDistributionData = [
+    { name: 'Cracks', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('crack')).length, color: '#ef4444' },
+    { name: 'Spalling', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('spall')).length, color: '#ff9500' },
+    { name: 'Leakage', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('leak')).length, color: '#eab308' },
+    { name: 'Erosion', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('eros')).length, color: '#00d4ff' },
   ];
+
+  const schematicDefects = detData.slice(0, 6).map((d, i) => {
+    const angle = ((d.coordinates?.x || 0) !== 0 || (d.coordinates?.y || 0) !== 0)
+      ? Math.atan2(d.coordinates?.x || 0, d.coordinates?.y || 2.95)
+      : (i * (Math.PI / 3));
+    const r = 38; // percentage radius in tunnel circle
+    const top = `${50 - Math.cos(angle) * r}%`;
+    const left = `${50 + Math.sin(angle) * r}%`;
+    return {
+      id: d.id || d._id || `DET-${i + 1}`,
+      type: d.category || d.class_label || 'Defect',
+      severity: d.severity || 'Minor',
+      chainage: Number(d.chainage_m || d.chainage || d.z || 0).toFixed(1),
+      confidence: d.confidence || 0.88,
+      top,
+      left,
+      color: d.severity === 'Critical' ? 'var(--critical)' : d.severity === 'Major' ? 'var(--major)' : 'var(--minor)',
+      cssClass: (d.severity || 'minor').toLowerCase(),
+    };
+  });
 
   return (
     <div className="db-overview">
@@ -124,23 +118,23 @@ export default function DashboardOverview() {
       <section className="db-overview__kpis" aria-label="Key performance indicators">
         <KpiCard
           label="Total Inspections"
-          value={kpiData.totalInspections}
+          value={detData.length > 0 ? 1 : 0}
           Icon={Activity}
           color="var(--teal)"
         />
         <KpiCard
           label="Defects Detected"
-          value={kpiData.defectsDetected}
+          value={totalDefects}
           Icon={AlertTriangle}
           color="var(--major)"
-          sub="From detections API"
+          sub="From live MongoDB pipeline"
         />
         <KpiCard
           label="Critical Defects"
-          value={kpiData.criticalDefects}
+          value={criticalCount}
           Icon={ShieldAlert}
           color="var(--critical)"
-          sub="Requires review"
+          sub={criticalCount > 0 ? "Requires review" : "No critical breaches"}
         />
         <KpiCard
           label="Tunnel Coverage"
@@ -148,7 +142,7 @@ export default function DashboardOverview() {
           unit=""
           Icon={Activity}
           color="var(--info)"
-          sub={`${kpiData.inspectedKm} / ${kpiData.tunnelLengthKm} km`}
+          sub={`${inspectedKm} / ${totalKm} km`}
         />
       </section>
 
@@ -353,7 +347,7 @@ export default function DashboardOverview() {
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie
-                data={distData.typeDistribution}
+                data={typeDistributionData}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -362,22 +356,23 @@ export default function DashboardOverview() {
                 dataKey="value"
                 nameKey="name"
               >
-                {distData.typeDistribution.map((entry) => (
+                {typeDistributionData.map((entry) => (
                   <Cell key={entry.name} fill={entry.color} stroke="none" />
                 ))}
               </Pie>
               <Tooltip
                 contentStyle={{
-                  background: '#fff',
-                  border: '1px solid var(--db-border)',
+                  background: '#0d1117',
+                  border: '1px solid rgba(0,212,255,0.2)',
                   borderRadius: '4px',
+                  color: '#fff',
                   fontSize: '0.8rem',
                 }}
               />
             </PieChart>
           </ResponsiveContainer>
           <ul className="db-donut-legend" aria-label="Defect type legend">
-            {distData.typeDistribution.map(d => (
+            {typeDistributionData.map(d => (
               <li key={d.name} className="db-donut-legend__item">
                 <span className="db-donut-legend__swatch" style={{ background: d.color }} />
                 <span className="db-donut-legend__label">{d.name}</span>

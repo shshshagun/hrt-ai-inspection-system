@@ -36,32 +36,19 @@
   border: 1px solid var(--db-border); aspect-ratio: 4/3;
 }
 
-/* CSS-drawn tunnel wall with crack */
-.dd-img-placeholder {
-  width: 100%; height: 100%;
-  background: linear-gradient(135deg, #1a2332 0%, #0d1520 50%, #142030 100%);
-  position: relative; overflow: hidden;
+.dd-img-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: #0a0c0f;
 }
 
-/* Simulated concrete texture */
-.dd-img-placeholder::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0px, transparent 30px,
-    rgba(255,255,255,0.01) 30px, rgba(255,255,255,0.01) 31px
-  );
-}
-
-.dd-img-placeholder__crack {
-  position: absolute;
-  top: 20%; left: 35%;
-  width: 4px; height: 55%;
-  background: rgba(180, 50, 50, 0.7);
-  transform: rotate(8deg);
-  filter: blur(0.8px);
-  box-shadow: -1px 0 4px rgba(180,50,50,0.3), 2px 0 8px rgba(180,50,50,0.2);
+.dd-concrete-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .dd-img-placeholder__annotations {
