@@ -1,41 +1,58 @@
 /* ═══════════════════════════════════════════════════════════════════
-   HRT AI Inspection System — Design System
-   Taste-skill compliant: no glass, no gradients, no ornament
-   Landing: deep navy/charcoal | Dashboard: slate/off-white | Accent: teal
+   HRT AI Inspection System — Industrial Command Center Design System
+   Dark steel | Electric cyan accent | No glass | No gradients
+   Fonts: Space Grotesk (display) + JetBrains Mono (data)
    ═══════════════════════════════════════════════════════════════════ */
 
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
 :root {
-  /* ── Landing page palette ── */
-  --lp-bg:        #0a0e16;
-  --lp-surface:   #111827;
-  --lp-ink:       #e8ecf1;
-  --lp-ink-2:     #8fa3b8;
-  --lp-border:    rgba(255,255,255,0.08);
+  /* ── Core palette — industrial dark ── */
+  --bg-base:      #0a0c0f;
+  --bg-surface:   #0d1117;
+  --bg-card:      #111318;
+  --bg-elevated:  #161b22;
 
-  /* ── Dashboard palette ── */
-  --db-bg:        #f4f5f7;
-  --db-surface:   #ffffff;
-  --db-surface-2: #f0f2f5;
-  --db-ink:       #1a2332;
-  --db-ink-2:     #4a5568;
-  --db-ink-3:     #8a96a8;
-  --db-border:    #dde1e8;
-  --db-sidebar:   #0f1923;
-  --db-sidebar-2: #172130;
+  /* ── Accents ── */
+  --cyan:         #00d4ff;
+  --cyan-dim:     rgba(0,212,255,0.12);
+  --cyan-border:  rgba(0,212,255,0.18);
+  --amber:        #ff9500;
+  --amber-dim:    rgba(255,149,0,0.12);
 
-  /* ── Shared accent ── */
-  --teal:         #0d9488;
-  --teal-light:   #14b8a6;
-  --teal-dim:     rgba(13,148,136,0.12);
+  /* ── Severity ── */
+  --critical:     #ef4444;
+  --major:        #ff9500;
+  --minor:        #eab308;
+  --info:         #00d4ff;
 
-  /* ── Severity colours (flat, no glow) ── */
-  --critical:     #dc2626;
-  --major:        #ea580c;
-  --minor:        #ca8a04;
-  --info:         #3b82f6;
+  /* ── Ink ── */
+  --ink:          #e6edf3;
+  --ink-2:        #8b949e;
+  --ink-3:        #484f58;
+  --ink-muted:    #30363d;
 
-  /* ── Type scale (fluid) ── */
-  --text-xs:   0.75rem;
+  /* ── Legacy aliases (keep existing code working) ── */
+  --lp-bg:        #0a0c0f;
+  --lp-surface:   #0d1117;
+  --lp-ink:       #e6edf3;
+  --lp-ink-2:     #8b949e;
+  --lp-border:    rgba(0,212,255,0.12);
+  --db-bg:        #0a0c0f;
+  --db-surface:   #0d1117;
+  --db-surface-2: #111318;
+  --db-ink:       #e6edf3;
+  --db-ink-2:     #8b949e;
+  --db-ink-3:     #484f58;
+  --db-border:    rgba(0,212,255,0.15);
+  --db-sidebar:   #0d1117;
+  --db-sidebar-2: #161b22;
+  --teal:         #00d4ff;
+  --teal-light:   #33ddff;
+  --teal-dim:     rgba(0,212,255,0.10);
+
+  /* ── Type scale ── */
+  --text-xs:   0.72rem;
   --text-sm:   0.875rem;
   --text-base: 1rem;
   --text-lg:   1.125rem;
@@ -58,12 +75,12 @@
   --space-16: 4rem;
   --space-20: 5rem;
 
-  /* ── Radius (restrained — square preferred) ── */
+  /* ── Radius — sharp/minimal ── */
   --radius-sm:  2px;
   --radius:     4px;
   --radius-md:  6px;
 
-  /* ── Z-index layers ── */
+  /* ── Z-index ── */
   --z-base:    0;
   --z-overlay: 100;
   --z-nav:     200;
@@ -72,8 +89,8 @@
   /* ── Motion ── */
   --ease-out:   cubic-bezier(0.22,1,0.36,1);
   --ease-in:    cubic-bezier(0.76,0,0.24,1);
-  --duration:   280ms;
-  --duration-slow: 600ms;
+  --duration:   240ms;
+  --duration-slow: 500ms;
 }
 
 /* ── Reset ── */
@@ -85,11 +102,11 @@ html {
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
   font-size: var(--text-base);
   line-height: 1.55;
-  color: var(--db-ink);
-  background: var(--db-bg);
+  color: var(--ink);
+  background: var(--bg-base);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -100,7 +117,23 @@ button { font: inherit; cursor: pointer; border: none; background: none; }
 ul, ol { list-style: none; }
 
 code, pre, .mono {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+/* ── Scan-line texture overlay ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
 }
 
 /* ── Utility classes ── */
@@ -110,16 +143,18 @@ code, pre, .mono {
   clip: rect(0,0,0,0); white-space: nowrap; border-width: 0;
 }
 
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+
 /* ── Focus ring ── */
 :focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }
 
-/* ── Scrollbar (dashboard) ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--db-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--ink-muted); border-radius: 2px; }
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {

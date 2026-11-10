@@ -13,6 +13,7 @@ import MapsLocation from './pages/dashboard/MapsLocation';
 import Reports from './pages/dashboard/Reports';
 import Assets from './pages/dashboard/Assets';
 import Settings from './pages/dashboard/Settings';
+import NewInspection from './pages/inspection/NewInspection';
 
 export default function App() {
   return (
@@ -26,8 +27,12 @@ export default function App() {
         <Route path="/tunnel-twin" element={<TunnelTwin />} />
         <Route path="/twin" element={<TunnelTwin />} />
 
+        {/* New Inspection — full page under DashboardLayout */}
+        <Route path="/inspection" element={<DashboardLayout />}>
+          <Route path="new" element={<NewInspection />} />
+        </Route>
+
         {/* Route aliases for navigation consistency */}
-        <Route path="/inspection" element={<Navigate to="/dashboard/inspections/videos" replace />} />
         <Route path="/analytics" element={<Navigate to="/dashboard/tunnel" replace />} />
         <Route path="/reports" element={<Navigate to="/dashboard/reports" replace />} />
 
@@ -38,6 +43,7 @@ export default function App() {
           <Route path="tunnel-twin" element={<TunnelTwin />} />
           <Route path="twin" element={<TunnelTwin />} />
           <Route path="analytics" element={<TunnelView />} />
+          <Route path="inspection/new" element={<NewInspection />} />
           <Route path="inspections" element={<Inspections />} />
           <Route path="inspections/videos" element={<InspectionVideos />} />
           <Route path="detections" element={<AIDetections />} />
