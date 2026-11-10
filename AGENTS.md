@@ -29,9 +29,9 @@ Specialized domain agent specifications located in `.agents/`:
 ## Commit Attribution
 All git commits MUST be authored by:
 ```
-Devansh Geria <devanshgeria510@gmail.com>
+Shagun <shagunsoni197@gmail.com>
 ```
-Git author flag: `--author="Devansh Geria <devanshgeria510@gmail.com>"`
+Git author flag: `--author="Shagun <shagunsoni197@gmail.com>"`
 
 ## Key Conventions
 - **3D Graphics & Memory**: Three.js components (`frontend/src/pages/twin/`) must safely traverse and dispose geometries, materials, and textures (`map`, `bumpMap`) upon unmount.

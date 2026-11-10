@@ -104,13 +104,20 @@ export function consolidateBoxes(boxes, imgW, imgH, iouThresh = 0.35) {
 
           // Guard against accidentally fusing giant unrelated regions across opposite walls
           if (unionArea <= 0.42) {
+            const combinedArea = Number(((cur.area_mm2 || 0) + (other.area_mm2 || 0)).toFixed(1));
+            const primary = cur.confidence >= other.confidence ? cur : other;
             cur = {
+              ...primary,
               x1: unionX1,
               y1: unionY1,
               x2: unionX2,
               y2: unionY2,
               confidence: Math.max(cur.confidence, other.confidence),
               class: cur.class,
+              area_mm2: combinedArea > 0 ? combinedArea : primary.area_mm2,
+              maskUrl: cur.maskUrl || other.maskUrl || null,
+              maskCanvas: cur.maskCanvas || other.maskCanvas || null,
+              destBox: primary.destBox || cur.destBox || other.destBox || null,
             };
             consumed.add(j);
             changed = true;

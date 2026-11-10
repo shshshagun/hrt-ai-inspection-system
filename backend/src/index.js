@@ -96,8 +96,8 @@ app.use(cors({
 // In-memory rate limiting to protect DB pool from starvation
 app.use(createRateLimiter({ windowMs: 60000, max: 600, message: 'Too many requests, please slow down.' }));
 
-// Parse incoming JSON bodies (limit kept at Express default: 100 kb).
-app.use(express.json());
+// Parse incoming JSON bodies (extended to 15mb to support base64 defect snapshot photo batches).
+app.use(express.json({ limit: '15mb' }));
 
 // ---------------------------------------------------------------------------
 // Health Check
