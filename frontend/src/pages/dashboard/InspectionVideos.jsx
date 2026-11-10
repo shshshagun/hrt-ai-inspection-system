@@ -17,8 +17,14 @@ import {
   Loader2,
   Video,
   PlusCircle,
+  Trash2,
 } from 'lucide-react';
-import { useInspections, useDetections } from '../../hooks/useApi';
+import {
+  useInspections,
+  useDetections,
+  deleteInspectionSession,
+  deleteDetectionLog,
+} from '../../hooks/useApi';
 import './InspectionVideos.css';
 
 function formatTime(seconds) {
@@ -31,7 +37,7 @@ function formatTime(seconds) {
 export default function InspectionVideos() {
   const navigate = useNavigate();
 
-  const { data: inspections, loading: inspLoading } = useInspections();
+  const { data: inspections, loading: inspLoading, refetch: refetchInspections } = useInspections();
   const inspList = useMemo(() => inspections ?? [], [inspections]);
 
   const [selectedInspectionId, setSelectedInspectionId] = useState(null);
@@ -40,7 +46,11 @@ export default function InspectionVideos() {
     [inspList, selectedInspectionId]
   );
 
-  const { data: allDetections, loading: detLoading } = useDetections({ limit: 500 });
+  const { data: allDetections, loading: detLoading, refetch: refetchDetections } = useDetections({ limit: 500 });
+
+  const [confirmDeleteVideo, setConfirmDeleteVideo] = useState(false);
+  const [deletingVideo, setDeletingVideo] = useState(false);
+  const [deletingDetId, setDeletingDetId] = useState(null);
 
   const detections = useMemo(() => {
     if (!selectedInspection) return [];
@@ -127,6 +137,40 @@ export default function InspectionVideos() {
     }
   }
 
+  async function handleDeleteCurrentVideo() {
+    if (!selectedInspection) return;
+    if (!confirmDeleteVideo) {
+      setConfirmDeleteVideo(true);
+      return;
+    }
+    stopPlayback();
+    setDeletingVideo(true);
+    try {
+      await deleteInspectionSession(selectedInspection.id);
+      setConfirmDeleteVideo(false);
+      setSelectedInspectionId(null);
+      setSelectedDetId(null);
+      setCursorIdx(0);
+      refetchInspections?.();
+      refetchDetections?.();
+    } finally {
+      setDeletingVideo(false);
+    }
+  }
+
+  async function handleDeleteDetection(e, detId) {
+    e.stopPropagation();
+    setDeletingDetId(detId);
+    try {
+      await deleteDetectionLog(detId);
+      if (selectedDetId === detId) setSelectedDetId(null);
+      refetchInspections?.();
+      refetchDetections?.();
+    } finally {
+      setDeletingDetId(null);
+    }
+  }
+
   const progress = totalKeyframes > 1 ? (safeCursor / (totalKeyframes - 1)) * 100 : totalKeyframes === 1 ? 100 : 0;
 
   if (!inspLoading && !detLoading && inspList.length === 0) {
@@ -173,29 +217,75 @@ export default function InspectionVideos() {
   return (
     <div className="ipv-page">
       {/* ── Header + inspection switcher ── */}
-      <div className="ipv-header">
+      <div className="ipv-header" style={{ flexWrap: 'wrap', gap: '12px' }}>
         <h1 className="ipv-title">Inspection Videos</h1>
-        {inspLoading ? (
-          <Loader2 size={16} className="sp-dl-btn__spin" />
-        ) : (
-          <select
-            className="ipv-select"
-            value={selectedInspection?.id ?? ''}
-            onChange={(e) => {
-              setSelectedInspectionId(e.target.value);
-              setSelectedDetId(null);
-              setCursorIdx(0);
-              stopPlayback();
-            }}
-            aria-label="Select inspection"
-          >
-            {inspList.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.label ?? i.id}
-              </option>
-            ))}
-          </select>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {inspLoading ? (
+            <Loader2 size={16} className="sp-dl-btn__spin" />
+          ) : (
+            <select
+              className="ipv-select"
+              value={selectedInspection?.id ?? ''}
+              onChange={(e) => {
+                setSelectedInspectionId(e.target.value);
+                setSelectedDetId(null);
+                setConfirmDeleteVideo(false);
+                setCursorIdx(0);
+                stopPlayback();
+              }}
+              aria-label="Select inspection"
+            >
+              {inspList.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.label ?? i.id}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {selectedInspection && (
+            <>
+              {confirmDeleteVideo && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteVideo(false)}
+                  style={{
+                    background: '#111318',
+                    border: '1px solid #1f2530',
+                    color: '#94a3b8',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleDeleteCurrentVideo}
+                disabled={deletingVideo}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: confirmDeleteVideo ? '#ef4444' : '#1a1114',
+                  border: '1px solid rgba(239, 68, 68, 0.45)',
+                  color: confirmDeleteVideo ? '#ffffff' : '#f87171',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {deletingVideo ? <Loader2 size={14} className="sp-dl-btn__spin" /> : <Trash2 size={14} />}
+                {confirmDeleteVideo ? 'Confirm Delete Session' : 'Delete Video Session'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="ipv-layout">
@@ -365,11 +455,12 @@ export default function InspectionVideos() {
                   selectedDetId === det.id ||
                   (!selectedDetId && currentFrameObj?.detections.some((fd) => fd.id === det.id));
                 return (
-                  <li key={det.id}>
+                  <li key={det.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <button
                       className={`ipv-det-item ${isActive ? 'ipv-det-item--active' : ''}`}
                       onClick={() => handleDetClick(det)}
                       aria-pressed={isActive}
+                      style={{ flex: 1 }}
                     >
                       <div className="ipv-det-item__thumb" aria-hidden="true">
                         {det.imageUrl ? (
@@ -403,6 +494,24 @@ export default function InspectionVideos() {
                       <span className="ipv-det-item__conf">
                         {Math.round((det.confidence ?? 0) * 100)}%
                       </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteDetection(e, det.id)}
+                      disabled={deletingDetId === det.id}
+                      title="Delete this frame & log"
+                      aria-label={`Delete detection ${det.id}`}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#f87171',
+                        cursor: 'pointer',
+                        padding: '6px',
+                        flexShrink: 0,
+                        display: 'inline-flex',
+                      }}
+                    >
+                      {deletingDetId === det.id ? <Loader2 size={14} className="sp-dl-btn__spin" /> : <Trash2 size={14} />}
                     </button>
                   </li>
                 );

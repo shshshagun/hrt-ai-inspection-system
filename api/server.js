@@ -157,6 +157,15 @@ app.get('/api/detections', async (req, res) => {
   }
 });
 
+function buildDetectionIdQuery(id) {
+  try {
+    const { ObjectId } = require('mongodb');
+    return { $or: [{ _id: new ObjectId(id) }, { id }, { detection_id: id }] };
+  } catch {
+    return { $or: [{ id }, { detection_id: id }] };
+  }
+}
+
 // ── GET /api/detections/:id ──
 // Returns a single detection by MongoDB _id or string ID
 app.get('/api/detections/:id', async (req, res) => {
@@ -165,22 +174,37 @@ app.get('/api/detections/:id', async (req, res) => {
   }
 
   try {
-    const { id } = req.params;
-    let query;
-    try {
-      const { ObjectId } = require('mongodb');
-      query = { $or: [{ _id: new ObjectId(id) }, { id }, { detection_id: id }] };
-    } catch {
-      query = { $or: [{ id }, { detection_id: id }] };
-    }
-
-    const detection = await db.collection('detections').findOne(query);
+    const detection = await db.collection('detections').findOne(buildDetectionIdQuery(req.params.id));
     if (!detection) {
-      return res.status(404).json({ error: `Detection ${id} not found` });
+      return res.status(404).json({ error: `Detection ${req.params.id} not found` });
     }
     res.json(detection);
   } catch (error) {
     console.error("Error fetching detection:", error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// ── DELETE /api/detections/:id ──
+// Deletes a single detection log (or ALL if id === 'ALL')
+app.delete('/api/detections/:id', async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not initialized or unreachable' });
+  }
+
+  try {
+    const { id } = req.params;
+    if (id === 'ALL') {
+      const result = await db.collection('detections').deleteMany({});
+      return res.json({ deletedCount: result.deletedCount });
+    }
+    const result = await db.collection('detections').deleteOne(buildDetectionIdQuery(id));
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: `Detection ${id} not found` });
+    }
+    res.json({ deletedCount: result.deletedCount, id });
+  } catch (error) {
+    console.error("Error deleting detection:", error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });

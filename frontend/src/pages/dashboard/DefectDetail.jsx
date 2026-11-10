@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Flag, MessageSquare, ArrowLeft, ExternalLink, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { generateReport, useDetection } from '../../hooks/useApi';
+import { Flag, MessageSquare, ArrowLeft, ExternalLink, Download, Loader2, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
+import { generateReport, useDetection, deleteDetectionLog } from '../../hooks/useApi';
 import './DefectDetail.css';
 
 const SEV_COLOR = {
@@ -58,6 +58,8 @@ export default function DefectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [exportState, setExportState] = useState('idle'); // idle | loading | done | error
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const { data: liveDetection, loading: apiLoading } = useDetection(id);
 
@@ -95,31 +97,86 @@ export default function DefectDetail() {
   return (
     <div className="dd-page">
       {/* ── Header ── */}
-      <div className="dd-header">
+      <div className="dd-header" style={{ flexWrap: 'wrap', gap: '12px' }}>
         <button className="dd-back-btn" onClick={() => navigate('/dashboard/detections')} aria-label="Back to detections">
           <ArrowLeft size={16} /> AI Detections
         </button>
-        <button
-          className="dd-export-btn"
-          aria-label="Export analysis as PDF"
-          disabled={exportState === 'loading'}
-          onClick={async () => {
-            setExportState('loading');
-            try {
-              await generateReport({ inspection_id: detection.inspectionId, format: 'pdf' });
-              setExportState('done');
-              setTimeout(() => setExportState('idle'), 2000);
-            } catch {
-              setExportState('error');
-              setTimeout(() => setExportState('idle'), 3000);
-            }
-          }}
-        >
-          {exportState === 'loading' && <><Loader2 size={14} className="sp-dl-btn__spin" /> Generating…</>}
-          {exportState === 'done'    && <><CheckCircle2 size={14} style={{ color: 'var(--teal)' }} /> Downloaded</>}
-          {exportState === 'error'   && <><AlertCircle size={14} style={{ color: 'var(--critical)' }} /> Error — retry</>}
-          {exportState === 'idle'    && <><Download size={14} /> Export Analysis</>}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {confirmDelete && (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              style={{
+                background: '#111318',
+                border: '1px solid #1f2530',
+                color: '#94a3b8',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={async () => {
+              if (!confirmDelete) {
+                setConfirmDelete(true);
+                return;
+              }
+              setDeleting(true);
+              try {
+                await deleteDetectionLog(detection.id);
+                navigate('/dashboard/detections');
+              } catch {
+                setDeleting(false);
+                setConfirmDelete(false);
+              }
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: confirmDelete ? '#ef4444' : '#1a1114',
+              border: '1px solid rgba(239, 68, 68, 0.45)',
+              color: confirmDelete ? '#ffffff' : '#f87171',
+              padding: '8px 14px',
+              borderRadius: '4px',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+            aria-label="Delete defect log"
+          >
+            {deleting ? <Loader2 size={14} className="sp-dl-btn__spin" /> : <Trash2 size={14} />}
+            {confirmDelete ? 'Confirm Delete Log' : 'Delete Log'}
+          </button>
+
+          <button
+            className="dd-export-btn"
+            aria-label="Export analysis as PDF"
+            disabled={exportState === 'loading'}
+            onClick={async () => {
+              setExportState('loading');
+              try {
+                await generateReport({ inspection_id: detection.inspectionId, format: 'pdf' });
+                setExportState('done');
+                setTimeout(() => setExportState('idle'), 2000);
+              } catch {
+                setExportState('error');
+                setTimeout(() => setExportState('idle'), 3000);
+              }
+            }}
+          >
+            {exportState === 'loading' && <><Loader2 size={14} className="sp-dl-btn__spin" /> Generating…</>}
+            {exportState === 'done'    && <><CheckCircle2 size={14} style={{ color: 'var(--teal)' }} /> Downloaded</>}
+            {exportState === 'error'   && <><AlertCircle size={14} style={{ color: 'var(--critical)' }} /> Error — retry</>}
+            {exportState === 'idle'    && <><Download size={14} /> Export Analysis</>}
+          </button>
+        </div>
       </div>
 
       <div className="dd-layout">

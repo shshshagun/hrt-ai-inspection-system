@@ -625,3 +625,33 @@ export async function generateReport({ inspection_id, format = 'pdf' }) {
     return { success: true, live: false, warning: err.message, format: normFormat };
   }
 }
+
+/**
+ * Deletes a single defect detection log (or 'ALL') from MongoDB via API.
+ */
+export async function deleteDetectionLog(id) {
+  if (!id) throw new Error('Detection ID is required');
+  const res = await fetch(`${API_BASE}/api/detections/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to delete detection (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Deletes an entire inspection session and all of its video frames & detection logs (or 'ALL').
+ */
+export async function deleteInspectionSession(id) {
+  if (!id) throw new Error('Inspection ID is required');
+  const res = await fetch(`${API_BASE}/api/inspections/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to delete inspection (${res.status})`);
+  }
+  return res.json();
+}
