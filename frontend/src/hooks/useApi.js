@@ -19,14 +19,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import {
-  DETECTIONS,
-  INSPECTIONS,
-  KPI_SUMMARY,
-  DEFECT_TYPE_DISTRIBUTION,
-  SEVERITY_DISTRIBUTION,
-  REPORTS,
-} from '../data/mockData';
 
 export const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL))
   || 'http://localhost:3000';
@@ -314,7 +306,7 @@ export function useInspections() {
       const list = Array.isArray(json) ? json : (json.data ?? []);
       return list.map(normalizeInspection);
     },
-    () => INSPECTIONS.map(normalizeInspection),
+    () => [],
     [],
   );
 }
@@ -345,15 +337,15 @@ export function useSpatialSummary(params = {}) {
       const bins = (json.bins || []).map((b, i) => ({
         ...b,
         chainage_bin:   b.chainage_bin ?? i,
-        chainage_km:    b.chainage_km || `${(b.chainage_start / 1000).toFixed(2)}–${(b.chainage_end / 1000).toFixed(2)}`,
-        total:          b.total ?? b.total_count,
-        total_count:    b.total_count ?? b.total,
-        critical:       b.critical ?? b.critical_count,
-        critical_count: b.critical_count ?? b.critical,
-        major:          b.major ?? b.major_count,
-        major_count:    b.major_count ?? b.major,
-        minor:          b.minor ?? b.minor_count,
-        minor_count:    b.minor_count ?? b.minor,
+        chainage_km:    b.chainage_km || `${((b.bin_start_m ?? b.chainage_start ?? 0) / 1000).toFixed(2)}–${((b.bin_end_m ?? b.chainage_end ?? 0) / 1000).toFixed(2)}`,
+        total:          b.total ?? b.total_count ?? b.defect_count ?? 0,
+        total_count:    b.total_count ?? b.total ?? b.defect_count ?? 0,
+        critical:       b.critical ?? b.critical_count ?? 0,
+        critical_count: b.critical_count ?? b.critical ?? 0,
+        major:          b.major ?? b.major_count ?? 0,
+        major_count:    b.major_count ?? b.major ?? 0,
+        minor:          b.minor ?? b.minor_count ?? 0,
+        minor_count:    b.minor_count ?? b.minor ?? 0,
       }));
 
       return {
@@ -367,26 +359,8 @@ export function useSpatialSummary(params = {}) {
       interval: binInterval,
       interval_m: binInterval,
       tunnel_length_m: 250,
-      total_detections: 48,
-      bins: DEFECT_TYPE_DISTRIBUTION.map((t, i) => {
-        const start = i * binInterval;
-        const end = (i + 1) * binInterval;
-        return {
-          chainage_bin: i,
-          chainage_start: start,
-          chainage_end: end,
-          chainage_km: `${(start / 1000).toFixed(2)}–${(end / 1000).toFixed(2)}`,
-          total: t.value,
-          total_count: t.value,
-          critical: Math.round(t.value * 0.2),
-          critical_count: Math.round(t.value * 0.2),
-          major: Math.round(t.value * 0.4),
-          major_count: Math.round(t.value * 0.4),
-          minor: Math.round(t.value * 0.4),
-          minor_count: Math.round(t.value * 0.4),
-          risk_level: i === 0 ? 'HIGH' : i === 1 ? 'MEDIUM' : 'LOW',
-        };
-      }),
+      total_detections: 0,
+      bins: [],
     }),
     [binInterval, min_conf, inspection_id, section],
   );
@@ -396,38 +370,45 @@ export function useSpatialSummary(params = {}) {
  * useKpiSummary()
  *
  * Derives aggregate KPIs by querying /api/inspections and /api/detections.
- * Falls back cleanly to static KPI_SUMMARY if backend is offline.
+ * Computes strictly from live telemetry records without mock defaults.
  */
 export function useKpiSummary() {
   return useApiData(
     async () => {
       const [inspRes, detRes] = await Promise.allSettled([
         apiFetch('/api/inspections'),
-        apiFetch('/api/detections?limit=1'),
+        apiFetch('/api/detections?limit=500'),
       ]);
 
       const inspections = inspRes.status === 'fulfilled'
         ? (Array.isArray(inspRes.value) ? inspRes.value : (inspRes.value.data ?? []))
-        : INSPECTIONS;
+        : [];
 
-      const detJson = detRes.status === 'fulfilled' ? detRes.value : null;
-      const totalDefects = detJson?.total ?? KPI_SUMMARY.defectsDetected;
-      const criticalCount = detJson?.critical_count ?? detJson?.criticalCount ?? KPI_SUMMARY.criticalDefects;
+      const detJson = detRes.status === 'fulfilled' ? detRes.value : [];
+      const detList = Array.isArray(detJson) ? detJson : (detJson?.data ?? []);
+      const totalDefects = detList.length;
+      const criticalCount = detList.filter(d => d.severity === 'Critical' || (d.confidence || 0) >= 0.85).length;
 
       const inspectedKm = inspections.reduce((s, i) => {
         const km = parseFloat(i.total_chainage_m ? i.total_chainage_m / 1000 : (i.coverageKm || i.coverage_km)) || 0;
         return s + km;
-      }, 0) || KPI_SUMMARY.inspectedKm;
+      }, 0);
 
       return {
-        totalInspections: inspections.length || KPI_SUMMARY.totalInspections,
+        totalInspections: inspections.length,
         defectsDetected:  totalDefects,
         criticalDefects:  criticalCount,
         inspectedKm:      Number(inspectedKm.toFixed(1)),
-        tunnelLengthKm:   KPI_SUMMARY.tunnelLengthKm,
+        tunnelLengthKm:   11.2,
       };
     },
-    () => KPI_SUMMARY,
+    () => ({
+      totalInspections: 0,
+      defectsDetected:  0,
+      criticalDefects:  0,
+      inspectedKm:      0,
+      tunnelLengthKm:   11.2,
+    }),
     [],
   );
 }
@@ -442,7 +423,7 @@ export function useReports() {
     async () => {
       const json = await apiFetch('/api/inspections');
       const list = Array.isArray(json) ? json : (json.data ?? []);
-      if (!list.length) return REPORTS;
+      if (!list.length) return [];
 
       return list.map(insp => {
         const id = insp.inspection_id || insp.id;
@@ -457,11 +438,11 @@ export function useReports() {
                 || new Date().toISOString().slice(0, 10),
           status: (insp.end_time || insp.status === 'completed') ? 'complete' : 'draft',
           defectCount: totalDet,
-          criticalCount: insp.critical_count ?? Math.round(totalDet * 0.2),
+          criticalCount: insp.critical_count ?? insp.criticalCount ?? Math.round(totalDet * 0.2),
         };
       });
     },
-    () => REPORTS,
+    () => [],
     [],
   );
 }
@@ -517,8 +498,8 @@ export function useDefectDistributions() {
       };
     },
     () => ({
-      typeDistribution:     DEFECT_TYPE_DISTRIBUTION,
-      severityDistribution: SEVERITY_DISTRIBUTION,
+      typeDistribution:     [],
+      severityDistribution: [],
     }),
     [],
   );
@@ -538,17 +519,17 @@ function triggerBrowserDownload(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function createClientFallbackReport({ inspection_id, format }) {
+function createClientFallbackReport({ inspection_id, format, detections = [] }) {
   const now = new Date().toISOString();
   if (format === 'csv') {
     const headers = ['Defect_ID', 'Category', 'Severity', 'Confidence', 'Chainage_m', 'Clock_Position', 'Dimensions_mm', 'Timestamp', 'Status'];
-    const rows = DETECTIONS.map((d, i) => [
+    const rows = detections.map((d, i) => [
       d.id || `DET-${String(i + 1).padStart(3, '0')}`,
       d.category || d.class_label || 'Structural Crack',
       d.severity || 'Major',
       (d.confidence || 0.85).toFixed(2),
       d.chainage_m != null ? d.chainage_m : (d.chainage ?? (i * 5.2).toFixed(1)),
-      d.clock_pos || '12 o\'clock (Crown)',
+      d.clock_pos || "12 o'clock (Crown)",
       d.dimensions || '3.2×140 mm',
       d.timestamp || now,
       d.status || 'confirmed'
@@ -559,34 +540,36 @@ function createClientFallbackReport({ inspection_id, format }) {
   }
 
   // Structured Audit Report
-  const crit = DETECTIONS.filter(d => d.severity === 'Critical').length;
-  const maj = DETECTIONS.filter(d => d.severity === 'Major').length;
-  const min = DETECTIONS.length - crit - maj;
+  const crit = detections.filter(d => d.severity === 'Critical').length;
+  const maj = detections.filter(d => d.severity === 'Major').length;
+  const min = Math.max(0, detections.length - crit - maj);
 
   const content = [
     '========================================================================',
     '        HRT AI INSPECTION SYSTEM — OFFICIAL DEFECT AUDIT REPORT         ',
     '========================================================================',
-    `Inspection ID     : ${inspection_id || 'INSP-2026-LIVE'}`,
+    `Inspection ID     : ${inspection_id || 'INSP-LIVE-ROV'}`,
     `Generated At      : ${now}`,
-    `Total Defect Count: ${DETECTIONS.length} verified defects`,
+    `Total Defect Count: ${detections.length} recorded defects`,
     `Critical Severity : ${crit} (Immediate High-Pressure Grouting Required)`,
     `Major Severity    : ${maj} (Structural Cavity / Spalling Remediation)`,
-    `Minor Severity    : ${Math.max(0, min)} (Scheduled Ultrasonic Monitoring)`,
+    `Minor Severity    : ${min} (Scheduled Ultrasonic Monitoring)`,
     '------------------------------------------------------------------------',
-    'SURVEYED DEFECT LOG (SAMPLE MANIFEST):',
+    'SURVEYED DEFECT LOG:',
     '------------------------------------------------------------------------',
-    '#   | ID       | Category            | Sev      | Conf | Chainage | Clock-Pos',
-    ...DETECTIONS.slice(0, 30).map((d, i) => {
-      const idx = String(i + 1).padEnd(4);
-      const id = (d.id || `DET-${i + 1}`).padEnd(9);
-      const cat = (d.category || 'Crack').slice(0, 20).padEnd(21);
-      const sev = (d.severity || 'Minor').padEnd(9);
-      const conf = `${Math.round((d.confidence || 0.85) * 100)}%`.padEnd(5);
-      const ch = `${d.chainage_m ?? (i * 5.2).toFixed(1)}m`.padEnd(9);
-      const clk = d.clock_pos || '12 o\'clock';
-      return `${idx}| ${id}| ${cat}| ${sev}| ${conf}| ${ch}| ${clk}`;
-    }),
+    detections.length === 0
+      ? 'No defects logged for this inspection session.'
+      : '#   | ID       | Category            | Sev      | Conf | Chainage | Clock-Pos\n' +
+        detections.map((d, i) => {
+          const idx = String(i + 1).padEnd(4);
+          const id = String(d.id || d._id || `DET-${i + 1}`).padEnd(9);
+          const cat = (d.category || d.class_label || 'Crack').slice(0, 20).padEnd(21);
+          const sev = (d.severity || 'Minor').padEnd(9);
+          const conf = `${Math.round((d.confidence || 0.85) * 100)}%`.padEnd(5);
+          const ch = `${(d.chainage_m ?? d.z ?? (i * 5.2)).toFixed(1)}m`.padEnd(9);
+          const clk = d.clock_pos || "12 o'clock";
+          return `${idx}| ${id}| ${cat}| ${sev}| ${conf}| ${ch}| ${clk}`;
+        }).join('\n'),
     '========================================================================',
     'End of Report — Hydroelectric Infrastructure Engineering Division',
   ].join('\n');

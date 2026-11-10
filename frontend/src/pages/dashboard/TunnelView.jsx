@@ -24,7 +24,7 @@ function getRiskCategory(score) {
 export default function TunnelView() {
   const navigate = useNavigate();
   const { data: apiDetections } = useDetections({ limit: 100 });
-  const detections = apiDetections || [];
+  const detections = useMemo(() => apiDetections || [], [apiDetections]);
 
   const [activeSectionId, setActiveSectionId] = useState('s01');
   const [selectedBin, setSelectedBin] = useState(null);

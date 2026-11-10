@@ -12,7 +12,7 @@ import { useReports, generateReport } from '../../hooks/useApi';
 import './SharedPages.css';
 
 export default function Reports() {
-  const { data: reports, loading, error, isLive } = useReports();
+  const { data: reports, loading, error } = useReports();
   // Track per-report download state: { [reportId]: 'idle' | 'loading' | 'done' | 'error' }
   const [dlState, setDlState] = useState({});
 
@@ -80,11 +80,46 @@ export default function Reports() {
 
       {error && !loading && (
         <div className="sp-error-banner">
-          <AlertCircle size={16} /> API offline — showing cached demo data
+          <AlertCircle size={16} /> Live database temporarily unreachable. Retrying connection...
         </div>
       )}
 
-      {!loading && reports && (
+      {!loading && (!reports || reports.length === 0) && (
+        <div
+          style={{
+            background: 'var(--db-surface)',
+            border: '1px dashed var(--db-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '60px 24px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px',
+            color: 'var(--db-ink-2)',
+            marginTop: '24px',
+          }}
+        >
+          <FileText size={40} style={{ color: 'var(--db-ink-3)' }} />
+          <div>
+            <h3 style={{ color: 'var(--db-ink)', fontSize: 'var(--text-base)', fontWeight: 600, margin: '0 0 6px 0' }}>
+              No audit reports available
+            </h3>
+            <p style={{ fontSize: 'var(--text-sm)', maxWidth: '420px', margin: 0 }}>
+              Official engineering audit reports are generated automatically from real detected anomalies when an inspection video is processed.
+            </p>
+          </div>
+          <button
+            className="db-btn-primary"
+            onClick={() => window.location.href = '/inspection/new'}
+            style={{ marginTop: '8px' }}
+          >
+            Run Inspection
+          </button>
+        </div>
+      )}
+
+      {!loading && reports && reports.length > 0 && (
         <div className="sp-reports-grid">
           {reports.map(r => (
             <div key={r.id} className="sp-report-card">

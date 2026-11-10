@@ -1,22 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpRight, AlertTriangle, ShieldAlert, Activity, Eye, Compass, X } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis
 } from 'recharts';
-import {
-  KPI_SUMMARY, DEFECT_TYPE_DISTRIBUTION, INSPECTIONS, DETECTIONS
-} from '../../data/mockData';
-import { useKpiSummary, useDetections, useDefectDistributions } from '../../hooks/useApi';
+import { useDetections, useInspections } from '../../hooks/useApi';
 import './DashboardOverview.css';
-
-const ACTIVITY_DATA = [
-  { time: '08:00', detections: 3 },
-  { time: '10:00', detections: 7 },
-  { time: '12:00', detections: 2 },
-  { time: '14:00', detections: 11 },
-  { time: '16:00', detections: 5 },
-];
 
 function KpiCard({ label, value, unit, Icon, color, sub }) {
   return (
@@ -60,7 +49,9 @@ export default function DashboardOverview() {
 
   // Module 8 — live API data directly from MongoDB
   const { data: dets } = useDetections();
-  const detData = dets ?? [];
+  const detData = useMemo(() => dets ?? [], [dets]);
+  const { data: rawInspections } = useInspections();
+  const inspections = useMemo(() => rawInspections || [], [rawInspections]);
 
   const totalDefects = detData.length;
   const criticalCount = detData.filter(d => d.severity === 'Critical').length;
@@ -73,6 +64,16 @@ export default function DashboardOverview() {
 
   const recentDets = detData.slice(0, 3);
   const [activeDefectMarker, setActiveDefectMarker] = useState(null);
+
+  const activityData = useMemo(() => {
+    if (!detData.length) return [];
+    const buckets = {};
+    detData.forEach(d => {
+      const timeKey = d.detectedAt ? new Date(d.detectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Live';
+      buckets[timeKey] = (buckets[timeKey] || 0) + 1;
+    });
+    return Object.entries(buckets).map(([time, count]) => ({ time, detections: count }));
+  }, [detData]);
 
   const typeDistributionData = [
     { name: 'Cracks', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('crack')).length, color: '#ef4444' },
@@ -424,55 +425,78 @@ export default function DashboardOverview() {
           <p className="db-card__eyebrow-avoid-style">Latest Inspection</p>
           <div className="db-latest-thumb" aria-hidden="true">
             <div className="db-latest-thumb__inner" />
-            <span className="db-latest-thumb__play" aria-label="No video available">▶</span>
+            <span className="db-latest-thumb__play" aria-label="Inspection video">▶</span>
           </div>
-          <h3 className="db-latest__name">{INSPECTIONS[0].label}</h3>
-          <p className="db-latest__meta">
-            {new Date(INSPECTIONS[0].date).toLocaleDateString('en-IN', {
-              month: 'short', day: 'numeric', year: 'numeric'
-            })}
-            {' · '}
-            {INSPECTIONS[0].totalDetections} detections
-          </p>
-          <button
-            className="db-btn-primary"
-            onClick={() => navigate('/dashboard/inspections')}
-            id="dashboard-view-inspection-btn"
-          >
-            View Details
-          </button>
+          {inspections.length > 0 ? (
+            <>
+              <h3 className="db-latest__name">{inspections[0].label}</h3>
+              <p className="db-latest__meta">
+                {new Date(inspections[0].date).toLocaleDateString('en-IN', {
+                  month: 'short', day: 'numeric', year: 'numeric'
+                })}
+                {' · '}
+                {inspections[0].totalDetections} detections
+              </p>
+              <button
+                className="db-btn-primary"
+                onClick={() => navigate('/dashboard/inspections')}
+                id="dashboard-view-inspection-btn"
+              >
+                View Details
+              </button>
+            </>
+          ) : (
+            <>
+              <h3 className="db-latest__name">Awaiting Inspection</h3>
+              <p className="db-latest__meta">0 sessions logged in database</p>
+              <button
+                className="db-btn-primary"
+                onClick={() => navigate('/inspection/new')}
+                id="dashboard-view-inspection-btn"
+              >
+                Launch Inspection
+              </button>
+            </>
+          )}
         </section>
       </div>
 
       {/* ── Detection activity bar chart ── */}
       <section className="db-card db-overview__activity" aria-label="Detection activity today">
         <header className="db-card__header">
-          <h2 className="db-card__title">Detection Activity (sample timeline)</h2>
+          <h2 className="db-card__title">Detection Activity (live stream)</h2>
         </header>
-        <ResponsiveContainer width="100%" height={140}>
-          <BarChart data={ACTIVITY_DATA} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-            <XAxis
-              dataKey="time"
-              tick={{ fontSize: 11, fill: 'var(--db-ink-3)' }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fontSize: 11, fill: 'var(--db-ink-3)' }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip
-              contentStyle={{
-                background: '#fff',
-                border: '1px solid var(--db-border)',
-                borderRadius: '4px',
-                fontSize: '0.8rem',
-              }}
-            />
-            <Bar dataKey="detections" fill="var(--teal)" radius={[2, 2, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {activityData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={activityData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+              <XAxis
+                dataKey="time"
+                tick={{ fontSize: 11, fill: 'var(--db-ink-3)' }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: 'var(--db-ink-3)' }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: '#0d1117',
+                  border: '1px solid var(--db-border)',
+                  borderRadius: '4px',
+                  fontSize: '0.8rem',
+                  color: '#fff',
+                }}
+              />
+              <Bar dataKey="detections" fill="var(--teal)" radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--db-ink-3)', fontSize: 'var(--text-xs)' }}>
+            No telemetry stream active. Run an inspection video to track detections in real time.
+          </div>
+        )}
       </section>
     </div>
   );

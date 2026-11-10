@@ -11,17 +11,6 @@ const SEV_COLOR = {
   Info:     'var(--info)',
 };
 
-function formatClockPosition(deg) {
-  if (deg == null) return "12 o'clock (Crown)";
-  const normalized = ((deg % 360) + 360) % 360;
-  if (normalized === 0 || normalized === 360) return "12 o'clock (Crown)";
-  if (normalized === 90) return "3 o'clock (Right Wall)";
-  if (normalized === 180) return "6 o'clock (Invert / Floor)";
-  if (normalized === 270) return "9 o'clock (Left Wall)";
-  const clock = Math.round(normalized / 30) || 12;
-  return `${clock} o'clock (${normalized}°)`;
-}
-
 function adaptApiDetection(api) {
   if (!api) return null;
   if (api.category && api.subtype) return api;
@@ -139,7 +128,7 @@ export default function DefectDetail() {
           <div className="dd-main-img" aria-label="Detection evidence image">
             <div className="dd-img-container">
               <img
-                src={`/frames/desktop/frame_${String(Math.max(1, Math.min(192, (frameIndex % 192) || 84))).padStart(4, '0')}.webp`}
+                src={detection.imageUrl || detection.image_url || `/frames/desktop/frame_${String(Math.max(1, Math.min(192, (frameIndex % 192) || 84))).padStart(4, '0')}.webp`}
                 alt="Tunnel Concrete Lining Evidence"
                 className="dd-concrete-photo"
               />
@@ -174,15 +163,22 @@ export default function DefectDetail() {
 
           {/* Thumbnail strip */}
           <div className="dd-thumbs" aria-label="Additional evidence thumbnails">
-            {[1, 2, 3].map(i => (
-              <button
-                key={i}
-                className={`dd-thumb ${i === 1 ? 'dd-thumb--active' : ''}`}
-                aria-label={`View evidence image ${i}`}
-              >
-                <div className="dd-thumb__bg" />
-              </button>
-            ))}
+            {[1, 2, 3].map(i => {
+              const thumbIdx = Math.max(1, Math.min(192, ((frameIndex + (i - 1) * 8) % 192) || (84 + i)));
+              return (
+                <button
+                  key={i}
+                  className={`dd-thumb ${i === 1 ? 'dd-thumb--active' : ''}`}
+                  aria-label={`View evidence image ${i}`}
+                >
+                  <img
+                    src={`/frames/mobile/frame_${String(thumbIdx).padStart(4, '0')}.webp`}
+                    alt={`Evidence angle ${i}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </button>
+              );
+            })}
             <button className="dd-thumb dd-thumb--add" aria-label="Add evidence">
               +
             </button>

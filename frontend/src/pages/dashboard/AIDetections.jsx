@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, ChevronUp, ChevronDown, ArrowRight, Loader2 } from 'lucide-react';
-import { DEFECT_CATEGORIES, SEVERITY_LEVELS } from '../../data/mockData';
 import { useDetections } from '../../hooks/useApi';
 import './AIDetections.css';
+
+const DEFECT_CATEGORIES = ['Crack', 'Spalling', 'Leakage', 'Corrosion', 'Erosion', 'Joint Displacement'];
+const SEVERITY_LEVELS = ['Critical', 'Major', 'Minor', 'Info'];
 
 const SEV_COLOR = {
   Critical: 'var(--critical)',
@@ -29,7 +31,7 @@ export default function AIDetections() {
   const PER_PAGE = 10;
 
   // Module 8 — live API with graceful fallback
-  const { data: allDetections, loading, error, isLive } = useDetections({
+  const { data: allDetections, loading, error } = useDetections({
     category: filterCat || undefined,
     severity: filterSev || undefined,
     search:   search    || undefined,
