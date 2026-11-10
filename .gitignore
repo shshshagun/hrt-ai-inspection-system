@@ -48,6 +48,7 @@ frontend/dist-ssr/
 # Reports & Documents
 reports/
 *.docx
+rov_path.json
 skills-lock.json
 
 # Redundant duplicate directories

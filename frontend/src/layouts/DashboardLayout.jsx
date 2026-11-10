@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { Outlet, NavLink, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Box, ClipboardList, Video, Zap,
-  MapPin, FileText, HardDrive, Settings, Menu, X, ChevronRight, Compass
+  MapPin, FileText, HardDrive, Settings, Menu, X, ChevronRight, Compass,
+  PlusCircle
 } from 'lucide-react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import './DashboardLayout.css';
 
 const NAV_ITEMS = [
   { to: '/dashboard',            label: 'Dashboard',        Icon: LayoutDashboard, end: true },
+  { to: '/inspection/new',       label: 'New Inspection',   Icon: PlusCircle },
   { to: '/dashboard/tunnel',     label: '3D Tunnel View',   Icon: Box },
   { to: '/tunnel-twin',          label: '3D Rover Twin',    Icon: Compass },
   { to: '/dashboard/inspections',label: 'Inspections',      Icon: ClipboardList },
@@ -34,6 +36,7 @@ function getPageTitle(pathname) {
     '/dashboard/reports': 'Reports',
     '/dashboard/assets': 'Assets',
     '/dashboard/settings': 'Settings',
+    '/inspection/new': 'New Inspection',
   };
   // defect detail
   if (pathname.startsWith('/dashboard/detections/')) return 'Defect Detail';
