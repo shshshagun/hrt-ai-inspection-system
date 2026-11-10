@@ -93,7 +93,7 @@ export default function DashboardOverview() {
       id: d.id || d._id || `DET-${i + 1}`,
       type: d.category || d.class_label || 'Defect',
       severity: d.severity || 'Minor',
-      chainage: Number(d.chainage_m || d.chainage || d.z || 0).toFixed(1),
+      chainage: Number(d.chainage_m || d.chainage || d.z || 0),
       confidence: d.confidence || 0.88,
       top,
       left,
@@ -119,7 +119,7 @@ export default function DashboardOverview() {
       <section className="db-overview__kpis" aria-label="Key performance indicators">
         <KpiCard
           label="Total Inspections"
-          value={detData.length > 0 ? 1 : 0}
+          value={inspections.length}
           Icon={Activity}
           color="var(--teal)"
         />
@@ -176,7 +176,7 @@ export default function DashboardOverview() {
                   className={`db-defect-marker ${isSelected ? 'db-defect-marker--selected' : ''}`}
                   style={{ top: d.top, left: d.left }}
                   title={`${d.id} — ${d.severity} ${d.type} (Click to inspect)`}
-                  aria-label={`${d.severity} defect at Ch ${d.chainage}km`}
+                  aria-label={`${d.severity} defect at Ch ${d.chainage.toFixed(1)}m`}
                   onClick={(e) => {
                     e.stopPropagation();
                     setActiveDefectMarker(isSelected ? null : d);
@@ -225,7 +225,7 @@ export default function DashboardOverview() {
                   <div className="db-defect-popover__type">{activeDefectMarker.type}</div>
                   <div className="db-defect-popover__meta">
                     <span style={{ color: activeDefectMarker.color, fontWeight: 700 }}>{activeDefectMarker.severity.toUpperCase()}</span>
-                    <span> &bull; Ch {activeDefectMarker.chainage.toFixed(2)} km</span>
+                    <span> &bull; Ch {Number(activeDefectMarker.chainage || 0).toFixed(1)} m</span>
                     <span> &bull; {Math.round(activeDefectMarker.confidence * 100)}% Conf</span>
                   </div>
                 </div>
@@ -398,33 +398,47 @@ export default function DashboardOverview() {
               View all <ArrowUpRight size={14} />
             </button>
           </header>
-          <div className="db-recent-grid">
-            {recentDets.map(d => (
-              <button
-                key={d.id}
-                className="db-recent-card"
-                onClick={() => navigate(`/dashboard/detections/${d.id}`)}
-                aria-label={`${d.category} — ${d.confidence * 100}% confidence`}
-              >
-                <div className="db-recent-card__thumb" aria-hidden="true">
-                  <div className="db-recent-card__thumbnail-bg" />
-                  <SeverityDot level={d.severity} />
-                </div>
-                <p className="db-recent-card__category">{d.category.toUpperCase()}</p>
-                <p className="db-recent-card__conf">{Math.round(d.confidence * 100)}% confidence</p>
-                <p className="db-recent-card__date">
-                  {new Date(d.detectedAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
-                </p>
-              </button>
-            ))}
-          </div>
+          {recentDets.length === 0 ? (
+            <div style={{ padding: '24px 0', color: 'var(--db-ink-3)', fontSize: 'var(--text-sm)' }}>
+              No detections logged yet. Upload footage in New Inspection to populate live detections.
+            </div>
+          ) : (
+            <div className="db-recent-grid">
+              {recentDets.map(d => (
+                <button
+                  key={d.id}
+                  className="db-recent-card"
+                  onClick={() => navigate(`/dashboard/detections/${d.id}`)}
+                  aria-label={`${d.category} — ${Math.round(d.confidence * 100)}% confidence`}
+                >
+                  <div className="db-recent-card__thumb" aria-hidden="true">
+                    {d.imageUrl ? (
+                      <img src={d.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div className="db-recent-card__thumbnail-bg" />
+                    )}
+                    <SeverityDot level={d.severity} />
+                  </div>
+                  <p className="db-recent-card__category">{d.category.toUpperCase()}</p>
+                  <p className="db-recent-card__conf">{Math.round(d.confidence * 100)}% confidence</p>
+                  <p className="db-recent-card__date">
+                    {new Date(d.detectedAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Latest inspection */}
         <section className="db-card db-overview__latest" aria-label="Latest inspection">
           <p className="db-card__eyebrow-avoid-style">Latest Inspection</p>
           <div className="db-latest-thumb" aria-hidden="true">
-            <div className="db-latest-thumb__inner" />
+            {detData[0]?.imageUrl ? (
+              <img src={detData[0].imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <div className="db-latest-thumb__inner" />
+            )}
             <span className="db-latest-thumb__play" aria-label="Inspection video">▶</span>
           </div>
           {inspections.length > 0 ? (

@@ -1,108 +1,89 @@
 /**
- * InspectionVideos.jsx — Module 9
+ * InspectionVideos.jsx — Live Archived Keyframe & Bounding-Box Viewer
  *
- * Replaces hasVideo=false with a real WebP frame-scrubber.
- * Reads /frames/manifest.json to know total frame count, fps, dimensions.
- * Maps each frame to the nearest detection via frameIndex so the HUD and
- * detection sidebar stay synchronised as the user scrubs or auto-plays.
- *
- * Module 8: INSPECTIONS and DETECTIONS are now fetched from the live API
- * (graceful fallback to mockData when offline).
+ * Displays authentic captured inspection frames and YOLOv8 bounding boxes
+ * persisted from uploaded videos in MongoDB Atlas. Never loads demo assets.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
-  Maximize2, Clock, ChevronRight, Loader2, AlertCircle,
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Clock,
+  ChevronRight,
+  Loader2,
+  Video,
+  PlusCircle,
 } from 'lucide-react';
 import { useInspections, useDetections } from '../../hooks/useApi';
 import './InspectionVideos.css';
 
-// ─── constants ───────────────────────────────────────────────────────────────
-
-const MANIFEST_URL = '/frames/manifest.json';
-const FRAME_BASE   = '/frames/mobile/'; // 960×540 frames, good balance
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-function zeroPad(n, width) {
-  return String(n).padStart(width, '0');
-}
-
-function frameUrl(manifest, frameIdx) {
-  if (!manifest) return '';
-  const pad   = manifest.pad  ?? 4;
-  const ext   = manifest.ext  ?? 'webp';
-  const total = manifest.frameCount || 192;
-  const n     = Math.max(1, Math.min(total, frameIdx + 1));
-  return `${FRAME_BASE}frame_${zeroPad(n, pad)}.${ext}`;
-}
-
 function formatTime(seconds) {
-  const m   = Math.floor(seconds / 60);
-  const sec = Math.floor(seconds % 60);
+  const safe = Number.isFinite(seconds) && seconds >= 0 ? seconds : 0;
+  const m = Math.floor(safe / 60);
+  const sec = Math.floor(safe % 60);
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
-
-/** Find which detection is closest to the given frame index. */
-function nearestDetection(detections, frameIdx) {
-  if (!detections || detections.length === 0) return null;
-  return detections.reduce((best, d) => {
-    const dfi = d.frameIndex ?? d.frame_index ?? 0;
-    const bfi = best.frameIndex ?? best.frame_index ?? 0;
-    return Math.abs(dfi - frameIdx) < Math.abs(bfi - frameIdx) ? d : best;
-  });
-}
-
-// ─── component ───────────────────────────────────────────────────────────────
 
 export default function InspectionVideos() {
   const navigate = useNavigate();
 
-  // ── API data (Module 8) ──
   const { data: inspections, loading: inspLoading } = useInspections();
-  const inspList = inspections ?? [];
+  const inspList = useMemo(() => inspections ?? [], [inspections]);
 
   const [selectedInspectionId, setSelectedInspectionId] = useState(null);
-  const selectedInspection = inspList.find(i => i.id === selectedInspectionId) ?? inspList[0] ?? null;
-
-
-  const { data: allDetections } = useDetections();
-  const detections = (allDetections ?? []).filter(
-    d => d.inspectionId === (selectedInspection?.id) ||
-         d.inspection_id === (selectedInspection?.id)
+  const selectedInspection = useMemo(
+    () => inspList.find((i) => i.id === selectedInspectionId) ?? inspList[0] ?? null,
+    [inspList, selectedInspectionId]
   );
 
-  // ── manifest ──
-  const [manifest,     setManifest]     = useState(null);
-  const [manifestErr,  setManifestErr]  = useState(false);
+  const { data: allDetections, loading: detLoading } = useDetections({ limit: 500 });
 
-  useEffect(() => {
-    fetch(MANIFEST_URL)
-      .then(r => r.json())
-      .then(setManifest)
-      .catch(() => setManifestErr(true));
-  }, []);
+  const detections = useMemo(() => {
+    if (!selectedInspection) return [];
+    return (allDetections ?? [])
+      .filter(
+        (d) =>
+          d.inspectionId === selectedInspection.id ||
+          d.inspection_id === selectedInspection.id ||
+          (selectedInspection.id === 'INSP-LIVE-1' && !d.inspection_id)
+      )
+      .sort((a, b) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
+  }, [allDetections, selectedInspection]);
 
-  // ── frame player state ──
-  const [frameIdx,    setFrameIdx]    = useState(0);
-  const [playing,     setPlaying]     = useState(false);
-  const [muted,       setMuted]       = useState(false);
-  const [imgLoading,  setImgLoading]  = useState(true);
-  const [selectedDet, setSelectedDet] = useState(null);
+  // Unique keyframes with captured image snapshots
+  const frames = useMemo(() => {
+    const withImages = detections.filter((d) => Boolean(d.imageUrl));
+    const map = new Map();
+    for (const det of withImages) {
+      const key = `${det.frameIndex ?? 0}-${det.videoTime ?? 0}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          frameIndex: det.frameIndex ?? 0,
+          videoTime: det.videoTime ?? 0,
+          imageUrl: det.imageUrl,
+          detections: [det],
+        });
+      } else {
+        map.get(key).detections.push(det);
+      }
+    }
+    return Array.from(map.values());
+  }, [detections]);
 
-  const intervalRef  = useRef(null);
-  const imgRef       = useRef(null);
+  const [cursorIdx, setCursorIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [selectedDetId, setSelectedDetId] = useState(null);
+  const intervalRef = useRef(null);
 
-  const totalFrames = manifest?.frameCount ?? 192;
-  const fps         = manifest?.fps        ?? 24;
-  const duration    = totalFrames / fps; // seconds
+  const totalKeyframes = frames.length;
+  const safeCursor = totalKeyframes > 0 ? Math.min(cursorIdx, totalKeyframes - 1) : 0;
+  const currentFrameObj = frames[safeCursor] ?? null;
 
-  // Near-detection highlight
-  const activeDetection = selectedDet ?? nearestDetection(detections, frameIdx);
-
-  // ── playback loop ──
   const stopPlayback = useCallback(() => {
     clearInterval(intervalRef.current);
     intervalRef.current = null;
@@ -110,79 +91,108 @@ export default function InspectionVideos() {
   }, []);
 
   const startPlayback = useCallback(() => {
+    if (totalKeyframes <= 1) return;
     if (intervalRef.current) clearInterval(intervalRef.current);
-    const ms = Math.round(1000 / fps);
     intervalRef.current = setInterval(() => {
-      setFrameIdx(prev => {
-        if (prev >= totalFrames - 1) {
-          stopPlayback();
-          return 0;
-        }
+      setCursorIdx((prev) => {
+        if (prev >= totalKeyframes - 1) return 0;
         return prev + 1;
       });
-    }, ms);
+    }, 1100);
     setPlaying(true);
-  }, [fps, totalFrames, stopPlayback]);
+  }, [totalKeyframes]);
+
+  const togglePlay = useCallback(() => {
+    if (playing) stopPlayback();
+    else startPlayback();
+  }, [playing, stopPlayback, startPlayback]);
 
   useEffect(() => () => clearInterval(intervalRef.current), []);
 
-  function togglePlay() {
-    if (!manifest) return;
-    if (playing) {
-      stopPlayback();
-    } else {
-      startPlayback();
-    }
-  }
-
   function stepFrame(delta) {
     stopPlayback();
-    setFrameIdx(i => Math.max(0, Math.min(totalFrames - 1, i + delta)));
-  }
-
-  function handleSeek(e) {
-    stopPlayback();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    setFrameIdx(Math.floor(ratio * (totalFrames - 1)));
+    if (totalKeyframes === 0) return;
+    setCursorIdx((i) => Math.max(0, Math.min(totalKeyframes - 1, i + delta)));
+    setSelectedDetId(null);
   }
 
   function handleDetClick(det) {
     stopPlayback();
-    const rawFi = det.frameIndex ?? det.frame_index ?? 0;
-    const fi = rawFi >= totalFrames ? (rawFi % totalFrames) : Math.max(0, Math.min(totalFrames - 1, rawFi));
-    setFrameIdx(fi);
-    setSelectedDet(det === selectedDet ? null : det);
+    setSelectedDetId(det.id);
+    const frameMatch = frames.findIndex((f) => f.detections.some((fd) => fd.id === det.id));
+    if (frameMatch >= 0) {
+      setCursorIdx(frameMatch);
+    } else {
+      navigate(`/dashboard/detections/${det.id}`);
+    }
   }
 
-  // current timestamp as string
-  const currentSec     = frameIdx / fps;
-  const currentTimeStr = formatTime(currentSec);
-  const progress       = totalFrames > 1 ? (frameIdx / (totalFrames - 1)) * 100 : 0;
+  const progress = totalKeyframes > 1 ? (safeCursor / (totalKeyframes - 1)) * 100 : totalKeyframes === 1 ? 100 : 0;
 
-  const hasFrames = manifest && !manifestErr;
+  if (!inspLoading && !detLoading && inspList.length === 0) {
+    return (
+      <div className="ipv-page">
+        <div className="ipv-header">
+          <h1 className="ipv-title">Inspection Videos</h1>
+        </div>
+        <div
+          style={{
+            background: 'var(--db-surface)',
+            border: '1px dashed var(--db-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '64px 24px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px',
+            color: 'var(--db-ink-2)',
+          }}
+        >
+          <Video size={42} style={{ color: 'var(--db-ink-3)' }} />
+          <div>
+            <h2 style={{ color: 'var(--db-ink)', fontSize: 'var(--text-base)', fontWeight: 600, margin: '0 0 6px 0' }}>
+              No uploaded inspection footage yet
+            </h2>
+            <p style={{ fontSize: 'var(--text-sm)', maxWidth: '460px', margin: 0 }}>
+              Upload a subsea tunnel video in New Inspection. Every detected crack keyframe and bounding box will automatically archive here for playback and audit review.
+            </p>
+          </div>
+          <button
+            className="db-btn-primary"
+            onClick={() => navigate('/inspection/new')}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}
+          >
+            <PlusCircle size={16} /> Launch Inspection
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="ipv-page">
-      {/* ── Inspection selector ── */}
-      <div className="ipv-selector">
-        <h1 className="ipv-selector__title">Inspection Videos</h1>
+      {/* ── Header + inspection switcher ── */}
+      <div className="ipv-header">
+        <h1 className="ipv-title">Inspection Videos</h1>
         {inspLoading ? (
           <Loader2 size={16} className="sp-dl-btn__spin" />
         ) : (
           <select
             className="ipv-select"
             value={selectedInspection?.id ?? ''}
-            onChange={e => {
+            onChange={(e) => {
               setSelectedInspectionId(e.target.value);
-              setSelectedDet(null);
-              setFrameIdx(0);
+              setSelectedDetId(null);
+              setCursorIdx(0);
               stopPlayback();
             }}
             aria-label="Select inspection"
           >
-            {inspList.map(i => (
-              <option key={i.id} value={i.id}>{i.label ?? i.id}</option>
+            {inspList.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.label ?? i.id}
+              </option>
             ))}
           </select>
         )}
@@ -194,89 +204,98 @@ export default function InspectionVideos() {
           <div className="ipv-player">
             {/* Status bar */}
             <div className="ipv-player__status-bar">
-              <span className="ipv-status-dot" style={{ background: hasFrames ? 'var(--teal)' : 'var(--minor)' }} />
+              <span
+                className="ipv-status-dot"
+                style={{ background: currentFrameObj ? 'var(--teal)' : 'var(--minor)' }}
+              />
               <span className="ipv-status-label">
-                {hasFrames ? `FRAME ${String(frameIdx).padStart(4, '0')} / ${totalFrames}` : 'LOADING FRAMES'}
+                {currentFrameObj
+                  ? `KEYFRAME ${safeCursor + 1} / ${totalKeyframes} (VID FR #${currentFrameObj.frameIndex})`
+                  : detLoading
+                    ? 'LOADING CAPTURED FRAMES…'
+                    : 'TELEMETRY ARCHIVE'}
               </span>
-              <span className="ipv-status-mode">FILLED TUNNEL MODE — OPERATIONAL</span>
+              <span className="ipv-status-mode">
+                {selectedInspection?.videoName || 'LIVE MONGODB SNAPSHOTS'}
+              </span>
             </div>
 
             {/* Viewport */}
             <div className="ipv-player__viewport">
-              {manifestErr && (
+              {detLoading && (
                 <div className="ipv-empty-state">
                   <div className="ipv-empty-state__inner">
-                    <AlertCircle size={28} style={{ color: 'var(--minor)' }} />
-                    <p className="ipv-empty-state__title">Frame manifest not found</p>
+                    <Loader2 size={28} className="sp-dl-btn__spin" />
+                    <p className="ipv-empty-state__title">Loading archived keyframes…</p>
+                  </div>
+                </div>
+              )}
+
+              {!detLoading && !currentFrameObj && (
+                <div className="ipv-empty-state">
+                  <div className="ipv-empty-state__inner">
+                    <Video size={32} style={{ color: 'var(--db-ink-3)' }} />
+                    <p className="ipv-empty-state__title">No video snapshots attached to this session</p>
                     <p className="ipv-empty-state__body">
-                      Ensure <code>frontend/public/frames/manifest.json</code> exists.
+                      Run a live inspection scan in New Inspection to store frame snapshots alongside telemetry.
                     </p>
                   </div>
                 </div>
               )}
 
-              {!manifestErr && !manifest && (
-                <div className="ipv-empty-state">
-                  <div className="ipv-empty-state__inner">
-                    <Loader2 size={28} className="sp-dl-btn__spin" />
-                    <p className="ipv-empty-state__title">Loading frames…</p>
+              {!detLoading && currentFrameObj && (
+                <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ position: 'relative', maxWidth: '100%', maxHeight: '100%' }}>
+                    <img
+                      src={currentFrameObj.imageUrl}
+                      alt={`Captured keyframe #${currentFrameObj.frameIndex}`}
+                      className="ipv-video"
+                      style={{ width: '100%', height: 'auto', maxHeight: '420px', display: 'block' }}
+                      draggable={false}
+                    />
+
+                    {/* Real Bounding Boxes overlaid accurately on captured frame */}
+                    {currentFrameObj.detections.map((d) => {
+                      if (!d.bbox) return null;
+                      const style =
+                        d.bbox.left_pct != null
+                          ? {
+                              left: `${d.bbox.left_pct}%`,
+                              top: `${d.bbox.top_pct}%`,
+                              width: `${d.bbox.width_pct}%`,
+                              height: `${d.bbox.height_pct}%`,
+                            }
+                          : {
+                              left: `${(d.bbox.x1 / 640) * 100}%`,
+                              top: `${(d.bbox.y1 / 480) * 100}%`,
+                              width: `${((d.bbox.x2 - d.bbox.x1) / 640) * 100}%`,
+                              height: `${((d.bbox.y2 - d.bbox.y1) / 480) * 100}%`,
+                            };
+                      return (
+                        <div
+                          key={d.id}
+                          className="ipv-det-overlay"
+                          style={style}
+                          aria-label={`Detection: ${d.category} ${Math.round((d.confidence ?? 0) * 100)}%`}
+                        >
+                          <span className="ipv-det-overlay__label">
+                            {(d.category ?? '').toUpperCase()} {Math.round((d.confidence ?? 0) * 100)}%
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {hasFrames && (
-                <>
-                  {/* Frame image */}
-                  <img
-                    ref={imgRef}
-                    src={frameUrl(manifest, frameIdx)}
-                    alt={`Frame ${frameIdx}`}
-                    className="ipv-video"
-                    style={{ display: imgLoading ? 'none' : 'block' }}
-                    onLoad={() => setImgLoading(false)}
-                    onLoadStart={() => setImgLoading(true)}
-                    draggable={false}
-                  />
-                  {imgLoading && (
-                    <div className="ipv-frame-loading" aria-label="Loading frame">
-                      <Loader2 size={20} className="sp-dl-btn__spin" />
-                    </div>
-                  )}
-
-                  {/* Detection bounding-box overlay */}
-                  {activeDetection && activeDetection.bbox && (
-                    <div
-                      className="ipv-det-overlay"
-                      style={{
-                        left:   `${(activeDetection.bbox.x1 / 960) * 100}%`,
-                        top:    `${(activeDetection.bbox.y1 / 540) * 100}%`,
-                        width:  `${((activeDetection.bbox.x2 - activeDetection.bbox.x1) / 960) * 100}%`,
-                        height: `${((activeDetection.bbox.y2 - activeDetection.bbox.y1) / 540) * 100}%`,
-                      }}
-                      aria-label={`Detection: ${activeDetection.category} ${Math.round((activeDetection.confidence ?? 0) * 100)}%`}
-                    >
-                      <span className="ipv-det-overlay__label">
-                        {(activeDetection.category ?? '').toUpperCase()}{' '}
-                        {Math.round((activeDetection.confidence ?? 0) * 100)}%
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* ROV telemetry HUD — always visible */}
+              {/* ROV telemetry HUD */}
               <div className="ipv-hud" aria-label="ROV telemetry">
-                <span className="ipv-hud__label">ROV-04 "AQUASCAN"</span>
+                <span className="ipv-hud__label">YOLOv8n-seg ARCHIVE</span>
                 <span className="ipv-hud__val">
-                  {activeDetection
-                    ? `Ch ${(activeDetection.chainage ?? activeDetection.coord_z ?? 0).toFixed(3)} km`
-                    : `T ${currentTimeStr}`}
+                  {currentFrameObj
+                    ? `Ch ${(currentFrameObj.detections[0]?.chainage ?? 0).toFixed(1)} m · t=${formatTime(currentFrameObj.videoTime)}`
+                    : '—'}
                 </span>
-                {activeDetection && (
-                  <span className="ipv-hud__conf">
-                    Conf {Math.round((activeDetection.confidence ?? 0) * 100)}%
-                  </span>
-                )}
               </div>
             </div>
 
@@ -284,9 +303,9 @@ export default function InspectionVideos() {
             <div className="ipv-controls">
               <button
                 className="ipv-btn"
-                onClick={() => stepFrame(-10)}
-                disabled={!hasFrames}
-                aria-label="Back 10 frames"
+                onClick={() => stepFrame(-1)}
+                disabled={totalKeyframes <= 1}
+                aria-label="Previous defect keyframe"
               >
                 <SkipBack size={16} />
               </button>
@@ -294,7 +313,7 @@ export default function InspectionVideos() {
               <button
                 className="ipv-btn ipv-btn--play"
                 onClick={togglePlay}
-                disabled={!hasFrames}
+                disabled={totalKeyframes <= 1}
                 aria-label={playing ? 'Pause' : 'Play'}
               >
                 {playing ? <Pause size={18} /> : <Play size={18} />}
@@ -302,66 +321,21 @@ export default function InspectionVideos() {
 
               <button
                 className="ipv-btn"
-                onClick={() => stepFrame(10)}
-                disabled={!hasFrames}
-                aria-label="Forward 10 frames"
+                onClick={() => stepFrame(1)}
+                disabled={totalKeyframes <= 1}
+                aria-label="Next defect keyframe"
               >
                 <SkipForward size={16} />
               </button>
 
-              {/* Seek bar */}
-              <div
-                className="ipv-seekbar"
-                onClick={handleSeek}
-                role="slider"
-                aria-valuenow={frameIdx}
-                aria-valuemin={0}
-                aria-valuemax={totalFrames - 1}
-                aria-label="Frame scrubber"
-                tabIndex={hasFrames ? 0 : -1}
-                onKeyDown={e => {
-                  if (e.key === 'ArrowRight') stepFrame(1);
-                  if (e.key === 'ArrowLeft')  stepFrame(-1);
-                }}
-              >
-                {/* detection markers on the timeline */}
-                {detections.map(d => {
-                  const rawFi = d.frameIndex ?? d.frame_index ?? 0;
-                  const fi  = rawFi >= totalFrames ? (rawFi % totalFrames) : rawFi;
-                  const pct = totalFrames > 1 ? (fi / (totalFrames - 1)) * 100 : 0;
-                  const col = d.severity === 'Critical' ? 'var(--critical)'
-                            : d.severity === 'Major'    ? 'var(--major)'
-                            :                             'var(--minor)';
-                  return (
-                    <div
-                      key={d.id}
-                      className="ipv-seekbar__marker"
-                      style={{ left: `${pct}%`, background: col }}
-                      title={`${d.id} — ${d.severity} (frame ${fi})`}
-                    />
-                  );
-                })}
+              <div className="ipv-seekbar" aria-label="Keyframe scrubber">
                 <div className="ipv-seekbar__fill" style={{ width: `${progress}%` }} />
                 <div className="ipv-seekbar__thumb" style={{ left: `${progress}%` }} />
               </div>
 
               <span className="ipv-time">
-                {currentTimeStr} / {formatTime(duration)}
+                {totalKeyframes > 0 ? `${safeCursor + 1} / ${totalKeyframes}` : '0 / 0'}
               </span>
-
-              <button
-                className="ipv-btn"
-                onClick={() => setMuted(m => !m)}
-                disabled={!hasFrames}
-                aria-label={muted ? 'Unmute' : 'Mute'}
-                title="Audio not available for frame sequences"
-              >
-                {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-              </button>
-
-              <button className="ipv-btn" disabled={!hasFrames} aria-label="Fullscreen">
-                <Maximize2 size={18} />
-              </button>
             </div>
           </div>
 
@@ -369,9 +343,9 @@ export default function InspectionVideos() {
           {selectedInspection && (
             <div className="ipv-meta-row">
               <span><strong>Inspection:</strong> {selectedInspection.id}</span>
-              <span><strong>ROV:</strong> {selectedInspection.rov}</span>
-              <span><strong>Date:</strong> {selectedInspection.date ?? selectedInspection.started_at?.slice(0, 10) ?? '—'}</span>
-              <span><strong>Duration:</strong> {selectedInspection.duration ?? `${Math.round(duration)}s`}</span>
+              <span><strong>Engine:</strong> {selectedInspection.rov}</span>
+              <span><strong>Date:</strong> {selectedInspection.date ?? '—'}</span>
+              <span><strong>Detections:</strong> {detections.length}</span>
             </div>
           )}
         </div>
@@ -383,13 +357,13 @@ export default function InspectionVideos() {
           </h2>
 
           {detections.length === 0 ? (
-            <p className="ipv-empty-msg">No detections for this inspection.</p>
+            <p className="ipv-empty-msg">No detections recorded for this inspection.</p>
           ) : (
             <ul>
-              {detections.map(det => {
-                const fi  = det.frameIndex ?? det.frame_index ?? 0;
-                const isActive = selectedDet?.id === det.id
-                              || (!selectedDet && activeDetection?.id === det.id);
+              {detections.map((det) => {
+                const isActive =
+                  selectedDetId === det.id ||
+                  (!selectedDetId && currentFrameObj?.detections.some((fd) => fd.id === det.id));
                 return (
                   <li key={det.id}>
                     <button
@@ -398,12 +372,24 @@ export default function InspectionVideos() {
                       aria-pressed={isActive}
                     >
                       <div className="ipv-det-item__thumb" aria-hidden="true">
-                        <div className="ipv-det-item__thumb-bg" />
+                        {det.imageUrl ? (
+                          <img
+                            src={det.imageUrl}
+                            alt=""
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        ) : (
+                          <div className="ipv-det-item__thumb-bg" />
+                        )}
                         <span
                           className="ipv-det-item__sev-dot"
                           style={{
-                            background: det.severity === 'Critical' ? 'var(--critical)'
-                              : det.severity === 'Major' ? 'var(--major)' : 'var(--minor)',
+                            background:
+                              det.severity === 'Critical'
+                                ? 'var(--critical)'
+                                : det.severity === 'Major'
+                                  ? 'var(--major)'
+                                  : 'var(--minor)',
                           }}
                         />
                       </div>
@@ -411,8 +397,7 @@ export default function InspectionVideos() {
                         <p className="ipv-det-item__cat">{det.category}</p>
                         <p className="ipv-det-item__meta">
                           <Clock size={11} />
-                          Ch {(det.chainage ?? det.coord_z ?? 0).toFixed(2)} km
-                          {' · '}Fr {fi}
+                          Ch {(det.chainage ?? 0).toFixed(1)} m · Fr {det.frameIndex ?? 0}
                         </p>
                       </div>
                       <span className="ipv-det-item__conf">
