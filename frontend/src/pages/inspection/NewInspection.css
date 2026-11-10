@@ -104,6 +104,92 @@
   color: var(--ink);
 }
 
+/* ── Source Mode Tabs (Upload Video vs Live Webcam) ── */
+.insp-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  border-bottom: 1px solid #1f2530;
+  padding-bottom: var(--space-3);
+}
+
+.insp-mode-tabs {
+  display: inline-flex;
+  background: #0d1117;
+  border: 1px solid #1f2530;
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 4px;
+}
+
+.insp-mode-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-2);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 7px 14px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color var(--duration), background var(--duration), border-color var(--duration);
+}
+
+.insp-mode-tab:hover {
+  color: #ffffff;
+  background: #161b22;
+}
+
+.insp-mode-tab--active {
+  background: #111924;
+  border-color: #00d4ff;
+  color: #00d4ff;
+}
+
+.insp-cam-select {
+  background: #0d1117;
+  color: var(--ink);
+  border: 1px solid #1f2530;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  padding: 6px 10px;
+  border-radius: 2px;
+  max-width: 260px;
+}
+
+.insp-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1a0f12;
+  border: 1px solid #ef4444;
+  color: #f87171;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 2px;
+}
+
+.insp-live-badge__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: insp-pulse 1s infinite alternate;
+}
+
+@keyframes insp-pulse {
+  from { opacity: 1; }
+  to { opacity: 0.25; }
+}
+
 /* ── Inspection Deck Grid (Split Screen) ── */
 .insp-deck {
   display: grid;

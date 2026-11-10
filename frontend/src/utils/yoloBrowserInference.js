@@ -232,9 +232,12 @@ export function captureSnapshot(srcCanvas) {
 }
 
 /**
- * Run YOLOv8n-seg ONNX (full frame + 2x2 overlapping tiles) on a video element or canvas.
+ * Run YOLOv8n-seg ONNX (tiled for deep scan, or fast single-frame for live webcam) on a video element or canvas.
  */
-export async function detectVideoFrame(videoEl, { frameIndex = 0, videoTime = 0, chainageZ = 0, confThreshold = 0.25 } = {}) {
+export async function detectVideoFrame(
+  videoEl,
+  { frameIndex = 0, videoTime = 0, chainageZ = 0, confThreshold = 0.25, tiled = true } = {}
+) {
   const W = videoEl.videoWidth || videoEl.width || 640;
   const H = videoEl.videoHeight || videoEl.height || 360;
   if (!W || !H) return { detections: [], snapshotUrl: null };
@@ -253,14 +256,16 @@ export async function detectVideoFrame(videoEl, { frameIndex = 0, videoTime = 0,
   const session = await getYoloSession();
   const inputName = session.inputNames[0];
 
-  // Multi-scale overlapping tiles to spot both foreground and distant wall cracks
-  const tiles = [
-    { x0: 0, y0: 0, w: W, h: H },
-    { x0: 0, y0: 0, w: Math.round(W * 0.6), h: Math.round(H * 0.65) },
-    { x0: Math.round(W * 0.4), y0: 0, w: W - Math.round(W * 0.4), h: Math.round(H * 0.65) },
-    { x0: 0, y0: Math.round(H * 0.32), w: Math.round(W * 0.6), h: H - Math.round(H * 0.32) },
-    { x0: Math.round(W * 0.4), y0: Math.round(H * 0.32), w: W - Math.round(W * 0.4), h: H - Math.round(H * 0.32) },
-  ];
+  // Multi-scale overlapping tiles for deep video scans, single full frame for real-time webcam
+  const tiles = tiled
+    ? [
+        { x0: 0, y0: 0, w: W, h: H },
+        { x0: 0, y0: 0, w: Math.round(W * 0.6), h: Math.round(H * 0.65) },
+        { x0: Math.round(W * 0.4), y0: 0, w: W - Math.round(W * 0.4), h: Math.round(H * 0.65) },
+        { x0: 0, y0: Math.round(H * 0.32), w: Math.round(W * 0.6), h: H - Math.round(H * 0.32) },
+        { x0: Math.round(W * 0.4), y0: Math.round(H * 0.32), w: W - Math.round(W * 0.4), h: H - Math.round(H * 0.32) },
+      ]
+    : [{ x0: 0, y0: 0, w: W, h: H }];
 
   const rawBoxes = [];
 
