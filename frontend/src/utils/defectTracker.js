@@ -235,7 +235,8 @@ export function createDefectTracker({
           }
         } else {
           seq += 1;
-          const trackId = `TRK-${seq}`;
+          const defectType = hit.class === 'spalling' ? 'SPA' : 'CRK';
+          const trackId = `${defectType}-${String(seq).padStart(3, '0')}`;
           tracks.push({
             trackId,
             class: hit.class,

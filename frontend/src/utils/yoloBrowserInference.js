@@ -166,7 +166,7 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
       const meanLap = lapSum / n;
       const lapVar = lapSq / n - meanLap * meanLap;
 
-      if (meanL > 62 && meanL < 172 && lapVar > 165 && darkFrac > 0.05 && darkFrac < 0.48) {
+      if (meanL > 68 && meanL < 165 && lapVar > 240 && darkFrac > 0.08 && darkFrac < 0.40) {
         hotCells.push({ r, col, lapVar });
       }
     }
@@ -207,7 +207,7 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
       const x2 = (maxC / COLS) * W;
       const y2 = (maxR / ROWS) * H;
       const avgVar = group.reduce((s, g) => s + g.lapVar, 0) / group.length;
-      const conf = Number(Math.min(0.92, 0.58 + (avgVar - 165) / 450).toFixed(2));
+      const conf = Number(Math.min(0.92, 0.60 + (avgVar - 240) / 450).toFixed(2));
 
       const cand = { x1, y1, x2, y2, confidence: conf, class: 'spalling' };
       const overlapsYolo = existingBoxes.some((b) => boxIoU(cand, b) > 0.35);
@@ -340,7 +340,7 @@ export function calculateCrackAreaMm2(activePixels, scale = 1.0) {
  */
 export async function detectVideoFrame(
   videoEl,
-  { frameIndex = 0, videoTime = 0, chainageZ = 0, confThreshold = 0.25, tiled = true } = {}
+  { frameIndex = 0, videoTime = 0, chainageZ = 0, confThreshold = 0.42, tiled = true } = {}
 ) {
   const mediaSource = videoEl;
   const W = mediaSource.videoWidth || mediaSource.naturalWidth || mediaSource.width || 640;
@@ -534,8 +534,11 @@ export async function detectVideoFrame(
           ? box.area_mm2
           : Number((spatial.width_mm * spatial.height_mm * 0.40).toFixed(1));
 
+    // Readable ID: inspectionNo_CRK-001 format (assigned by caller via frameIndex prefix)
+    const defectSeq = String(idx + 1).padStart(3, '0');
+    const defectType = box.class === 'spalling' ? 'SPA' : 'CRK';
     return {
-      localId: `DET-${frameIndex}-${idx}`,
+      localId: `${defectType}-${defectSeq}`,
       class: box.class,
       subtype,
       severity,
