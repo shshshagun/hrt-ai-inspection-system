@@ -42,9 +42,10 @@ function formatTimecode(seconds) {
 }
 
 function makeSessionId(prefix) {
-  const d = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-  const tail = String(Date.now()).slice(-4);
-  return `${prefix}-${d}-${tail}`;
+  const d = new Date();
+  const date = d.toISOString().slice(2, 10).replace(/-/g, '');
+  const seq = String(Math.floor(Math.random() * 900) + 100); // 3-digit random
+  return `${prefix}-${date}-${seq}`;
 }
 
 function waitForSeek(videoEl, targetTime) {
@@ -344,10 +345,10 @@ export default function NewInspection() {
 
       const tracker = createDefectTracker({
         maxGapSeconds: 1.5,
-        maxAngleDiffDeg: 35,
+        maxAngleDiffDeg: 25,     // tighter: webcam is stationary
         maxChainageJumpM: 999,
-        minPctIoU: 0.14,
-        maxCentroidDistPct: 20,
+        minPctIoU: 0.20,         // need more overlap to count as same crack
+        maxCentroidDistPct: 12,  // centroids must be close (stationary cam)
       });
       trackerRef.current = tracker;
 
@@ -367,7 +368,7 @@ export default function NewInspection() {
             frameIndex: frameSeq,
             videoTime: elapsedSec,
             chainageZ,
-            confThreshold: 0.22,
+            confThreshold: 0.42,
             tiled: false,
           });
 
@@ -718,15 +719,17 @@ export default function NewInspection() {
             frameIndex: i + 1,
             videoTime: 0,
             chainageZ,
-            confThreshold: 0.22,
+            confThreshold: 0.42,
             tiled: true,
           });
 
           if (photoAbortRef.current) break;
 
+          // Pad inspection number from jobId (e.g. PHOTO-261101-1234 → 1234)
+          const inspNum = inspId.slice(-4);
           const enrichedHits = frameHits.map((hit, hIdx) => ({
             ...hit,
-            localId: `PHOTO-${i + 1}-DET-${hIdx + 1}`,
+            localId: `${inspNum}_${hit.class === 'spalling' ? 'SPA' : 'CRK'}-${String(hIdx + 1).padStart(3, '0')}`,
             photoId: item.id,
             photoName: item.name,
             photoIndex: i,
@@ -959,7 +962,7 @@ export default function NewInspection() {
           frameIndex: step + 1,
           videoTime: targetTime,
           chainageZ,
-          confThreshold: 0.25,
+          confThreshold: 0.42,
           tiled: true,
         });
 
