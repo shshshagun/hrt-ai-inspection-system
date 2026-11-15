@@ -121,7 +121,11 @@ async function runTier3() {
     // Start Ingestion Gateway on an isolated test port
     gatewayProcess = spawn('node', ['api/server.js'], {
       cwd: ROOT_DIR,
-      env: { ...process.env, PORT: String(GATEWAY_PORT), MONGODB_URI: mongoUri },
+      env: {
+        ...process.env, PORT: String(GATEWAY_PORT), MONGODB_URI: mongoUri,
+        AUTH_ENABLED: 'true', JWT_SECRET: 'tier3-test-secret-0123456789',
+        ADMIN_EMAIL: 'tier3-admin@example.com', ADMIN_PASSWORD: 'Tier3AdminPass1',
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -149,6 +153,21 @@ async function runTier3() {
     });
     record('Ingestion Gateway /health check returns HTTP 200 "OK"', healthRes.statusCode === 200 && healthRes.body === 'OK');
 
+    // 2.1b Authentication: protected routes reject anonymous callers, then sign in as the seeded Administrator
+    let token = null;
+    for (let i = 0; i < 20 && !token; i++) {
+      const loginRes = await httpRequest(
+        { hostname: '127.0.0.1', port: GATEWAY_PORT, path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+        { email: 'tier3-admin@example.com', password: 'Tier3AdminPass1' }
+      );
+      if (loginRes.statusCode === 200 && loginRes.body && loginRes.body.token) token = loginRes.body.token;
+      else await new Promise(r => setTimeout(r, 250)); // the gateway seeds the admin once MongoDB is connected
+    }
+    record('Ingestion Gateway login returns a session token for the seeded Administrator', Boolean(token));
+    const anonRes = await httpRequest({ hostname: '127.0.0.1', port: GATEWAY_PORT, path: '/api/detections', method: 'GET' });
+    record('Ingestion Gateway rejects an unauthenticated GET /api/detections with HTTP 401', anonRes.statusCode === 401, `Status: ${anonRes.statusCode}`);
+    const authHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+
     // 2.2 Verify POST /api/detections
     const testDoc = {
       class_label: 'crack_e2e_integration_test',
@@ -167,7 +186,7 @@ async function runTier3() {
         port: GATEWAY_PORT,
         path: '/api/detections',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
       },
       testDoc
     );
@@ -185,6 +204,7 @@ async function runTier3() {
       port: GATEWAY_PORT,
       path: '/api/detections',
       method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
     });
 
     const getPass = getRes.statusCode === 200 && Array.isArray(getRes.body) && getRes.body.some(d => d.class_label === testDoc.class_label);
