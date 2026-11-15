@@ -17,6 +17,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/useAuth';
+import { useDive } from '../ui/contexts';
 import './LandingPage.css';
 
 /* ─── config ──────────────────────────────────────────────── */
@@ -105,6 +107,8 @@ function getPanelState(progress) {
 
 export default function LandingPage() {
   const navigate     = useNavigate();
+  const { startDemo } = useAuth();
+  const { dive }     = useDive();
   const canvasRef    = useRef(null);
   const imagesRef    = useRef(new Array(TOTAL_FRAMES).fill(null));
   const loadedRef    = useRef(new Array(TOTAL_FRAMES).fill(false));
@@ -268,6 +272,14 @@ export default function LandingPage() {
             id="nav-enter-dashboard"
           >
             Enter Dashboard
+          </button>
+          <button
+            className="lp-nav__cta"
+            style={{ marginLeft: 8, background: 'transparent', border: '1px solid rgba(255,255,255,.55)' }}
+            onClick={() => { startDemo(); dive('/dashboard', 'Loading the demo…'); }}
+            id="nav-try-demo"
+          >
+            Try the demo
           </button>
         </nav>
 

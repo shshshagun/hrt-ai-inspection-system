@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useAuth } from '../auth/useAuth';
+import CommandPalette from '../ui/CommandPalette';
 import { PERMISSIONS } from '../auth/permissions';
 import './DashboardLayout.css';
 import '../auth/Auth.css';
@@ -72,6 +73,7 @@ export default function DashboardLayout() {
 
   return (
     <div className="db-layout">
+      <CommandPalette />
       {/* ── Sidebar ── */}
       <aside className={`db-sidebar ${sidebarOpen ? 'db-sidebar--open' : ''}`}>
         <div className="db-sidebar__brand">
@@ -146,7 +148,7 @@ export default function DashboardLayout() {
             {breadcrumbs.length > 0 && (
               <nav className="db-breadcrumb" aria-label="Breadcrumb">
                 {breadcrumbs.map((crumb, i) => (
-                  <span key={crumb.to} className="db-breadcrumb__item">
+                  <span key={`${i}-${crumb.to}`} className="db-breadcrumb__item">
                     {i > 0 && <ChevronRight size={14} className="db-breadcrumb__sep" />}
                     {i === breadcrumbs.length - 1
                       ? <span className="db-breadcrumb__current">{crumb.label}</span>
@@ -169,7 +171,7 @@ export default function DashboardLayout() {
                 <span className="db-topbar__user-role">{user?.role}</span>
               </div>
               {authEnabled && (
-                <button type="button" className="db-user-chip__logout" onClick={() => { logout(); navigate('/login', { replace: true }); }} aria-label="Sign out" title="Sign out">
+                <button type="button" className="db-user-chip__logout" onClick={() => { logout(); navigate('/login', { replace: true }); }} aria-label={user?.demo ? 'Exit demo' : 'Sign out'} title={user?.demo ? 'Exit demo' : 'Sign out'}>
                   <LogOut size={16} />
                 </button>
               )}

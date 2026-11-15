@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './useAuth';
+import { useDive } from '../ui/contexts';
+import { SonarRings, WakeNotice } from '../ui/Sonar';
 import './Auth.css';
 
 export default function Login() {
-  const { user, login, loading } = useAuth();
-  const navigate = useNavigate();
+  const { user, login, loading, startDemo } = useAuth();
+  const { dive } = useDive();
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +25,7 @@ export default function Login() {
     const slowTimer = setTimeout(() => setSlow(true), 4000);
     try {
       await login(email.trim(), password);
-      navigate(from, { replace: true });
+      dive(from);
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
@@ -35,12 +37,13 @@ export default function Login() {
 
   return (
     <main className="auth-page">
+      <SonarRings />
       <form className="auth-card" onSubmit={onSubmit} noValidate>
         <div className="auth-brand"><strong>HRT</strong><span>AI INSPECTION SYSTEM</span></div>
         <h1>Sign in</h1>
         <p className="auth-sub">Use the account created for you by an administrator.</p>
         {error && <div className="auth-error" role="alert">{error}</div>}
-        {slow && <div className="auth-wake" role="status">The server is waking up (free hosting). This can take up to 30 seconds, please wait…</div>}
+        {slow && <WakeNotice />}
         <label className="auth-field">E-mail
           <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </label>
@@ -48,6 +51,7 @@ export default function Login() {
           <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
         <button className="auth-btn" type="submit" disabled={busy || !email || !password}>{busy ? 'Signing in…' : 'Sign in'}</button>
+        <button type="button" className="auth-btn auth-btn--ghost" onClick={() => { startDemo(); dive('/dashboard', 'Loading the demo…'); }}>Try the read-only demo</button>
         <p className="auth-hint">New here? <Link to="/register" state={{ from }}>Create an account</Link></p>
         <p className="auth-hint">The first sign-in after a quiet period can take up to 30 seconds while the server wakes up.</p>
       </form>

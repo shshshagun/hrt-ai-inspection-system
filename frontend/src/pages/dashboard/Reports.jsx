@@ -9,10 +9,12 @@
 import { useState } from 'react';
 import { FileText, Download, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useReports, generateReport } from '../../hooks/useApi';
+import { useToast } from '../../ui/contexts';
 import './SharedPages.css';
 
 export default function Reports() {
   const { data: reports, loading, error } = useReports();
+  const toast = useToast();
   // Track per-report download state: { [reportId]: 'idle' | 'loading' | 'done' | 'error' }
   const [dlState, setDlState] = useState({});
 
@@ -20,12 +22,14 @@ export default function Reports() {
     const key = `${report.id}-${format}`;
     setDlState(s => ({ ...s, [key]: 'loading' }));
     try {
-      await generateReport({ inspection_id: report.inspectionId, format });
+      const result = await generateReport({ inspection_id: report.inspectionId, format });
+      toast.success(result?.live === false ? `${format.toUpperCase()} report created in your browser.` : `${format.toUpperCase()} report downloaded.`);
       setDlState(s => ({ ...s, [key]: 'done' }));
       // Reset to idle after 2 s
       setTimeout(() => setDlState(s => ({ ...s, [key]: 'idle' })), 2000);
     } catch (err) {
       console.error('[Reports] Download failed:', err);
+      toast.error(err.message || 'The report could not be created.');
       setDlState(s => ({ ...s, [key]: 'error' }));
       setTimeout(() => setDlState(s => ({ ...s, [key]: 'idle' })), 3000);
     }
