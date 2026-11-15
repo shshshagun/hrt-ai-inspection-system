@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, PlusCircle, Video, Trash2 } from 'lucide-react';
 import { useInspections, deleteInspectionSession } from '../../hooks/useApi';
+import { useToast } from '../../ui/contexts';
 import './SharedPages.css';
 
 export default function Inspections() {
@@ -13,12 +14,17 @@ export default function Inspections() {
   const inspections = rawInspections || [];
   const statusColor = { completed: 'var(--teal)', pending: 'var(--minor)', in_progress: 'var(--info)' };
 
+  const toast = useToast();
+
   async function handleDelete(e, id) {
     e.stopPropagation();
     setDeletingId(id);
     try {
       await deleteInspectionSession(id);
+      toast.success('Inspection deleted.');
       refetch?.();
+    } catch (err) {
+      toast.error(err.message || 'The inspection could not be deleted.');
     } finally {
       setDeletingId(null);
     }
@@ -32,8 +38,12 @@ export default function Inspections() {
     setClearingAll(true);
     try {
       await deleteInspectionSession('ALL');
+      toast.success('All inspections deleted.');
       setConfirmClearAll(false);
       refetch?.();
+    } catch (err) {
+      toast.error(err.message || 'The inspections could not be deleted.');
+      setConfirmClearAll(false);
     } finally {
       setClearingAll(false);
     }

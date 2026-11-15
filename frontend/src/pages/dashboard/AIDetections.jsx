@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, ChevronUp, ChevronDown, ArrowRight, Loader2, Trash2 } from 'lucide-react';
 import { useDetections, deleteDetectionLog } from '../../hooks/useApi';
+import { useToast } from '../../ui/contexts';
 import './AIDetections.css';
 
 const DEFECT_CATEGORIES = ['Crack', 'Spalling', 'Leakage', 'Corrosion', 'Erosion', 'Joint Displacement'];
@@ -41,14 +42,17 @@ export default function AIDetections() {
     search:   search    || undefined,
   });
 
+  const toast = useToast();
+
   async function handleDeleteOne(e, id) {
     e.stopPropagation();
     setDeletingId(id);
     try {
       await deleteDetectionLog(id);
+      toast.success('Defect deleted.');
       refetch?.();
-    } catch {
-      // ignore if already removed
+    } catch (err) {
+      toast.error(err.message || 'The defect could not be deleted.');
     } finally {
       setDeletingId(null);
     }
@@ -62,8 +66,12 @@ export default function AIDetections() {
     setClearingAll(true);
     try {
       await deleteDetectionLog('ALL');
+      toast.success('All defects deleted.');
       setConfirmClearAll(false);
       refetch?.();
+    } catch (err) {
+      toast.error(err.message || 'The defects could not be deleted.');
+      setConfirmClearAll(false);
     } finally {
       setClearingAll(false);
     }

@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './useAuth';
+import { useDive } from '../ui/contexts';
+import { SonarRings, WakeNotice } from '../ui/Sonar';
 import './Auth.css';
 
 export default function Register() {
   const { user, register, loading } = useAuth();
-  const navigate = useNavigate();
+  const { dive } = useDive();
   const location = useLocation();
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState('');
@@ -26,7 +28,7 @@ export default function Register() {
     const slowTimer = setTimeout(() => setSlow(true), 4000);
     try {
       await register({ name: form.name.trim(), email: form.email.trim(), password: form.password });
-      navigate(from, { replace: true });
+      dive(from, 'Welcome aboard…');
     } catch (err) {
       setError(err.message || 'Sign-up failed');
     } finally {
@@ -38,12 +40,13 @@ export default function Register() {
 
   return (
     <main className="auth-page">
+      <SonarRings />
       <form className="auth-card" onSubmit={onSubmit} noValidate>
         <div className="auth-brand"><strong>HRT</strong><span>AI INSPECTION SYSTEM</span></div>
         <h1>Create an account</h1>
         <p className="auth-sub">New accounts can view detections and inspections. An administrator can give you more access later.</p>
         {error && <div className="auth-error" role="alert">{error}</div>}
-        {slow && <div className="auth-wake" role="status">The server is waking up (free hosting). This can take up to 30 seconds, please wait…</div>}
+        {slow && <WakeNotice />}
         <label className="auth-field">Name
           <input autoComplete="name" value={form.name} onChange={set('name')} />
         </label>

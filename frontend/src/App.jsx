@@ -1,10 +1,11 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import LandingPage from './pages/LandingPage';
 import DashboardLayout from './layouts/DashboardLayout';
 import DashboardOverview from './pages/dashboard/DashboardOverview';
 import TunnelView from './pages/dashboard/TunnelView';
-import TunnelTwin from './pages/twin/TunnelTwin';
+const TunnelTwin = lazy(() => import('./pages/twin/TunnelTwin'));
 import Inspections from './pages/dashboard/Inspections';
 import InspectionVideos from './pages/dashboard/InspectionVideos';
 import AIDetections from './pages/dashboard/AIDetections';
@@ -13,19 +14,34 @@ import MapsLocation from './pages/dashboard/MapsLocation';
 import Reports from './pages/dashboard/Reports';
 import Assets from './pages/dashboard/Assets';
 import Settings from './pages/dashboard/Settings';
-import NewInspection from './pages/inspection/NewInspection';
+const NewInspection = lazy(() => import('./pages/inspection/NewInspection'));
 import Users from './pages/dashboard/Users';
 import Login from './auth/Login';
 import Register from './auth/Register';
 import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
+import { DiveProvider } from './ui/DiveProvider';
+import { ToastProvider } from './ui/ToastProvider';
+import { SonarRings } from './ui/Sonar';
 import { PERMISSIONS } from './auth/permissions';
+
+function RouteFallback() {
+  return (
+    <div className="auth-loading" role="status" aria-live="polite" style={{ position: 'relative' }}>
+      <SonarRings className="sonar--small" />
+      <span>Loading…</span>
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+      <DiveProvider>
+      <ToastProvider>
       <ErrorBoundary>
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
         {/* Landing page */}
         <Route path="/" element={<LandingPage />} />
@@ -67,7 +83,10 @@ export default function App() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+        </Suspense>
     </ErrorBoundary>
+      </ToastProvider>
+      </DiveProvider>
       </AuthProvider>
   </BrowserRouter>
   );
