@@ -133,28 +133,121 @@ export function consolidateBoxes(boxes, imgW, imgH, iouThresh = 0.35) {
 }
 
 /**
+ * One physical defect followed across video frames.
+ * State is private; it changes only through observe(), markPersisted() and markExited().
+ * Subclasses supply the type code used in the defect identifier (polymorphism).
+ */
+export class DefectTrack {
+  #trackId;
+  #defectClass;
+  #angleDeg;
+  #firstTime;
+  #lastTime;
+  #lastChainageZ;
+  #lastBbox;
+  #hitCount = 1;
+  #exited = false;
+  #persisted = false;
+  #best;
+
+  constructor(sequence, hit, angleDeg) {
+    this.#trackId = `${this.typeCode}-${String(sequence).padStart(3, '0')}`;
+    this.#defectClass = hit.class;
+    this.#angleDeg = angleDeg;
+    this.#firstTime = hit.video_time ?? 0;
+    this.#lastTime = hit.video_time ?? 0;
+    this.#lastChainageZ = hit.chainage_z ?? 0;
+    this.#lastBbox = hit.bbox || null;
+    this.#best = { ...hit, localId: this.#trackId, observations: 1, persisted: false };
+  }
+
+  /** Factory: picks the subclass that matches the detected class. */
+  static create(sequence, hit, angleDeg) {
+    return hit.class === 'spalling' ? new SpallingTrack(sequence, hit, angleDeg) : new CrackTrack(sequence, hit, angleDeg);
+  }
+
+  /** Short code in the identifier, e.g. CRK-001. Overridden by subclasses. */
+  get typeCode() { return 'DEF'; }
+
+  get trackId() { return this.#trackId; }
+  get defectClass() { return this.#defectClass; }
+  get angleDeg() { return this.#angleDeg; }
+  get firstTime() { return this.#firstTime; }
+  get lastTime() { return this.#lastTime; }
+  get lastChainageZ() { return this.#lastChainageZ; }
+  get lastBbox() { return this.#lastBbox; }
+  get hitCount() { return this.#hitCount; }
+  get exited() { return this.#exited; }
+  get persisted() { return this.#persisted; }
+  /** The record that represents this defect (the clearest sighting so far). */
+  get best() { return this.#best; }
+
+  /** Records another sighting of the same defect; the sharpest capture is kept. */
+  observe(hit, angleDeg) {
+    this.#lastTime = hit.video_time ?? this.#lastTime;
+    this.#lastChainageZ = hit.chainage_z ?? this.#lastChainageZ;
+    this.#lastBbox = hit.bbox || this.#lastBbox;
+    this.#angleDeg = angleDeg;
+    this.#hitCount += 1;
+    const base = hit.confidence >= this.#best.confidence ? { ...hit, localId: this.#trackId } : this.#best;
+    this.#best = { ...base, observations: this.#hitCount, persisted: this.#persisted };
+  }
+
+  markExited() { this.#exited = true; }
+
+  /** Marks the defect as stored. Returns its record the first time, null afterwards. */
+  markPersisted() {
+    if (this.#persisted) return null;
+    this.#persisted = true;
+    this.#best = { ...this.#best, persisted: true };
+    return this.#best;
+  }
+}
+
+export class CrackTrack extends DefectTrack {
+  get typeCode() { return 'CRK'; }
+}
+
+export class SpallingTrack extends DefectTrack {
+  get typeCode() { return 'SPA'; }
+}
+
+/**
  * Multi-frame continuous defect tracker.
  * Consolidates repeated sightings of the same crack across consecutive video
  * frames, preserving the sharpest / highest-confidence capture.
  */
-export function createDefectTracker({
-  maxGapSeconds = 3.5,
-  maxAngleDiffDeg = 42,
-  maxChainageJumpM = 5.5,
-  minPctIoU = 0.06,
-  maxCentroidDistPct = 24,
-} = {}) {
-  const tracks = [];
-  let seq = 0;
+export class DefectTracker {
+  #tracks = [];
+  #seq = 0;
+  #maxGapSeconds;
+  #maxAngleDiffDeg;
+  #maxChainageJumpM;
+  #minPctIoU;
+  #maxCentroidDistPct;
 
-  function getHitAngle(hit) {
+  constructor({
+    maxGapSeconds = 3.5,
+    maxAngleDiffDeg = 42,
+    maxChainageJumpM = 5.5,
+    minPctIoU = 0.06,
+    maxCentroidDistPct = 24,
+  } = {}) {
+    this.#maxGapSeconds = maxGapSeconds;
+    this.#maxAngleDiffDeg = maxAngleDiffDeg;
+    this.#maxChainageJumpM = maxChainageJumpM;
+    this.#minPctIoU = minPctIoU;
+    this.#maxCentroidDistPct = maxCentroidDistPct;
+  }
+
+  static #hitAngle(hit) {
     if (typeof hit.angle_deg === 'number') return hit.angle_deg;
     const x = hit.x ?? 0;
     const y = hit.y ?? 2.95;
     return ((Math.atan2(x, y) * 180) / Math.PI + 360) % 360;
   }
 
-  function centroidDist(b1, b2) {
+  static #centroidDist(b1, b2) {
     if (!b1 || !b2 || b1.left_pct == null || b2.left_pct == null) return 999;
     const c1x = b1.left_pct + b1.width_pct / 2;
     const c1y = b1.top_pct + b1.height_pct / 2;
@@ -163,29 +256,29 @@ export function createDefectTracker({
     return Math.hypot(c1x - c2x, c1y - c2y);
   }
 
-  function findMatchingTrack(hit, excludeIds) {
+  #findMatchingTrack(hit, excludeIds) {
     const t = hit.video_time ?? 0;
     const z = hit.chainage_z ?? 0;
-    const angle = getHitAngle(hit);
+    const angle = DefectTracker.#hitAngle(hit);
 
     let bestTrack = null;
     let bestScore = Infinity;
 
-    for (const tr of tracks) {
+    for (const tr of this.#tracks) {
       if (excludeIds.has(tr.trackId)) continue;
-      if (tr.class !== hit.class) continue;
+      if (tr.defectClass !== hit.class) continue;
       if (tr.exited) continue; // already exited camera view
 
       const timeGap = t - tr.lastTime;
-      if (timeGap < 0 || timeGap > maxGapSeconds) continue;
+      if (timeGap < 0 || timeGap > this.#maxGapSeconds) continue;
 
       const aDiff = angleDiffDeg(angle, tr.angleDeg);
       const zDiff = Math.abs(z - tr.lastChainageZ);
       const iouVal = pctBoxIoU(hit.bbox, tr.lastBbox);
-      const cDist = centroidDist(hit.bbox, tr.lastBbox);
+      const cDist = DefectTracker.#centroidDist(hit.bbox, tr.lastBbox);
 
-      const matchesVisually = iouVal >= minPctIoU || cDist <= maxCentroidDistPct;
-      const matchesCylinderZone = aDiff <= maxAngleDiffDeg && zDiff <= maxChainageJumpM;
+      const matchesVisually = iouVal >= this.#minPctIoU || cDist <= this.#maxCentroidDistPct;
+      const matchesCylinderZone = aDiff <= this.#maxAngleDiffDeg && zDiff <= this.#maxChainageJumpM;
 
       if (matchesVisually || matchesCylinderZone) {
         const matchScore = cDist + aDiff * 0.4;
@@ -198,115 +291,66 @@ export function createDefectTracker({
     return bestTrack;
   }
 
-  return {
-    /**
-     * Ingest all detections from the current frame. Returns deduplicated manifest list.
-     */
-    ingestFrame(frameHits) {
-      const orderedHits = [...frameHits].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-      const matchedIdsThisFrame = new Set();
+  /** Ingest all detections from the current frame. Returns the deduplicated manifest. */
+  ingestFrame(frameHits) {
+    const orderedHits = [...frameHits].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    const matchedIdsThisFrame = new Set();
 
-      for (const hit of orderedHits) {
-        const hitAngle = getHitAngle(hit);
-        const match = findMatchingTrack(hit, matchedIdsThisFrame);
-
-        if (match) {
-          matchedIdsThisFrame.add(match.trackId);
-          match.lastTime = hit.video_time ?? match.lastTime;
-          match.lastChainageZ = hit.chainage_z ?? match.lastChainageZ;
-          match.lastBbox = hit.bbox || match.lastBbox;
-          match.angleDeg = hitAngle;
-          match.hitCount += 1;
-
-          // Upgrade snapshot & confidence if this angle is clearer (keep persisted flag)
-          if (hit.confidence >= match.bestDetection.confidence) {
-            match.bestDetection = {
-              ...hit,
-              localId: match.trackId,
-              observations: match.hitCount,
-              persisted: match.persisted,
-            };
-          } else {
-            match.bestDetection = {
-              ...match.bestDetection,
-              observations: match.hitCount,
-              persisted: match.persisted,
-            };
-          }
-        } else {
-          seq += 1;
-          const defectType = hit.class === 'spalling' ? 'SPA' : 'CRK';
-          const trackId = `${defectType}-${String(seq).padStart(3, '0')}`;
-          tracks.push({
-            trackId,
-            class: hit.class,
-            angleDeg: hitAngle,
-            firstTime: hit.video_time ?? 0,
-            lastTime: hit.video_time ?? 0,
-            lastChainageZ: hit.chainage_z ?? 0,
-            lastBbox: hit.bbox || null,
-            hitCount: 1,
-            exited: false,
-            persisted: false,
-            bestDetection: {
-              ...hit,
-              localId: trackId,
-              observations: 1,
-              persisted: false,
-            },
-          });
-        }
+    for (const hit of orderedHits) {
+      const hitAngle = DefectTracker.#hitAngle(hit);
+      const match = this.#findMatchingTrack(hit, matchedIdsThisFrame);
+      if (match) {
+        matchedIdsThisFrame.add(match.trackId);
+        match.observe(hit, hitAngle);
+      } else {
+        this.#seq += 1;
+        this.#tracks.push(DefectTrack.create(this.#seq, hit, hitAngle));
       }
+    }
+    return this.getManifest();
+  }
 
-      return this.getManifest();
-    },
-
-    /** Return tracks that have exited camera view (unseen > maxGapSeconds) and mark exited+persisted. */
-    popExitedTracks(currentTime) {
-      const ready = [];
-      for (const tr of tracks) {
-        if (!tr.exited && currentTime - tr.lastTime > maxGapSeconds) {
-          tr.exited = true;
-          if (!tr.persisted) {
-            tr.persisted = true;
-            tr.bestDetection = { ...tr.bestDetection, persisted: true };
-            ready.push(tr.bestDetection);
-          }
-        }
+  /** Return tracks that have exited camera view (unseen > maxGapSeconds) and mark exited+persisted. */
+  popExitedTracks(currentTime) {
+    const ready = [];
+    for (const tr of this.#tracks) {
+      if (!tr.exited && currentTime - tr.lastTime > this.#maxGapSeconds) {
+        tr.markExited();
+        const record = tr.markPersisted();
+        if (record) ready.push(record);
       }
-      return ready;
-    },
+    }
+    return ready;
+  }
 
-    /** Immediately persist current visible un-persisted tracks WITHOUT marking exited (prevents re-logging while still in view). */
-    flushPendingNow() {
-      const batch = [];
-      for (const tr of tracks) {
-        if (!tr.persisted) {
-          tr.persisted = true;
-          tr.bestDetection = { ...tr.bestDetection, persisted: true };
-          batch.push(tr.bestDetection);
-        }
-      }
-      return batch;
-    },
+  /** Immediately persist visible un-persisted tracks WITHOUT marking them exited (prevents re-logging while still in view). */
+  flushPendingNow() {
+    const batch = [];
+    for (const tr of this.#tracks) {
+      const record = tr.markPersisted();
+      if (record) batch.push(record);
+    }
+    return batch;
+  }
 
-    /** Flush all remaining un-persisted tracks at end of scan / stop scan. */
-    flushAll() {
-      const remaining = [];
-      for (const tr of tracks) {
-        tr.exited = true;
-        if (!tr.persisted) {
-          tr.persisted = true;
-          tr.bestDetection = { ...tr.bestDetection, persisted: true };
-          remaining.push(tr.bestDetection);
-        }
-      }
-      return remaining;
-    },
+  /** Flush all remaining un-persisted tracks at end of scan / stop scan. */
+  flushAll() {
+    const remaining = [];
+    for (const tr of this.#tracks) {
+      tr.markExited();
+      const record = tr.markPersisted();
+      if (record) remaining.push(record);
+    }
+    return remaining;
+  }
 
-    /** Return current unique tracked defects (newest track first). */
-    getManifest() {
-      return [...tracks].reverse().map((tr) => tr.bestDetection);
-    },
-  };
+  /** Return current unique tracked defects (newest track first). */
+  getManifest() {
+    return [...this.#tracks].reverse().map((tr) => tr.best);
+  }
+}
+
+/** Factory kept for existing callers: createDefectTracker(options) returns a new DefectTracker. */
+export function createDefectTracker(options) {
+  return new DefectTracker(options);
 }
