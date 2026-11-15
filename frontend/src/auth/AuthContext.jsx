@@ -12,6 +12,9 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(AUTH_ENABLED ? null : DEV_USER);
   const [loading, setLoading] = useState(AUTH_ENABLED && Boolean(getToken()));
 
+  // The gateway runs on a free tier that sleeps when idle: ping it as soon as the app loads so it is awake by the time the user signs in.
+  useEffect(() => { fetch(`${API_BASE}/health`).catch(() => {}); }, []);
+
   // Restore the session from a stored token.
   useEffect(() => {
     if (!AUTH_ENABLED) return undefined;
