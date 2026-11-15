@@ -259,8 +259,7 @@ hrt-ai-inspection-system/
 ├── tests/                          # Unified test infrastructure (Tiers 1–4)
 ├── download_dataset.py             # Roboflow dataset downloader
 ├── start.ps1                       # One-click launcher for all services
-├── run.ps1                         # AI pipeline quickstart runner
-└── AGENTS.md                       # Domain agent specifications
+└── run.ps1                         # AI pipeline quickstart runner
 ```
 
 ---
@@ -333,6 +332,24 @@ This launches:
 Navigate to `http://localhost:5173` in your browser.
 
 ---
+
+## ✅ Testing
+
+```powershell
+npm test                              # API contract, spatial analytics, authentication, sign-up, defect tracker
+node scripts/verify_all.js            # all four test tiers (Tier 3 needs a local MongoDB, Tier 1 needs the Python packages)
+npx --prefix frontend oxlint frontend/src
+npm --prefix frontend run build
+```
+
+| Tier | Covers |
+|---|---|
+| 1 | Baseline: unit suites, lint, production build, Python inference |
+| 2 | Boundary and corner cases of the API and spatial maths |
+| 3 | Cross-component: gateway against a real MongoDB with login, core API health |
+| 4 | Workload and 3D geometry (every marker lies at radius 2.95 m on the tunnel surface) |
+
+GitHub Actions (`.github/workflows/ci.yml`) runs the unit tests, the Tier 2 and Tier 4 checks, lint and the build on every push and pull request.
 
 ## 🌐 Live Deployment
 
