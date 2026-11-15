@@ -96,7 +96,9 @@ async function runTier1() {
         timeout: 30000,
       });
       const duration = Date.now() - start;
-      const pass = output.includes('0 warnings and 0 errors');
+      // oxlint prints nothing when the code is clean (newer versions no longer print a summary line);
+      // execSync already throws on a non-zero exit code, so any diagnostic text means a failure.
+      const pass = !/(warning|error)/i.test(output);
       record(
         'Frontend static lint validation (oxlint frontend/src)',
         pass,
