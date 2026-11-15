@@ -33,3 +33,4 @@
 .db-user-chip button { background: transparent; border: 1px solid #2a4a63; color: #cfe3f2; border-radius: 6px; padding: 4px 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 
 .db-user-chip__logout { margin-left: 8px; background: transparent; border: 1px solid #2a4a63; color: #cfe3f2; border-radius: 6px; padding: 5px 7px; cursor: pointer; display: inline-flex; }
+.auth-wake { background: rgba(95, 208, 255, 0.1); border: 1px solid rgba(95, 208, 255, 0.4); color: #bfeaff; border-radius: 6px; padding: 9px 12px; font-size: 13px; margin-bottom: 14px; }
