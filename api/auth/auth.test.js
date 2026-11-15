@@ -48,7 +48,7 @@ async function startApp(service, enabled = true) {
 
 async function seeded() {
   const service = makeService();
-  await service.seedAdministrator({ email: 'admin@example.com', password: 'AdminPass123' });
+  await service.ensureAdministrator({ email: 'admin@example.com', password: 'AdminPass123' });
   const app = await startApp(service);
   const admin = (await app.call('POST', '/api/auth/login', { body: { email: 'admin@example.com', password: 'AdminPass123' } })).body.token;
   const tokens = { Administrator: admin };
@@ -190,10 +190,7 @@ test('API: user management and last-administrator protection', async () => {
   await app.close();
 });
 
-test('seedAdministrator only seeds an empty store; AUTH_ENABLED=false bypasses checks', async () => {
-  const service = makeService();
-  assert.equal(await service.seedAdministrator({ email: 'a@b.co', password: 'AdminPass123' }), true);
-  assert.equal(await service.seedAdministrator({ email: 'c@d.co', password: 'AdminPass123' }), false);
+test('AUTH_ENABLED=false bypasses checks and an unconfigured server fails closed', async () => {
   const open = await startApp(null, false);
   assert.equal((await open.call('GET', '/api/detections')).status, 200);
   await open.close();

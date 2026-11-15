@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './useAuth';
 import './Auth.css';
 
@@ -48,6 +48,7 @@ export default function Login() {
           <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
         <button className="auth-btn" type="submit" disabled={busy || !email || !password}>{busy ? 'Signing in…' : 'Sign in'}</button>
+        <p className="auth-hint">New here? <Link to="/register" state={{ from }}>Create an account</Link></p>
         <p className="auth-hint">The first sign-in after a quiet period can take up to 30 seconds while the server wakes up.</p>
       </form>
     </main>

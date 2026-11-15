@@ -1,0 +1,64 @@
+import { useState } from 'react';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from './useAuth';
+import './Auth.css';
+
+export default function Register() {
+  const { user, register, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const from = location.state?.from || '/dashboard';
+
+  if (!loading && user) return <Navigate to={from} replace />;
+
+  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setError('');
+    if (form.password.length < 8) return setError('Password must be at least 8 characters.');
+    if (form.password !== form.confirm) return setError('The two passwords do not match.');
+    setBusy(true);
+    const slowTimer = setTimeout(() => setSlow(true), 4000);
+    try {
+      await register({ name: form.name.trim(), email: form.email.trim(), password: form.password });
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(err.message || 'Sign-up failed');
+    } finally {
+      clearTimeout(slowTimer);
+      setSlow(false);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <form className="auth-card" onSubmit={onSubmit} noValidate>
+        <div className="auth-brand"><strong>HRT</strong><span>AI INSPECTION SYSTEM</span></div>
+        <h1>Create an account</h1>
+        <p className="auth-sub">New accounts can view detections and inspections. An administrator can give you more access later.</p>
+        {error && <div className="auth-error" role="alert">{error}</div>}
+        {slow && <div className="auth-wake" role="status">The server is waking up (free hosting). This can take up to 30 seconds, please wait…</div>}
+        <label className="auth-field">Name
+          <input autoComplete="name" value={form.name} onChange={set('name')} />
+        </label>
+        <label className="auth-field">E-mail
+          <input type="email" autoComplete="username" value={form.email} onChange={set('email')} required />
+        </label>
+        <label className="auth-field">Password (at least 8 characters)
+          <input type="password" autoComplete="new-password" value={form.password} onChange={set('password')} required />
+        </label>
+        <label className="auth-field">Repeat password
+          <input type="password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} required />
+        </label>
+        <button className="auth-btn" type="submit" disabled={busy || !form.email || !form.password}>{busy ? 'Creating account…' : 'Create account'}</button>
+        <p className="auth-hint">Already have an account? <Link to="/login" state={{ from }}>Sign in</Link></p>
+      </form>
+    </main>
+  );
+}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { API_BASE } from '../../config/api';
 import { authFetch } from '../../auth/authFetch';
 import { useAuth } from '../../auth/useAuth';
-import { ROLE_NAMES } from '../../auth/permissions';
+import { ASSIGNABLE_ROLES } from '../../auth/permissions';
 import '../../auth/Auth.css';
 
 async function call(method, path, body) {
@@ -51,7 +51,7 @@ export default function Users() {
   return (
     <section className="users-page">
       <h1>User management</h1>
-      <p className="users-sub">Create accounts, change roles and disable access. Role changes apply on the user's next request.</p>
+      <p className="users-sub">New people can sign up themselves and start as read-only Viewers; raise their role here. Role changes apply on the user's next request. Administrator accounts are added only in the server configuration.</p>
       {error && <div className="auth-error" role="alert">{error}</div>}
 
       <form className="users-form" onSubmit={create}>
@@ -66,7 +66,7 @@ export default function Users() {
         </label>
         <label className="auth-field">Role
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            {ROLE_NAMES.map((r) => <option key={r}>{r}</option>)}
+            {ASSIGNABLE_ROLES.map((r) => <option key={r}>{r}</option>)}
           </select>
         </label>
         <button className="auth-btn" type="submit" disabled={busy}>Add user</button>
@@ -80,9 +80,13 @@ export default function Users() {
               <td>{u.name || '—'}{u.id === me?.id ? ' (you)' : ''}</td>
               <td>{u.email}</td>
               <td>
-                <select value={u.role} onChange={(e) => update(u.id, { role: e.target.value })} aria-label={`Role of ${u.email}`}>
-                  {ROLE_NAMES.map((r) => <option key={r}>{r}</option>)}
-                </select>
+                {u.role === 'Administrator' ? (
+                  <span className="users-badge" title="Administrator accounts are managed in the server configuration">Administrator</span>
+                ) : (
+                  <select value={u.role} onChange={(e) => update(u.id, { role: e.target.value })} aria-label={`Role of ${u.email}`}>
+                    {ASSIGNABLE_ROLES.map((r) => <option key={r}>{r}</option>)}
+                  </select>
+                )}
               </td>
               <td><span className={`users-badge ${u.active ? '' : 'users-badge--off'}`}>{u.active ? 'Active' : 'Disabled'}</span></td>
               <td><button type="button" onClick={() => update(u.id, { active: !u.active })}>{u.active ? 'Disable' : 'Enable'}</button></td>

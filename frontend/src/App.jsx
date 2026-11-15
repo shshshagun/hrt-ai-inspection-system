@@ -16,6 +16,7 @@ import Settings from './pages/dashboard/Settings';
 import NewInspection from './pages/inspection/NewInspection';
 import Users from './pages/dashboard/Users';
 import Login from './auth/Login';
+import Register from './auth/Register';
 import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
 import { PERMISSIONS } from './auth/permissions';
@@ -31,6 +32,7 @@ export default function App() {
 
         {/* Immersive 3D Digital Twin Rover Simulator */}
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         <Route path="/tunnel-twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
         <Route path="/twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
 
