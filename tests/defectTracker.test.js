@@ -100,3 +100,19 @@ test('tracker: custom gating thresholds are honoured and the manifest lists the 
   t.ingestFrame([hit({ video_time: 1.5, class: 'spalling' })]);
   assert.equal(t.getManifest()[0].class, 'spalling');
 });
+
+test('OOP: tracks are polymorphic subclasses with private state', async () => {
+  const { DefectTrack, CrackTrack, SpallingTrack, DefectTracker, createDefectTracker } = await load();
+  const crack = DefectTrack.create(1, hit({ class: 'crack' }), 90);
+  const spall = DefectTrack.create(2, hit({ class: 'spalling' }), 90);
+  assert.ok(crack instanceof CrackTrack && crack instanceof DefectTrack);
+  assert.ok(spall instanceof SpallingTrack && spall instanceof DefectTrack);
+  assert.equal(crack.typeCode, 'CRK');
+  assert.equal(spall.typeCode, 'SPA');
+  assert.equal(spall.trackId, 'SPA-002');
+  assert.equal(Object.keys(crack).length, 0, 'state is private, not enumerable');
+  assert.throws(() => { crack.trackId = 'x'; }, TypeError, 'identifier is read-only');
+  assert.equal(crack.markPersisted().persisted, true);
+  assert.equal(crack.markPersisted(), null, 'a defect is handed over for storage only once');
+  assert.ok(createDefectTracker() instanceof DefectTracker);
+});
