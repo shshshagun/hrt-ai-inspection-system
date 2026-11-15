@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Flag, MessageSquare, ArrowLeft, ExternalLink, Download, Loader2, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
-import { generateReport, useDetection, deleteDetectionLog } from '../../hooks/useApi';
+import { generateReport, useDetection, useDetections, deleteDetectionLog } from '../../hooks/useApi';
+import DefectHistory from '../../components/insight/DefectHistory';
 import './DefectDetail.css';
 
 const SEV_COLOR = {
@@ -62,6 +63,7 @@ export default function DefectDetail() {
   const [deleting, setDeleting] = useState(false);
 
   const { data: liveDetection, loading: apiLoading } = useDetection(id);
+  const { data: allDetections } = useDetections();
 
   const detection = useMemo(() => {
     if (liveDetection) {
@@ -365,6 +367,8 @@ export default function DefectDetail() {
           </div>
         </div>
       </div>
+
+      <DefectHistory detections={allDetections ?? []} currentId={detection.id} />
     </div>
   );
 }
