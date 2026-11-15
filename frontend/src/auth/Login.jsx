@@ -11,6 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [slow, setSlow] = useState(false);
   const from = location.state?.from || '/dashboard';
 
   if (!loading && user) return <Navigate to={from} replace />;
@@ -19,12 +20,15 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setBusy(true);
+    const slowTimer = setTimeout(() => setSlow(true), 4000);
     try {
       await login(email.trim(), password);
       navigate(from, { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
+      clearTimeout(slowTimer);
+      setSlow(false);
       setBusy(false);
     }
   }
@@ -36,6 +40,7 @@ export default function Login() {
         <h1>Sign in</h1>
         <p className="auth-sub">Use the account created for you by an administrator.</p>
         {error && <div className="auth-error" role="alert">{error}</div>}
+        {slow && <div className="auth-wake" role="status">The server is waking up (free hosting). This can take up to 30 seconds, please wait…</div>}
         <label className="auth-field">E-mail
           <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </label>
