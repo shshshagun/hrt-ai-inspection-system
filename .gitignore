@@ -38,7 +38,9 @@ frontend/dist/
 frontend/dist-ssr/
 
 # IDE & Local Agents
-.agents/teamwork/
+.agents/
+AGENTS.md
+skills-lock.json
 .idea/
 .vscode/
 
