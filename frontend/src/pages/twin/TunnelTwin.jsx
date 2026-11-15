@@ -217,6 +217,8 @@ export default function TunnelTwin() {
               confidence: d.confidence || 0.88,
               notes: `${(d.class_label || 'Crack').toUpperCase()} detected at frame #${d.frame_index ?? i}. Subsea ROV AI Telemetry.`,
               source: 'YOLOv8 Live Pipeline',
+              imageUrl: d.image_url || null,
+              inspectionId: d.inspection_id || null,
             };
           });
           setCracksData(adapted);
@@ -1520,6 +1522,10 @@ export default function TunnelTwin() {
             <span className="twin-source-pill">SOURCE: {selectedCrack.source.toUpperCase()}</span>
           </div>
 
+          {selectedCrack.imageUrl && (
+            <img className="twin-inspect-photo" src={selectedCrack.imageUrl} alt={`Snapshot of defect ${selectedCrack.id}`} loading="lazy" />
+          )}
+
           <div className="twin-inspect-table">
             <div className="twin-row">
               <span>Defect ID</span>
@@ -1552,6 +1558,8 @@ export default function TunnelTwin() {
               </strong>
             </div>
           </div>
+
+          <Link className="twin-inspect-link" to={`/dashboard/detections/${selectedCrack.id}`}>Open full report and history →</Link>
 
           {selectedCrack.notes && (
             <div className="twin-inspect-notes">
