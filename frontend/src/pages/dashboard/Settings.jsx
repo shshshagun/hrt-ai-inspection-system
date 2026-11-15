@@ -102,11 +102,11 @@ export default function Settings() {
           <div className="sp-settings-card">
             <h2 className="sp-settings-card__title">AI Model</h2>
             {[
-              ['Model',         'YOLOv8s-HRT-V3 (Custom)'],
-              ['Architecture',  'YOLOv8s (small)'],
-              ['Parameters',    '~11.2M'],
+              ['Model',         'YOLOv8n-seg crack model (ONNX)'],
+              ['Architecture',  'YOLOv8n-seg (nano, segmentation)'],
+              ['File size',     '12.6 MB (runs in the browser)'],
               ['Input size',    '640 × 640'],
-              ['Training data', 'Roboflow — Underwater Crack v3'],
+              ['Evaluated on',   'Roboflow Underwater Crack v3, test split (184 images)'],
               ['Classes',       'crack'],
             ].map(([k, v]) => (
               <div key={k} className="sp-info-row">

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-test-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            api/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm --prefix backend ci
+          npm --prefix frontend ci
+          npm --prefix api ci
+
+      - name: Unit tests (API contract + spatial analytics)
+        run: npm test
+
+      - name: Boundary and workload test tiers
+        run: |
+          node tests/tier2_boundary.test.js
+          node tests/tier4_workload.test.js
+
+      - name: Static analysis (oxlint)
+        run: npx --prefix frontend oxlint frontend/src
+
+      - name: Build (Vite production bundle)
+        run: npm --prefix frontend run build
