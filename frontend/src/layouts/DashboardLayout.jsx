@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { Outlet, NavLink, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Box, ClipboardList, Video, Zap,
-  MapPin, FileText, HardDrive, Settings, Menu, X, ChevronRight, Compass
+  MapPin, FileText, HardDrive, Settings, Menu, X, ChevronRight, Compass,
+  PlusCircle
 } from 'lucide-react';
+import ErrorBoundary from '../components/ErrorBoundary';
 import './DashboardLayout.css';
 
 const NAV_ITEMS = [
   { to: '/dashboard',            label: 'Dashboard',        Icon: LayoutDashboard, end: true },
+  { to: '/inspection/new',       label: 'New Inspection',   Icon: PlusCircle },
   { to: '/dashboard/tunnel',     label: '3D Tunnel View',   Icon: Box },
   { to: '/tunnel-twin',          label: '3D Rover Twin',    Icon: Compass },
   { to: '/dashboard/inspections',label: 'Inspections',      Icon: ClipboardList },
@@ -33,6 +36,7 @@ function getPageTitle(pathname) {
     '/dashboard/reports': 'Reports',
     '/dashboard/assets': 'Assets',
     '/dashboard/settings': 'Settings',
+    '/inspection/new': 'New Inspection',
   };
   // defect detail
   if (pathname.startsWith('/dashboard/detections/')) return 'Defect Detail';
@@ -40,15 +44,15 @@ function getPageTitle(pathname) {
 }
 
 function getBreadcrumbs(pathname) {
-  const crumbs = [{ label: 'HRT', to: '/dashboard' }];
   if (pathname === '/dashboard') return [];
-  const segments = pathname.replace('/dashboard/', '').split('/');
-  let path = '/dashboard';
+  const crumbs = [{ label: 'HRT', to: '/dashboard' }];
+  const clean = pathname.replace(/^\//, '').replace(/\/$/, '');
+  const segments = clean.split('/').filter(Boolean);
+  let current = '';
   for (const seg of segments) {
-    path += '/' + seg;
-    const label = seg.replace(/-/g, ' ')
-      .replace(/\b\w/g, c => c.toUpperCase());
-    crumbs.push({ label, to: path });
+    current += '/' + seg;
+    const label = seg.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    crumbs.push({ label, to: current });
   }
   return crumbs;
 }
@@ -151,7 +155,6 @@ export default function DashboardLayout() {
           </div>
 
           <div className="db-topbar__right">
-            <span className="db-topbar__demo-badge">DEMO DATA</span>
             <div className="db-topbar__user">
               <div className="db-topbar__avatar" aria-hidden="true">JD</div>
               <div className="db-topbar__user-info">
@@ -164,7 +167,9 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <main className="db-content">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

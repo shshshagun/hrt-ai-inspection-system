@@ -12,7 +12,7 @@ Usage:
 
 Outputs:
     runs/detect/hrt_crack_det/
-        weights/best.pt     ← use this for inference
+        weights/best.pt     <- use this for inference
         weights/last.pt
         results.csv
         confusion_matrix.png
@@ -26,7 +26,7 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-# ── Default configuration ──────────────────────────────────────────────────────
+# -- Default configuration ------------------------------------------------------
 ROOT        = Path(__file__).resolve().parent.parent
 DATA_YAML   = ROOT / "data" / "data.yaml"   # written by Roboflow download
 PRETRAINED  = "yolov8s.pt"                  # COCO-pretrained YOLOv8-small
@@ -38,7 +38,7 @@ IMG_SIZE    = 640
 BATCH       = 16              # reduce to 8 if GPU VRAM < 6 GB
 WORKERS     = 4
 DEVICE      = "0"             # "0" = first CUDA GPU; "cpu" for CPU-only
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 
 def parse_args():
@@ -56,7 +56,7 @@ def main():
     args = parse_args()
 
     print("=" * 60)
-    print("  HRT AI Inspection — YOLOv8s Training")
+    print("  HRT AI Inspection - YOLOv8s Training")
     print("=" * 60)
     print(f"  Data YAML : {args.data}")
     print(f"  Model     : {PRETRAINED}")
@@ -75,7 +75,7 @@ def main():
     # Load pretrained weights (auto-downloads ~22 MB on first run)
     model = YOLO(PRETRAINED)
 
-    # ── Training ────────────────────────────────────────────────────────────
+    # -- Training ------------------------------------------------------------
     results = model.train(
         task       = "detect",
         data       = args.data,
@@ -89,35 +89,35 @@ def main():
         name       = RUN_NAME,
         exist_ok   = True,
 
-        # ── Augmentation ────────────────────────────────────────────────────
+        # -- Augmentation ----------------------------------------------------
         # These settings match/extend the Roboflow augmentations already
         # baked into version 3, giving extra diversity at training time.
         hsv_h      = 0.015,   # Hue jitter
         hsv_s      = 0.4,     # Saturation jitter
         hsv_v      = 0.4,     # Value (brightness) jitter
-        degrees    = 15.0,    # Random rotation ±15°
+        degrees    = 15.0,    # Random rotation +/-15 deg
         fliplr     = 0.5,     # Horizontal flip
         flipud     = 0.5,     # Vertical flip
         mosaic     = 1.0,     # Mosaic augmentation (4-image tiles)
         mixup      = 0.1,     # MixUp regularisation
         copy_paste = 0.1,     # Copy-paste augmentation
-        scale      = 0.5,     # Random scale ±50 %
+        scale      = 0.5,     # Random scale +/-50 %
 
-        # ── Optimiser ───────────────────────────────────────────────────────
+        # -- Optimiser -------------------------------------------------------
         optimizer  = "AdamW",
         lr0        = 0.001,
         lrf        = 0.01,
         weight_decay = 0.0005,
         warmup_epochs = 3,
 
-        # ── Logging & saving ────────────────────────────────────────────────
+        # -- Logging & saving ------------------------------------------------
         save       = True,
         save_period = 10,     # save checkpoint every 10 epochs
         plots      = True,
         verbose    = True,
     )
 
-    # ── Summary ─────────────────────────────────────────────────────────────
+    # -- Summary -------------------------------------------------------------
     best_weights = Path(results.save_dir) / "weights" / "best.pt"
     print("\n" + "=" * 60)
     print("  Training complete!")
@@ -128,8 +128,8 @@ def main():
     print(f"  Precision    : {results.results_dict.get('metrics/precision(B)', 'N/A'):.4f}")
     print(f"  Recall       : {results.results_dict.get('metrics/recall(B)', 'N/A'):.4f}")
     print("=" * 60)
-    print("\nNext step → evaluate:  python ai_pipeline/evaluate.py")
-    print("         → inference:  python ai_pipeline/predict.py --source <video_or_image>")
+    print("\nNext step -> evaluate:  python ai_pipeline/evaluate.py")
+    print("         -> inference:  python ai_pipeline/predict.py --source <video_or_image>")
 
 
 if __name__ == "__main__":

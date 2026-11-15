@@ -3,10 +3,10 @@ export_model.py
 ---------------
 Exports the trained YOLOv8s model to additional formats for deployment:
 
-  • ONNX    – universal format, works on any inference engine (OpenCV DNN, ONNX Runtime)
-  • TorchScript – for PyTorch Mobile or C++ deployment
-  • TensorRT  – for NVIDIA Jetson / GPU-accelerated edge deployment (requires TRT)
-  • OpenVINO – for Intel CPU/GPU/VPU deployment
+  - ONNX        - universal format, works on any inference engine (OpenCV DNN, ONNX Runtime)
+  - TorchScript - for PyTorch Mobile or C++ deployment
+  - TensorRT    - for NVIDIA Jetson / GPU-accelerated edge deployment (requires TRT)
+  - OpenVINO    - for Intel CPU/GPU/VPU deployment
 
 Usage:
     python ai_pipeline/export_model.py                  # exports ONNX + TorchScript
@@ -49,7 +49,7 @@ def main():
         )
 
     print("=" * 60)
-    print("  HRT AI Inspection — Model Export")
+    print("  HRT AI Inspection - Model Export")
     print("=" * 60)
     print(f"  Weights : {weights_path}")
     print(f"  Format  : {args.format}")
@@ -69,7 +69,7 @@ def main():
         simplify= True if args.format == "onnx" else False,
     )
 
-    print(f"\n✅ Model exported → {exported_path}")
+    print(f"\n[OK] Model exported -> {exported_path}")
     print("\nDeploy with ONNX Runtime:")
     print("  import onnxruntime as ort")
     print(f"  sess = ort.InferenceSession('{exported_path}')")

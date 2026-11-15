@@ -6,18 +6,19 @@ to locate optimal operating points and generate metric curves under runs/evaluat
 """
 
 import json
+import argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
 from ultralytics import YOLO
 
-ROOT = Path(__file__).resolve().parent
+# FIXED: Resolve root path correctly from within subdirectories
+ROOT = Path(__file__).resolve().parent.parent
 WEIGHTS = ROOT / "runs" / "detect" / "hrt_crack_det" / "weights" / "best.pt"
 DATA_YAML = ROOT / "data" / "data.yaml"
 RESULTS_DIR = ROOT / "runs" / "evaluate" / "threshold_sweeps"
 
-
-def run_sweep():
+def run_sweep(device_str: str):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     if not WEIGHTS.exists():
         raise FileNotFoundError(f"Model weights not found at: {WEIGHTS}")
@@ -28,6 +29,7 @@ def run_sweep():
 
     print("=" * 70)
     print("  STARTING CONFIDENCE THRESHOLD SWEEP (0.10 to 0.90)")
+    print(f"  Execution Device Engine: {device_str}")
     print("=" * 70)
 
     for conf in thresholds:
@@ -38,7 +40,7 @@ def run_sweep():
             imgsz=640,
             conf=conf_val,
             iou=0.45,
-            device="0",
+            device=device_str, # FIXED: Dynamically passes command execution device
             plots=True,
             project=str(RESULTS_DIR),
             name=f"conf_{conf_val:.2f}",
@@ -95,8 +97,9 @@ def run_sweep():
     print(f"  Full CSV Exported To      : {csv_path}")
     print("=" * 70)
 
-
 if __name__ == "__main__":
-    run_sweep()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="cpu", help="Device engine execution context")
+    args = parser.parse_args()
     
-# here the batch_evaluate.py works perfectly
+    run_sweep(device_str=args.device)

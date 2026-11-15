@@ -30,6 +30,7 @@ runs/
 datasets/
 *.pt
 *.onnx
+!frontend/public/models/*.onnx
 
 # Node / Frontend
 node_modules/
@@ -37,7 +38,7 @@ frontend/dist/
 frontend/dist-ssr/
 
 # IDE & Local Agents
-.agents/
+.agents/teamwork/
 .idea/
 .vscode/
 
@@ -48,6 +49,7 @@ frontend/dist-ssr/
 # Reports & Documents
 reports/
 *.docx
+rov_path.json
 skills-lock.json
 
 # Redundant duplicate directories

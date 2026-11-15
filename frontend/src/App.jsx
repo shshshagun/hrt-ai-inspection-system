@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import ErrorBoundary from './components/ErrorBoundary';
 import LandingPage from './pages/LandingPage';
 import DashboardLayout from './layouts/DashboardLayout';
 import DashboardOverview from './pages/dashboard/DashboardOverview';
@@ -12,22 +13,37 @@ import MapsLocation from './pages/dashboard/MapsLocation';
 import Reports from './pages/dashboard/Reports';
 import Assets from './pages/dashboard/Assets';
 import Settings from './pages/dashboard/Settings';
+import NewInspection from './pages/inspection/NewInspection';
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
+      <ErrorBoundary>
+        <Routes>
         {/* Landing page */}
         <Route path="/" element={<LandingPage />} />
 
         {/* Immersive 3D Digital Twin Rover Simulator */}
         <Route path="/tunnel-twin" element={<TunnelTwin />} />
+        <Route path="/twin" element={<TunnelTwin />} />
+
+        {/* New Inspection — full page under DashboardLayout */}
+        <Route path="/inspection" element={<DashboardLayout />}>
+          <Route path="new" element={<NewInspection />} />
+        </Route>
+
+        {/* Route aliases for navigation consistency */}
+        <Route path="/analytics" element={<Navigate to="/dashboard/tunnel" replace />} />
+        <Route path="/reports" element={<Navigate to="/dashboard/reports" replace />} />
 
         {/* Dashboard — all nested under DashboardLayout */}
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<DashboardOverview />} />
           <Route path="tunnel" element={<TunnelView />} />
           <Route path="tunnel-twin" element={<TunnelTwin />} />
+          <Route path="twin" element={<TunnelTwin />} />
+          <Route path="analytics" element={<TunnelView />} />
+          <Route path="inspection/new" element={<NewInspection />} />
           <Route path="inspections" element={<Inspections />} />
           <Route path="inspections/videos" element={<InspectionVideos />} />
           <Route path="detections" element={<AIDetections />} />
@@ -41,6 +57,7 @@ export default function App() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </ErrorBoundary>
+  </BrowserRouter>
   );
 }
