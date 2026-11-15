@@ -1,16 +1,19 @@
 import { useState } from 'react';
-import { Outlet, NavLink, useLocation, Link } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Box, ClipboardList, Video, Zap,
   MapPin, FileText, HardDrive, Settings, Menu, X, ChevronRight, Compass,
-  PlusCircle
+  PlusCircle, Users as UsersIcon, LogOut
 } from 'lucide-react';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { useAuth } from '../auth/useAuth';
+import { PERMISSIONS } from '../auth/permissions';
 import './DashboardLayout.css';
+import '../auth/Auth.css';
 
 const NAV_ITEMS = [
   { to: '/dashboard',            label: 'Dashboard',        Icon: LayoutDashboard, end: true },
-  { to: '/inspection/new',       label: 'New Inspection',   Icon: PlusCircle },
+  { to: '/inspection/new',       label: 'New Inspection',   Icon: PlusCircle, permission: PERMISSIONS.DETECTIONS_CREATE },
   { to: '/dashboard/tunnel',     label: '3D Tunnel View',   Icon: Box },
   { to: '/tunnel-twin',          label: '3D Rover Twin',    Icon: Compass },
   { to: '/dashboard/inspections',label: 'Inspections',      Icon: ClipboardList },
@@ -19,6 +22,7 @@ const NAV_ITEMS = [
   { to: '/dashboard/maps',       label: 'Maps & Location',  Icon: MapPin },
   { to: '/dashboard/reports',    label: 'Reports',          Icon: FileText },
   { to: '/dashboard/assets',     label: 'Assets',           Icon: HardDrive },
+  { to: '/dashboard/users',      label: 'Users',            Icon: UsersIcon, permission: PERMISSIONS.USERS_MANAGE },
 ];
 
 const SETTINGS_ITEM = { to: '/dashboard/settings', label: 'Settings', Icon: Settings };
@@ -36,6 +40,7 @@ function getPageTitle(pathname) {
     '/dashboard/reports': 'Reports',
     '/dashboard/assets': 'Assets',
     '/dashboard/settings': 'Settings',
+    '/dashboard/users': 'User Management',
     '/inspection/new': 'New Inspection',
   };
   // defect detail
@@ -59,6 +64,8 @@ function getBreadcrumbs(pathname) {
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, can, logout, authEnabled } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const pageTitle = getPageTitle(location.pathname);
   const breadcrumbs = getBreadcrumbs(location.pathname);
@@ -83,7 +90,7 @@ export default function DashboardLayout() {
 
         <nav className="db-sidebar__nav" aria-label="Main navigation">
           <ul>
-            {NAV_ITEMS.map(({ to, label, Icon, end }) => (
+            {NAV_ITEMS.filter((item) => !item.permission || can(item.permission)).map(({ to, label, Icon, end }) => (
               <li key={to}>
                 <NavLink
                   to={to}
@@ -156,11 +163,16 @@ export default function DashboardLayout() {
 
           <div className="db-topbar__right">
             <div className="db-topbar__user">
-              <div className="db-topbar__avatar" aria-hidden="true">JD</div>
+              <div className="db-topbar__avatar" aria-hidden="true">{(user?.name || user?.email || '?').slice(0, 2).toUpperCase()}</div>
               <div className="db-topbar__user-info">
-                <span className="db-topbar__user-name">John Doe</span>
-                <span className="db-topbar__user-role">Inspector</span>
+                <span className="db-topbar__user-name">{user?.name || user?.email}</span>
+                <span className="db-topbar__user-role">{user?.role}</span>
               </div>
+              {authEnabled && (
+                <button type="button" className="db-user-chip__logout" onClick={() => { logout(); navigate('/login', { replace: true }); }} aria-label="Sign out" title="Sign out">
+                  <LogOut size={16} />
+                </button>
+              )}
             </div>
           </div>
         </header>

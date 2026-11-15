@@ -14,21 +14,28 @@ import Reports from './pages/dashboard/Reports';
 import Assets from './pages/dashboard/Assets';
 import Settings from './pages/dashboard/Settings';
 import NewInspection from './pages/inspection/NewInspection';
+import Users from './pages/dashboard/Users';
+import Login from './auth/Login';
+import { AuthProvider } from './auth/AuthContext';
+import ProtectedRoute from './auth/ProtectedRoute';
+import { PERMISSIONS } from './auth/permissions';
 
 export default function App() {
   return (
     <BrowserRouter>
+      <AuthProvider>
       <ErrorBoundary>
         <Routes>
         {/* Landing page */}
         <Route path="/" element={<LandingPage />} />
 
         {/* Immersive 3D Digital Twin Rover Simulator */}
-        <Route path="/tunnel-twin" element={<TunnelTwin />} />
-        <Route path="/twin" element={<TunnelTwin />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/tunnel-twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
+        <Route path="/twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
 
         {/* New Inspection — full page under DashboardLayout */}
-        <Route path="/inspection" element={<DashboardLayout />}>
+        <Route path="/inspection" element={<ProtectedRoute permission={PERMISSIONS.DETECTIONS_CREATE}><DashboardLayout /></ProtectedRoute>}>
           <Route path="new" element={<NewInspection />} />
         </Route>
 
@@ -37,13 +44,13 @@ export default function App() {
         <Route path="/reports" element={<Navigate to="/dashboard/reports" replace />} />
 
         {/* Dashboard — all nested under DashboardLayout */}
-        <Route path="/dashboard" element={<DashboardLayout />}>
+        <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
           <Route index element={<DashboardOverview />} />
           <Route path="tunnel" element={<TunnelView />} />
           <Route path="tunnel-twin" element={<TunnelTwin />} />
           <Route path="twin" element={<TunnelTwin />} />
           <Route path="analytics" element={<TunnelView />} />
-          <Route path="inspection/new" element={<NewInspection />} />
+          <Route path="inspection/new" element={<ProtectedRoute permission={PERMISSIONS.DETECTIONS_CREATE}><NewInspection /></ProtectedRoute>} />
           <Route path="inspections" element={<Inspections />} />
           <Route path="inspections/videos" element={<InspectionVideos />} />
           <Route path="detections" element={<AIDetections />} />
@@ -52,12 +59,14 @@ export default function App() {
           <Route path="reports" element={<Reports />} />
           <Route path="assets" element={<Assets />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="users" element={<ProtectedRoute permission={PERMISSIONS.USERS_MANAGE}><Users /></ProtectedRoute>} />
         </Route>
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ErrorBoundary>
+      </AuthProvider>
   </BrowserRouter>
   );
 }
