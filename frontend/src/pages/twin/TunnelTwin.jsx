@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import * as THREE from 'three';
 import { TUNNEL_CONFIG } from './tunnel.config';
 import { API_BASE } from '../../config/api';
+import { authFetch } from '../../auth/authFetch';
 import './TunnelTwin.css';
 
 // ─── Severity visual tokens ───────────────────────────────────────────────────
@@ -196,7 +197,7 @@ export default function TunnelTwin() {
   useEffect(() => {
     let active = true;
 
-    fetch(`${API_BASE}/api/detections`)
+    authFetch(`${API_BASE}/api/detections`)
       .then(res => res.ok ? res.json() : [])
       .then(dets => {
         if (!active) return;

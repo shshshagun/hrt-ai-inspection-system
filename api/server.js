@@ -3,6 +3,11 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('dotenv').config();
 const express = require('express');
 const { MongoClient } = require('mongodb');
+const { AuthService } = require('./auth/authService');
+const { MongoUserRepository } = require('./auth/userRepository');
+const { createAuthMiddleware } = require('./auth/middleware');
+const { createAuthRouter } = require('./auth/routes');
+const { PERMISSIONS } = require('./auth/roles');
 
 const app = express();
 app.use(express.json({ limit: '15mb' }));
@@ -38,11 +43,39 @@ app.use((req, res, next) => {
   if (!origin || !allowedOrigins || process.env.NODE_ENV !== 'production' || allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin || '*');
   }
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// ── Authentication & role-based access control (RBAC) ──
+// AUTH_ENABLED=false disables checks for local development only.
+// JWT_SECRET (>= 16 chars) signs session tokens; ADMIN_EMAIL / ADMIN_PASSWORD seed the first Administrator.
+let authService = null;
+const authEnabled = process.env.AUTH_ENABLED !== 'false';
+const auth = createAuthMiddleware(() => authService, { enabled: authEnabled });
+app.use(createAuthRouter(() => authService, auth));
+if (!authEnabled) console.warn('⚠️ AUTH_ENABLED=false: every request is treated as an Administrator. Never use this in production.');
+
+async function initAuth(database) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 16) {
+    console.warn('⚠️ JWT_SECRET is missing or shorter than 16 characters. Protected endpoints will return 503 until it is configured.');
+    return;
+  }
+  const repository = new MongoUserRepository(database);
+  await repository.init();
+  authService = new AuthService({ repository, jwtSecret: secret, expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
+  const { ADMIN_EMAIL, ADMIN_PASSWORD } = process.env;
+  if (ADMIN_EMAIL && ADMIN_PASSWORD) {
+    try {
+      if (await authService.seedAdministrator({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })) console.log('✅ Seeded the first Administrator account.');
+    } catch (err) { console.error('❌ Could not seed the Administrator:', err.message); }
+  } else if ((await repository.count()) === 0) {
+    console.warn('⚠️ No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD to create the first Administrator.');
+  }
+}
 
 // Initialize MongoDB Client
 // Configure MONGODB_URI in your environment variables (e.g. Render dashboard)
@@ -60,6 +93,7 @@ async function connectDB() {
     // Specify the database name (it will be created if it doesn't exist)
     db = client.db('hrt_inspection');
     console.log("✅ Successfully connected to MongoDB Atlas.");
+    await initAuth(db);
   } catch (err) {
     console.error("❌ Failed to connect to MongoDB:", err.message);
   }
@@ -68,7 +102,7 @@ connectDB();
 
 // ── POST /api/detections ──
 // Receives JSON from inference (browser ONNX or Python) and inserts it into MongoDB
-app.post('/api/detections', async (req, res) => {
+app.post('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_CREATE), async (req, res) => {
   const {
     class_label,
     subtype,
@@ -138,7 +172,7 @@ app.post('/api/detections', async (req, res) => {
 
 // ── GET /api/detections ──
 // Returns the latest 100 detections
-app.get('/api/detections', async (req, res) => {
+app.get('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_READ), async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: 'Database not initialized or unreachable' });
   }
@@ -173,7 +207,7 @@ function buildDetectionIdQuery(id) {
 
 // ── GET /api/detections/:id ──
 // Returns a single detection by MongoDB _id or string ID
-app.get('/api/detections/:id', async (req, res) => {
+app.get('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_READ), async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: 'Database not initialized or unreachable' });
   }
@@ -192,7 +226,7 @@ app.get('/api/detections/:id', async (req, res) => {
 
 // ── DELETE /api/detections/:id ──
 // Deletes a single detection log (or ALL if id === 'ALL')
-app.delete('/api/detections/:id', async (req, res) => {
+app.delete('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_DELETE), async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: 'Database not initialized or unreachable' });
   }
@@ -216,7 +250,7 @@ app.delete('/api/detections/:id', async (req, res) => {
 
 // ── GET /api/inspections ──
 // Aggregates distinct inspections from live MongoDB detections
-app.get('/api/inspections', async (req, res) => {
+app.get('/api/inspections', ...auth.guard(PERMISSIONS.INSPECTIONS_READ), async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: 'Database not initialized or unreachable' });
   }
@@ -285,7 +319,7 @@ app.get('/api/inspections', async (req, res) => {
 
 // ── DELETE /api/inspections/:id ──
 // Removes all detections for a given inspection_id
-app.delete('/api/inspections/:id', async (req, res) => {
+app.delete('/api/inspections/:id', ...auth.guard(PERMISSIONS.INSPECTIONS_DELETE), async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: 'Database not initialized or unreachable' });
   }
@@ -307,7 +341,7 @@ app.delete('/api/inspections/:id', async (req, res) => {
 
 // ── GET /api/spatial-summary ──
 // Computes chainage-binned spatial risk analytics from live MongoDB detections
-app.get('/api/spatial-summary', async (req, res) => {
+app.get('/api/spatial-summary', ...auth.guard(PERMISSIONS.INSPECTIONS_READ), async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: 'Database not initialized or unreachable' });
   }
@@ -688,7 +722,7 @@ function generateInspectionPdf({ inspectionId, detections = [], now = new Date()
 
 // ── POST /api/reports/generate ──
 // Generates official CSV or true binary PDF inspection reports with embedded crack photos
-app.post('/api/reports/generate', async (req, res) => {
+app.post('/api/reports/generate', ...auth.guard(PERMISSIONS.REPORTS_GENERATE), async (req, res) => {
   const { format = 'pdf', inspection_id } = req.body || {};
   const normFormat = String(format).toLowerCase() === 'csv' ? 'csv' : 'pdf';
   const safeId = (inspection_id || 'live').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -754,7 +788,7 @@ app.post('/api/reports/generate', async (req, res) => {
 
 // ── GET /api/inspections/:id/export/pdf ──
 // RESTful direct PDF export route
-app.get('/api/inspections/:id/export/pdf', async (req, res) => {
+app.get('/api/inspections/:id/export/pdf', ...auth.guard(PERMISSIONS.REPORTS_GENERATE), async (req, res) => {
   const inspection_id = req.params.id;
   const safeId = (inspection_id || 'live').replace(/[^a-zA-Z0-9_-]/g, '_');
   try {
