@@ -341,20 +341,28 @@ Navigate to `http://localhost:5173` in your browser.
 
 ## 🔐 Authentication and Roles
 
-The gateway (`api/`) requires a login. Passwords are stored as bcrypt hashes and sessions are signed JWTs (8 h by default). Set these environment variables on the server (see `api/.env.example`):
+The gateway (`api/`) requires a login. Passwords are stored as bcrypt hashes and sessions are signed JWTs (8 h by default).
 
-| Variable | Purpose |
-|---|---|
-| `JWT_SECRET` | Signing secret, at least 16 characters. Without it every protected endpoint answers 503 (fails closed). |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Create the first Administrator when no user exists. |
-| `AUTH_ENABLED=false` | Local development only: skips all checks. |
+**Accounts.** Anyone can sign up at `/register`; a new account is a read-only **Viewer**. An Administrator raises the role on the Users page. **Administrator accounts can only be added in the server configuration (Render environment variables)**: the API and the sign-up form can never create or grant one.
 
 | Role | Can do |
 |---|---|
-| Operator | View detections and inspections; start inspections and upload video, webcam or photos |
-| Engineer | View detections and inspections; review detections |
-| Manager | View detections and inspections; generate PDF/CSV reports |
+| Viewer | View detections and inspections (the role given at sign-up) |
+| Operator | View; start inspections and upload video, webcam or photos |
+| Engineer | View; review detections |
+| Manager | View; generate PDF/CSV reports |
 | Administrator | Everything, including deleting detections and sessions and managing users |
+
+**Server configuration** (see `api/.env.example`; on Render: service → Environment):
+
+| Variable | Purpose |
+|---|---|
+| `JWT_SECRET` | Signing secret, at least 16 random characters. Without it every protected endpoint answers 503 (fails closed). |
+| `ADMIN_ACCOUNTS` | JSON array of Administrators, e.g. `[{"email":"a@x.com","password":"...","name":"A"}]`. On every start each account is created, or repaired and set to the configured password. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | A single Administrator (can be used instead of, or with, `ADMIN_ACCOUNTS`). |
+| `ALLOW_REGISTRATION` | `false` closes public sign-up (default `true`). Sign-up is limited to 5 per hour per client. |
+| `ALLOWED_ORIGINS` | Browser origins allowed in production, e.g. `https://hrt-ai-inspection-system.vercel.app`. |
+| `AUTH_ENABLED=false` | Local development only: skips all checks. |
 
 The front end follows the same rules (hidden menu entries, access-denied pages), but the server is the authority: it answers 401 without a valid token and 403 when the role lacks the permission. Run `node api/auth/devServer.js` to try the flow locally with demo accounts and no database. Set `VITE_AUTH_ENABLED=false` in `frontend/.env` to run the front end against the core API on port 3000 without a login.
 
