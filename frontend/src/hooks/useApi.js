@@ -20,6 +20,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config/api';
+import { authFetch } from '../auth/authFetch';
 
 export { API_BASE };
 
@@ -134,7 +135,7 @@ export async function apiFetch(path, options = {}) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await authFetch(`${API_BASE}${path}`, {
       ...options,
       headers: {
         Accept: 'application/json',
@@ -595,7 +596,7 @@ export async function generateReport({ inspection_id, format = 'pdf' }) {
   const filename = `HRT_Report_${inspection_id || 'export'}.${normFormat}`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/reports/generate`, {
+    const res = await authFetch(`${API_BASE}/api/reports/generate`, {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -612,13 +613,17 @@ export async function generateReport({ inspection_id, format = 'pdf' }) {
       } catch {
         // Fall back to HTTP status message
       }
-      throw new Error(message);
+      const denied = new Error(message);
+      denied.status = res.status;
+      throw denied;
     }
 
     const blob = await res.blob();
     triggerBrowserDownload(blob, filename);
     return { success: true, live: true, format: normFormat };
   } catch (err) {
+    // A permission or session error must reach the user: never replace it with a client-made report.
+    if (err.status === 401 || err.status === 403) throw err;
     console.warn('[useApi:generateReport] Live report service offline, using fallback export:', err.message);
     const fallbackBlob = createClientFallbackReport({ inspection_id, format: normFormat });
     triggerBrowserDownload(fallbackBlob, filename);
@@ -631,7 +636,7 @@ export async function generateReport({ inspection_id, format = 'pdf' }) {
  */
 export async function deleteDetectionLog(id) {
   if (!id) throw new Error('Detection ID is required');
-  const res = await fetch(`${API_BASE}/api/detections/${encodeURIComponent(id)}`, {
+  const res = await authFetch(`${API_BASE}/api/detections/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -646,7 +651,7 @@ export async function deleteDetectionLog(id) {
  */
 export async function deleteInspectionSession(id) {
   if (!id) throw new Error('Inspection ID is required');
-  const res = await fetch(`${API_BASE}/api/inspections/${encodeURIComponent(id)}`, {
+  const res = await authFetch(`${API_BASE}/api/inspections/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
   if (!res.ok) {

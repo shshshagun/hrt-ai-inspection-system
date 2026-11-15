@@ -2,10 +2,11 @@
 
 > **Autonomous AI-powered defect detection and 3D digital twin platform for underwater Head Race Tunnel (HRT) inspection in Hydroelectric Projects.**
 
-[![Tests](https://img.shields.io/badge/tests-34%2F34%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]()
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Model](https://img.shields.io/badge/model-YOLOv8s-blue)]()
-[![mAP](https://img.shields.io/badge/mAP%400.5-91%25-blue)]()
+[![Model](https://img.shields.io/badge/model-YOLOv8n--seg%20(ONNX)-blue)]()
+[![mAP](https://img.shields.io/badge/mAP%400.5%20(test%20split)-0.58-blue)]()
+[![Live](https://img.shields.io/badge/live-Vercel-black)](https://hrt-ai-inspection-system.vercel.app/)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)]()
 
 ---
@@ -279,7 +280,7 @@ hrt-ai-inspection-system/
 
 ### Step 1: Clone the Repository
 ```powershell
-git clone https://github.com/your-username/hrt-ai-inspection-system.git
+git clone https://github.com/shshshagun/hrt-ai-inspection-system.git
 cd hrt-ai-inspection-system
 ```
 
@@ -333,6 +334,30 @@ Navigate to `http://localhost:5173` in your browser.
 
 ---
 
+## 🌐 Live Deployment
+
+- **Front end:** https://hrt-ai-inspection-system.vercel.app/ (Vercel; `frontend/vercel.json` rewrites every path to the single-page app, so dashboard links and refreshes work)
+- **Gateway API:** https://hrt-mongo-gateway.onrender.com (Render; the free tier can take about 30 s to wake up)
+
+## 🔐 Authentication and Roles
+
+The gateway (`api/`) requires a login. Passwords are stored as bcrypt hashes and sessions are signed JWTs (8 h by default). Set these environment variables on the server (see `api/.env.example`):
+
+| Variable | Purpose |
+|---|---|
+| `JWT_SECRET` | Signing secret, at least 16 characters. Without it every protected endpoint answers 503 (fails closed). |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Create the first Administrator when no user exists. |
+| `AUTH_ENABLED=false` | Local development only: skips all checks. |
+
+| Role | Can do |
+|---|---|
+| Operator | View detections and inspections; start inspections and upload video, webcam or photos |
+| Engineer | View detections and inspections; review detections |
+| Manager | View detections and inspections; generate PDF/CSV reports |
+| Administrator | Everything, including deleting detections and sessions and managing users |
+
+The front end follows the same rules (hidden menu entries, access-denied pages), but the server is the authority: it answers 401 without a valid token and 403 when the role lacks the permission. Run `node api/auth/devServer.js` to try the flow locally with demo accounts and no database. Set `VITE_AUTH_ENABLED=false` in `frontend/.env` to run the front end against the core API on port 3000 without a login.
+
 ## 🎥 Testing a New Video
 
 To run AI inference on any tunnel inspection video:
@@ -377,16 +402,16 @@ python ai_pipeline/predict.py `
 - **Classes:** `crack`
 - **Augmentations applied:** Horizontal/vertical flip, rotation ±14°, saturation ±20%, hue ±15°, mosaic ×3
 
-### Model Architecture
+### Model Architecture and Provenance
 
 | Property | Value |
 |---|---|
-| Architecture | YOLOv8s (small variant) |
-| Task | Object Detection |
-| Pretrained Backbone | COCO |
-| Input Size | 640 × 640 px |
-| Parameters | ~11.2 million |
-| Weights File | `runs/detect/hrt_crack_det/weights/best.pt` |
+| Deployed model | `frontend/public/models/hrt_yolov8_crack.onnx` (12.6 MB), run in the browser with ONNX Runtime Web |
+| Architecture | YOLOv8n-seg (nano, instance segmentation), 1 class: `crack` |
+| Input size | 640 × 640 px |
+| Origin | An existing crack-segmentation model. The file embeds Ultralytics metadata stating it was trained on the Ultralytics `crack-seg` dataset, and `best.pt` is byte-identical to `best_opensistemas.pt`. **We did not train this network.** |
+| Our contribution | The browser inference pipeline (tiled scan, mask decoding, box consolidation, multi-frame tracker), spatial mapping, services, 3D twin and the evaluation below |
+| Training code | `ai_pipeline/train.py` trains YOLOv8s on the Roboflow dataset; the log of that run is `runs/detect/hrt_crack_det/results.csv` (best validation mAP@0.5 0.68, epoch 103). Those weights are not kept in the repository. |
 
 ### Optical Metric Formula
 
@@ -441,16 +466,18 @@ Filter defects by severity tier (`minor`, `moderate`, `critical`).
 
 ## 📊 Performance Results
 
+Measured on the **184-image test split** of the Roboflow Underwater Crack Detection v3 dataset (368 labelled cracks) with the model that is actually deployed (`python ai_pipeline/evaluate_onnx.py`). Box-based scoring, one full 640 × 640 frame per image, NMS IoU 0.45.
+
 | Metric | Value |
 |---|---|
-| mAP @ IoU 0.5 | **91.0%** |
-| Precision | **94.1%** |
-| Recall | **85.6%** |
-| F1 Score | **89.7%** |
-| Inference Speed (GPU) | ~8 ms/frame |
-| Inference Speed (CPU) | ~180 ms/frame |
+| mAP @ IoU 0.5 | **0.578** |
+| mAP @ IoU 0.5:0.95 | **0.378** |
+| Precision at the app threshold (conf 0.42) | **0.827** |
+| Recall at conf 0.42 | **0.533** |
+| F1 at conf 0.42 | **0.648** (best F1 0.655 at conf 0.30) |
+| Latency (ONNX Runtime, laptop CPU, AMD Ryzen) | **46 ms per image** (median; p95 52 ms) |
 
-> These match Roboflow's benchmark results on the same dataset using YOLOv8n. Our YOLOv8s model (larger) is expected to match or exceed these figures.
+> The deployed model was trained on a different crack dataset, so these figures describe how well it transfers to underwater imagery: it is precise but misses about half of the cracks at the default threshold. The 91 % mAP quoted in earlier versions of this README was Roboflow's published figure for its own YOLOv8n model on this dataset, not a measurement of this system. Browser inference (WebAssembly, tiled scan) is slower than the CPU figure above and was not benchmarked separately.
 
 ---
 
@@ -503,8 +530,8 @@ Being honest about the gaps is important for anyone looking to extend or deploy 
 - **No predictive modelling** — the system logs what it finds today but cannot predict how fast a crack will grow.
 - **No mobile app** — there is no native iOS/Android interface for field use on-site at the dam.
 - **No automated alert system** — the system does not send SMS/email alerts when a Critical defect is detected.
-- **No authentication / role-based access** — any user who can reach the frontend URL has full read access.
-- **Limited real-world validation** — the model was trained on publicly available underwater crack images, not specifically on HRT concrete lining datasets from actual hydroelectric tunnels.
+- **Single-tenant accounts** — login and role-based access are implemented on the gateway (see below), but there is no self-service sign-up, password reset or multi-factor login.
+- **Limited real-world validation** — the deployed model was trained on a public crack-segmentation dataset and tested only on public underwater crack images, not on footage from actual hydroelectric tunnels. The team does not operate an ROV and did not record any video.
 
 ---
 
