@@ -24,6 +24,7 @@ import {
 import { API_BASE, resolveInferApi } from '../../config/api';
 import { detectVideoFrame, getYoloSession } from '../../utils/yoloBrowserInference';
 import { createDefectTracker } from '../../utils/defectTracker';
+import { authFetch } from '../../auth/authFetch';
 import './NewInspection.css';
 
 const SEVERITY_COLORS = {
@@ -203,7 +204,7 @@ export default function NewInspection() {
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const res = await fetch(`${API_BASE}/api/detections`, {
+        const res = await authFetch(`${API_BASE}/api/detections`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -831,7 +832,7 @@ export default function NewInspection() {
     const dbKey = detToDismiss.dbId || detToDismiss._id;
     if (dbKey) {
       try {
-        await fetch(`${API_BASE}/api/detections/${encodeURIComponent(dbKey)}`, {
+        await authFetch(`${API_BASE}/api/detections/${encodeURIComponent(dbKey)}`, {
           method: 'DELETE',
         });
         setSyncedToDb((prev) => Math.max(0, prev - 1));
@@ -870,7 +871,7 @@ export default function NewInspection() {
     setDbError(null);
 
     if (syncedToDb > 0) {
-      await fetch(`${API_BASE}/api/inspections/${encodeURIComponent(inspId)}`, { method: 'DELETE' }).catch(() => {});
+      await authFetch(`${API_BASE}/api/inspections/${encodeURIComponent(inspId)}`, { method: 'DELETE' }).catch(() => {});
     }
 
     const inferApi = resolveInferApi();
