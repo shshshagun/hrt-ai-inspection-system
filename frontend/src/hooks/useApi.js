@@ -21,6 +21,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config/api';
 import { authFetch } from '../auth/authFetch';
+import { isDemo } from '../demo/demoMode';
 
 export { API_BASE };
 
@@ -594,6 +595,11 @@ function createClientFallbackReport({ inspection_id, format, detections = [] }) 
 export async function generateReport({ inspection_id, format = 'pdf' }) {
   const normFormat = (format || 'pdf').toLowerCase() === 'csv' ? 'csv' : 'pdf';
   const filename = `HRT_Report_${inspection_id || 'export'}.${normFormat}`;
+
+  if (isDemo()) {
+    triggerBrowserDownload(createClientFallbackReport({ inspection_id, format: normFormat }), filename);
+    return { success: true, live: false, format: normFormat };
+  }
 
   try {
     const res = await authFetch(`${API_BASE}/api/reports/generate`, {

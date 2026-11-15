@@ -20,7 +20,9 @@ export default function ProtectedRoute({ permission, children }) {
       <div className="auth-denied" role="alert">
         <ShieldAlert size={40} aria-hidden="true" />
         <h2>Access denied</h2>
-        <p>Your role ({user.role}) is not allowed to open this page.</p>
+        {user.demo
+          ? <p>This page changes data, so it is not part of the read-only demo. <a href="/login">Sign in</a> to use it.</p>
+          : <p>Your role ({user.role}) is not allowed to open this page.</p>}
       </div>
     );
   }
