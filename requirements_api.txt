@@ -1,0 +1,10 @@
+# HRT AI Inspection System — Inference API requirements
+# Install: pip install -r requirements_api.txt
+
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+ultralytics>=8.2.0
+opencv-python>=4.9.0
+httpx>=0.27.0
+

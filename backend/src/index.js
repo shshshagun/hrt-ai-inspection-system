@@ -19,20 +19,85 @@ const spatialRoutes         = require('./routes/spatial');
 const detectionsQueryRoutes = require('./routes/detections.query');
 // Module 6: Inspection session management
 const inspectionsRoutes     = require('./routes/inspections');
+// Module 7: PDF / CSV Report Engine
+const reportsRoutes         = require('./routes/reports');
+const { createRateLimiter } = require('./middleware/rateLimiter');
+
+let helmetMiddleware;
+try {
+  const helmet = require('helmet');
+  helmetMiddleware = helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        fontSrc: ["'self'", 'https:', 'data:'],
+        formAction: ["'self'"],
+        frameAncestors: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: { maxAge: 31536000, includeSubDomains: true },
+    noSniff: true,
+    frameguard: { action: 'sameorigin' },
+  });
+} catch {
+  // Resilient zero-dependency fallback if helmet package cannot be loaded
+  helmetMiddleware = (_req, res, next) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'");
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    next();
+  };
+}
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+
+// Suppress server software fingerprinting
+app.disable('x-powered-by');
 
 // ---------------------------------------------------------------------------
 // Global Middleware
 // ---------------------------------------------------------------------------
 
-// Allow all origins in development; tighten this in production via an
-// allowlist derived from process.env.ALLOWED_ORIGINS.
-app.use(cors());
+// Apply Helmet security headers
+app.use(helmetMiddleware);
 
-// Parse incoming JSON bodies (limit kept at Express default: 100 kb).
-app.use(express.json());
+// Production origin allowlist; permits local Vite dev clients by default
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : null;
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    const configuredOrigins = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+      : allowedOrigins;
+    if (!configuredOrigins || process.env.NODE_ENV !== 'production') return callback(null, true);
+    if (configuredOrigins.includes(origin)) return callback(null, true);
+    const corsError = new Error('CORS forbidden: origin not allowed');
+    corsError.status = 403;
+    return callback(corsError);
+  },
+  methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+  credentials: true,
+}));
+
+// In-memory rate limiting to protect DB pool from starvation
+app.use(createRateLimiter({ windowMs: 60000, max: 600, message: 'Too many requests, please slow down.' }));
+
+// Parse incoming JSON bodies (extended to 15mb to support base64 defect snapshot photo batches).
+app.use(express.json({ limit: '15mb' }));
 
 // ---------------------------------------------------------------------------
 // Health Check
@@ -62,6 +127,9 @@ app.use('/api/spatial-summary', spatialRoutes);
 
 app.use('/api/inspections', inspectionsRoutes);  // Module 6: inspection sessions
 
+// Module 7 — Report generation (PDF / CSV)
+app.use('/api/reports', reportsRoutes);
+
 // ---------------------------------------------------------------------------
 // 404 — Catch-all for unknown routes
 // ---------------------------------------------------------------------------
@@ -77,6 +145,11 @@ app.use((_req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
+  // Gracefully handle CORS rejections without emitting 500 or stack traces
+  if (err.status === 403 || (err.message && err.message.toLowerCase().includes('cors'))) {
+    return res.status(403).json({ error: 'CORS forbidden: origin not allowed' });
+  }
+
   console.error('[Global Error Handler]', err);
 
   // Never expose raw internal errors in production.
@@ -111,6 +184,14 @@ process.on('SIGINT', () => {
     console.log('[HRT Backend] HTTP server closed');
     process.exit(0);
   });
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[HRT Backend] Unhandled Promise Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[HRT Backend] Uncaught Exception:', err);
 });
 
 module.exports = app; // exported for testing

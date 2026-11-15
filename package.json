@@ -1,0 +1,16 @@
+{
+  "name": "hrt-ai-inspection-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HRT AI Inspection System",
+  "scripts": {
+    "test": "node backend/src/api.test.js && node backend/src/routes/spatial.test.js",
+    "test:api": "node backend/src/api.test.js",
+    "test:spatial": "node backend/src/routes/spatial.test.js",
+    "lint": "npm --prefix frontend run lint",
+    "build": "npm --prefix frontend run build",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "start:backend": "npm --prefix backend start"
+  }
+}

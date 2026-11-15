@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, ChevronUp, ChevronDown, ArrowRight } from 'lucide-react';
-import { DETECTIONS, DEFECT_CATEGORIES, SEVERITY_LEVELS } from '../../data/mockData';
+import { Search, Filter, ChevronUp, ChevronDown, ArrowRight, Loader2, Trash2 } from 'lucide-react';
+import { useDetections, deleteDetectionLog } from '../../hooks/useApi';
 import './AIDetections.css';
+
+const DEFECT_CATEGORIES = ['Crack', 'Spalling', 'Leakage', 'Corrosion', 'Erosion', 'Joint Displacement'];
+const SEVERITY_LEVELS = ['Critical', 'Major', 'Minor', 'Info'];
 
 const SEV_COLOR = {
   Critical: 'var(--critical)',
@@ -27,18 +30,52 @@ export default function AIDetections() {
   const [page, setPage]             = useState(1);
   const PER_PAGE = 10;
 
+  const [deletingId, setDeletingId]       = useState(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [clearingAll, setClearingAll]     = useState(false);
+
+  // Module 8 — live API
+  const { data: allDetections, loading, error, refetch } = useDetections({
+    category: filterCat || undefined,
+    severity: filterSev || undefined,
+    search:   search    || undefined,
+  });
+
+  async function handleDeleteOne(e, id) {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await deleteDetectionLog(id);
+      refetch?.();
+    } catch {
+      // ignore if already removed
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleClearAll() {
+    if (!confirmClearAll) {
+      setConfirmClearAll(true);
+      return;
+    }
+    setClearingAll(true);
+    try {
+      await deleteDetectionLog('ALL');
+      setConfirmClearAll(false);
+      refetch?.();
+    } finally {
+      setClearingAll(false);
+    }
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('desc'); }
   }
 
-  const filtered = DETECTIONS
-    .filter(d => {
-      if (search && !`${d.id} ${d.category} ${d.subtype}`.toLowerCase().includes(search.toLowerCase())) return false;
-      if (filterCat && d.category !== filterCat) return false;
-      if (filterSev && d.severity !== filterSev) return false;
-      return true;
-    })
+  const source = allDetections ?? [];
+  const filtered = [...source]
     .sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey];
       if (typeof av === 'string') av = av.toLowerCase();
@@ -58,7 +95,51 @@ export default function AIDetections() {
 
   return (
     <div className="det-page">
-      <h1 className="det-page__title">AI Detections</h1>
+      <div className="det-page__topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <h1 className="det-page__title">AI Detections</h1>
+        {source.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {confirmClearAll && (
+              <button
+                type="button"
+                onClick={() => setConfirmClearAll(false)}
+                style={{
+                  background: '#111318',
+                  border: '1px solid #1f2530',
+                  color: '#94a3b8',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={clearingAll}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: confirmClearAll ? '#ef4444' : '#1a1114',
+                border: '1px solid rgba(239, 68, 68, 0.45)',
+                color: confirmClearAll ? '#ffffff' : '#f87171',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {clearingAll ? <Loader2 size={14} className="sp-dl-btn__spin" /> : <Trash2 size={14} />}
+              {confirmClearAll ? 'Confirm Clear All Logs' : 'Clear All Logs'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* ── Filters ── */}
       <div className="det-filters" role="search">
@@ -95,7 +176,11 @@ export default function AIDetections() {
           </select>
         </div>
         <p className="det-count" aria-live="polite">
-          {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+          {loading ? (
+            <><Loader2 size={12} className="sp-dl-btn__spin" /> Loading…</>
+          ) : (
+            <>{filtered.length} result{filtered.length !== 1 ? 's' : ''}{error ? ' (offline)' : ''}</>
+          )}
         </p>
       </div>
 
@@ -133,8 +218,8 @@ export default function AIDetections() {
           <tbody>
             {pageData.length === 0 ? (
               <tr>
-                <td colSpan={8} className="det-empty">
-                  No detections match the current filters.
+                <td colSpan={8} className="det-empty" style={{ padding: '48px 16px', textAlign: 'center' }}>
+                  No inspection defects found. Upload an ROV video in <strong>New Inspection</strong> to run AI detection.
                 </td>
               </tr>
             ) : pageData.map(d => (
@@ -159,8 +244,8 @@ export default function AIDetections() {
                 <td className="det-td det-td--conf">
                   {Math.round(d.confidence * 100)}%
                 </td>
-                <td className="det-td det-td--mono">{d.chainage.toFixed(2)} km</td>
-                <td className="det-td det-td--mono">{d.timestamp}</td>
+                <td className="det-td det-td--mono">{d.chainage.toFixed(1)} m</td>
+                <td className="det-td det-td--mono">{d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : '10:14:22'}</td>
                 <td className="det-td">
                   <span
                     className="det-badge det-badge--status"
@@ -169,7 +254,25 @@ export default function AIDetections() {
                     {d.reviewStatus}
                   </span>
                 </td>
-                <td className="det-td det-td--action">
+                <td className="det-td det-td--action" style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteOne(e, d.id)}
+                    disabled={deletingId === d.id}
+                    title="Delete defect log"
+                    aria-label={`Delete detection ${d.id}`}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#f87171',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {deletingId === d.id ? <Loader2 size={14} className="sp-dl-btn__spin" /> : <Trash2 size={14} />}
+                  </button>
                   <ArrowRight size={14} />
                 </td>
               </tr>
