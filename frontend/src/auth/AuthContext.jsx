@@ -62,11 +62,34 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  const register = useCallback(async ({ name, email, password }) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 40000);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(await readError(res, `Sign-up failed (${res.status})`));
+      const body = await res.json();
+      setToken(body.token);
+      setUser(body.user);
+      return body.user;
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('The server did not answer in time. Please try again.');
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }, []);
+
   const logout = useCallback(() => { clearToken(); setUser(null); }, []);
 
   const can = useCallback((permission) => Boolean(user?.permissions?.includes(permission)), [user]);
 
-  const value = useMemo(() => ({ user, loading, login, logout, can, authEnabled: AUTH_ENABLED }), [user, loading, login, logout, can]);
+  const value = useMemo(() => ({ user, loading, login, register, logout, can, authEnabled: AUTH_ENABLED }), [user, loading, login, register, logout, can]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

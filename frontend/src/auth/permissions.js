@@ -13,7 +13,10 @@ export const PERMISSIONS = Object.freeze({
   USERS_MANAGE: 'users:manage',
 });
 
-export const ROLE_NAMES = ['Operator', 'Engineer', 'Manager', 'Administrator'];
+export const ROLE_NAMES = ['Viewer', 'Operator', 'Engineer', 'Manager', 'Administrator'];
+
+/** Roles an Administrator may grant in the interface. Administrator accounts are added only in the server configuration. */
+export const ASSIGNABLE_ROLES = ROLE_NAMES.filter((r) => r !== 'Administrator');
 
 /** Used only when VITE_AUTH_ENABLED=false (local development without a login). */
 export const DEV_USER = Object.freeze({
