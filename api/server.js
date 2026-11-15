@@ -55,7 +55,7 @@ app.use((req, res, next) => {
 let authService = null;
 const authEnabled = process.env.AUTH_ENABLED !== 'false';
 const auth = createAuthMiddleware(() => authService, { enabled: authEnabled });
-app.use(createAuthRouter(() => authService, auth));
+app.use(createAuthRouter(() => authService, auth, { allowRegistration: process.env.ALLOW_REGISTRATION !== 'false' }));
 if (!authEnabled) console.warn('⚠️ AUTH_ENABLED=false: every request is treated as an Administrator. Never use this in production.');
 
 async function initAuth(database) {
@@ -67,14 +67,31 @@ async function initAuth(database) {
   const repository = new MongoUserRepository(database);
   await repository.init();
   authService = new AuthService({ repository, jwtSecret: secret, expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
-  const { ADMIN_EMAIL, ADMIN_PASSWORD } = process.env;
-  if (ADMIN_EMAIL && ADMIN_PASSWORD) {
+  // Administrator accounts come only from the server configuration, never from the API or the sign-up form.
+  const admins = adminAccountsFromEnv();
+  for (const account of admins) {
     try {
-      if (await authService.seedAdministrator({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })) console.log('✅ Seeded the first Administrator account.');
-    } catch (err) { console.error('❌ Could not seed the Administrator:', err.message); }
-  } else if ((await repository.count()) === 0) {
-    console.warn('⚠️ No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD to create the first Administrator.');
+      const outcome = await authService.ensureAdministrator(account);
+      if (outcome !== 'unchanged') console.log(`✅ Administrator ${account.email}: ${outcome}.`);
+    } catch (err) { console.error(`❌ Could not provision Administrator ${account.email}:`, err.message); }
   }
+  if (admins.length === 0 && (await authService.countAdministrators()) === 0) {
+    console.warn('⚠️ No Administrator exists. Set ADMIN_ACCOUNTS (or ADMIN_EMAIL and ADMIN_PASSWORD) to create one.');
+  }
+}
+
+/** Administrator accounts from ADMIN_ACCOUNTS (JSON array of {email, password, name}) plus ADMIN_EMAIL / ADMIN_PASSWORD. */
+function adminAccountsFromEnv() {
+  const accounts = [];
+  if (process.env.ADMIN_ACCOUNTS) {
+    try {
+      const parsed = JSON.parse(process.env.ADMIN_ACCOUNTS);
+      if (Array.isArray(parsed)) accounts.push(...parsed.filter((a) => a && a.email && a.password));
+      else console.error('❌ ADMIN_ACCOUNTS must be a JSON array.');
+    } catch { console.error('❌ ADMIN_ACCOUNTS is not valid JSON.'); }
+  }
+  if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) accounts.push({ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD });
+  return accounts;
 }
 
 // Initialize MongoDB Client

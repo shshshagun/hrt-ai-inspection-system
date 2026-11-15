@@ -6,6 +6,7 @@
  *
  *   Role (abstract)
  *   ├── ReadOnlyRole            – may read detections and inspections
+ *   │   ├── Viewer              – read only (the role given to self-registered users)
  *   │   ├── Operator            – + create detections
  *   │   ├── Engineer            – + review detections
  *   │   └── Manager             – + generate reports
@@ -50,6 +51,10 @@ class ReadOnlyRole extends Role {
   }
 }
 
+class Viewer extends ReadOnlyRole {
+  constructor() { super('Viewer'); }
+}
+
 class Operator extends ReadOnlyRole {
   constructor() { super('Operator', [PERMISSIONS.DETECTIONS_CREATE]); }
 }
@@ -66,10 +71,13 @@ class Administrator extends Role {
   constructor() { super('Administrator', Object.values(PERMISSIONS)); }
 }
 
-const ROLE_NAMES = Object.freeze(['Operator', 'Engineer', 'Manager', 'Administrator']);
+const ROLE_NAMES = Object.freeze(['Viewer', 'Operator', 'Engineer', 'Manager', 'Administrator']);
+
+/** Roles that may be granted through the API. Administrator accounts exist only through the server configuration. */
+const ASSIGNABLE_ROLES = Object.freeze(ROLE_NAMES.filter((r) => r !== 'Administrator'));
 
 class RoleFactory {
-  static #classes = { Operator, Engineer, Manager, Administrator };
+  static #classes = { Viewer, Operator, Engineer, Manager, Administrator };
   static #cache = new Map();
 
   static isValid(name) {
@@ -84,4 +92,4 @@ class RoleFactory {
   }
 }
 
-module.exports = { PERMISSIONS, ROLE_NAMES, Role, ReadOnlyRole, Operator, Engineer, Manager, Administrator, RoleFactory };
+module.exports = { PERMISSIONS, ROLE_NAMES, ASSIGNABLE_ROLES, Role, ReadOnlyRole, Viewer, Operator, Engineer, Manager, Administrator, RoleFactory };

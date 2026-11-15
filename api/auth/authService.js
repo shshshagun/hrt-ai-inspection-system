@@ -2,7 +2,7 @@
 
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { RoleFactory, ROLE_NAMES } = require('./roles');
+const { RoleFactory, ROLE_NAMES, ASSIGNABLE_ROLES } = require('./roles');
 
 /** An error that carries the HTTP status the API should answer with. */
 class AuthError extends Error {
@@ -35,6 +35,7 @@ class LoginThrottle {
   reset(key) { this.#hits.delete(key); }
 }
 
+const ADMIN_ONLY_MESSAGE = 'Administrator accounts can only be added through the server configuration (ADMIN_ACCOUNTS)';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 
@@ -43,6 +44,7 @@ class AuthService {
   #secret;
   #expiresIn;
   #throttle;
+  #registerThrottle;
   #rounds;
 
   /**
@@ -51,12 +53,13 @@ class AuthService {
    * @param {string} opts.jwtSecret  signing secret, from the JWT_SECRET environment variable
    * @param {string|number} [opts.expiresIn='8h'] token lifetime
    */
-  constructor({ repository, jwtSecret, expiresIn = '8h', throttle = new LoginThrottle(), bcryptRounds = 10 }) {
+  constructor({ repository, jwtSecret, expiresIn = '8h', throttle = new LoginThrottle(), registerThrottle = new LoginThrottle({ max: 5, windowMs: 60 * 60 * 1000 }), bcryptRounds = 10 }) {
     if (!jwtSecret || String(jwtSecret).length < 16) throw new Error('JWT secret must be at least 16 characters');
     this.#repo = repository;
     this.#secret = jwtSecret;
     this.#expiresIn = expiresIn;
     this.#throttle = throttle;
+    this.#registerThrottle = registerThrottle;
     this.#rounds = bcryptRounds;
   }
 
@@ -69,19 +72,51 @@ class AuthService {
     if (name !== undefined && typeof name !== 'string') throw new AuthError(400, 'Name must be text');
   }
 
-  async createUser({ email, name = '', password, role }) {
+  async #create({ email, name = '', password, role }) {
     AuthService.validate({ email, password, role, name });
     if (await this.#repo.findByEmail(email)) throw new AuthError(409, 'A user with this e-mail already exists');
     const passwordHash = await bcrypt.hash(password, this.#rounds);
     return this.#repo.create({ email, name: name.trim(), role, passwordHash });
   }
 
-  /** Creates the first Administrator when the user store is empty. Returns true if one was created. */
-  async seedAdministrator({ email, password, name = 'Administrator' }) {
-    if ((await this.#repo.count()) > 0) return false;
-    await this.createUser({ email, password, name, role: 'Administrator' });
-    return true;
+  /** Creates a user with a role chosen by an Administrator. Administrator accounts cannot be created here. */
+  async createUser(data) {
+    if (data && data.role === 'Administrator') throw new AuthError(400, ADMIN_ONLY_MESSAGE);
+    if (!data || !ASSIGNABLE_ROLES.includes(data.role)) throw new AuthError(400, `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}`);
+    return this.#create(data);
   }
+
+  /**
+   * Public sign-up. The new account always gets the read-only Viewer role; an Administrator can raise it later.
+   * Limited per client address so the form cannot be used to flood the user store.
+   */
+  async register({ email, password, name = '', ip = 'unknown' }) {
+    if (this.#registerThrottle.isBlocked(ip)) throw new AuthError(429, 'Too many sign-ups from this address. Try again later.');
+    AuthService.validate({ email, password, name });
+    this.#registerThrottle.recordFailure(ip);
+    const user = await this.#create({ email, password, name, role: 'Viewer' });
+    return { token: this.issueToken(user), user: user.toPublic() };
+  }
+
+  /**
+   * Makes sure an Administrator account exists for a configured address (ADMIN_ACCOUNTS / ADMIN_EMAIL on the server).
+   * The configuration is the source of truth: the account is created, re-activated, given the Administrator role
+   * and its password is set to the configured one. Returns 'created', 'updated' or 'unchanged'.
+   */
+  async ensureAdministrator({ email, password, name = 'Administrator' }) {
+    AuthService.validate({ email, password, name });
+    const existing = await this.#repo.findByEmail(email);
+    if (!existing) { await this.#create({ email, password, name, role: 'Administrator' }); return 'created'; }
+    const changes = {};
+    if (existing.roleName !== 'Administrator') changes.role = 'Administrator';
+    if (!existing.active) changes.active = true;
+    if (!(await bcrypt.compare(password, existing.passwordHash))) changes.passwordHash = await bcrypt.hash(password, this.#rounds);
+    if (Object.keys(changes).length === 0) return 'unchanged';
+    await this.#repo.update(existing.id, changes);
+    return 'updated';
+  }
+
+  countAdministrators() { return this.#repo.list().then((us) => us.filter((u) => u.roleName === 'Administrator' && u.active).length); }
 
   async login({ email, password, ip = 'unknown' }) {
     const key = `${ip}|${String(email || '').trim().toLowerCase()}`;
@@ -119,6 +154,7 @@ class AuthService {
   listUsers() { return this.#repo.list(); }
 
   async updateUser(id, { role, active, name, password }, actingUserId) {
+    if (role === 'Administrator') throw new AuthError(400, ADMIN_ONLY_MESSAGE);
     AuthService.validate({ email: 'x@y.zz', role, name, password: password ?? 'x'.repeat(MIN_PASSWORD) }, { requirePassword: password !== undefined });
     const target = await this.#repo.findById(id);
     if (!target) throw new AuthError(404, 'User not found');

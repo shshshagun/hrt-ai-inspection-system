@@ -6,13 +6,14 @@ const { PERMISSIONS, ROLE_NAMES } = require('./roles');
 /**
  * Authentication and user-management routes.
  *   POST   /api/auth/login        public
+ *   POST   /api/auth/register     public (read-only Viewer role); can be switched off
  *   GET    /api/auth/me           any signed-in user
  *   GET    /api/users             users:manage
  *   POST   /api/users             users:manage
  *   PATCH  /api/users/:id         users:manage
  *   GET    /api/roles             any signed-in user (role names and permissions)
  */
-function createAuthRouter(getService, middleware) {
+function createAuthRouter(getService, middleware, { allowRegistration = true } = {}) {
   const router = express.Router();
   const { authenticate, guard, sendError } = middleware;
   const need = () => ({ error: 'Authentication is not configured on the server' });
@@ -26,6 +27,19 @@ function createAuthRouter(getService, middleware) {
       res.json(result);
     } catch (err) { sendError(res, err); }
   });
+
+  router.post('/api/auth/register', async (req, res) => {
+    if (!allowRegistration) return res.status(403).json({ error: 'Self-registration is disabled. Ask an Administrator for an account.' });
+    const service = getService();
+    if (!service) return res.status(503).json(need());
+    try {
+      const { email, password, name } = req.body || {};
+      const result = await service.register({ email, password, name: typeof name === 'string' ? name : '', ip: req.ip || req.socket?.remoteAddress });
+      res.status(201).json(result);
+    } catch (err) { sendError(res, err); }
+  });
+
+  router.get('/api/auth/config', (_req, res) => res.json({ registrationEnabled: allowRegistration }));
 
   router.get('/api/auth/me', authenticate, (req, res) => res.json({ user: req.user.toPublic() }));
 

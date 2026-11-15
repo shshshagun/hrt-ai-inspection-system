@@ -15,7 +15,7 @@ const { PERMISSIONS } = require('./roles');
 
 (async () => {
   const service = new AuthService({ repository: new InMemoryUserRepository(), jwtSecret: 'local-demo-secret-0123456789', bcryptRounds: 4 });
-  await service.seedAdministrator({ email: 'admin@example.com', password: 'AdminPass123', name: 'Demo Admin' });
+  await service.ensureAdministrator({ email: 'admin@example.com', password: 'AdminPass123', name: 'Demo Admin' });
   for (const role of ['Operator', 'Engineer', 'Manager']) {
     await service.createUser({ email: `${role.toLowerCase()}@example.com`, password: 'Password123', role, name: `Demo ${role}` });
   }
