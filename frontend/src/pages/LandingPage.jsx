@@ -64,7 +64,7 @@ const PANELS = [
     content: {
       eyebrow: 'AI DETECTION ACTIVE',
       headline: 'AI sees what human eyes cannot',
-      body: 'YOLOv8s detects structural cracks, spalling, leakage and corrosion in real-time from ROV footage inside the filled tunnel.',
+      body: 'A YOLOv8n-seg model running in your browser detects cracks, with a spalling check, in inspection video of the filled tunnel.',
       cta: null,
     },
     position: 'left',
@@ -336,9 +336,9 @@ export default function LandingPage() {
           <h2 className="lp-section__heading">How it works</h2>
           <div className="lp-tech-grid">
             {[
-              { n: '01', title: 'ROV Inspection', body: 'An underwater drone traverses the water-filled HRT, recording high-resolution video of tunnel walls and floor.' },
-              { n: '02', title: 'YOLOv8s Inference', body: 'A custom-trained model processes every frame, detecting cracks, spalling, leakage, and corrosion with bounding boxes and confidence scores.' },
-              { n: '03', title: 'Spatial Mapping', body: 'Each detection is tagged with ROV chainage position and logged to the inspection database via REST API.' },
+              { n: '01', title: 'Inspection Video', body: 'Footage recorded by an underwater ROV in the water-filled HRT is uploaded, or a webcam or photo batch is used.' },
+              { n: '02', title: 'YOLOv8n-seg Inference', body: 'The model runs in the browser through ONNX Runtime Web and detects cracks with masks, bounding boxes and confidence scores.' },
+              { n: '03', title: 'Spatial Mapping', body: 'Each unique defect is tagged with a chainage and clock position in the tunnel and stored in the inspection database via REST API.' },
               { n: '04', title: 'Dashboard Review', body: 'Inspectors review detections, verify AI findings, generate reports, and export records.' },
             ].map(s => (
               <div className="lp-tech-step" key={s.n}>
@@ -354,9 +354,9 @@ export default function LandingPage() {
           <h2 className="lp-section__heading">Impact</h2>
           <div className="lp-impact-block">
             {[
-              { v: '91%',   l: 'mAP@0.5 detection accuracy' },
-              { v: '12,012',l: 'training images (Roboflow)' },
-              { v: '~11M',  l: 'model parameters — fast & lightweight' },
+              { v: '0.58',  l: 'mAP@0.5 on the 184-image test split' },
+              { v: '0.83',  l: 'precision at the 0.42 operating threshold (recall 0.53)' },
+              { v: '46 ms', l: 'per image on a laptop CPU, 12.6 MB model' },
             ].map(s => (
               <div className="lp-impact-stat" key={s.v}>
                 <span className="lp-impact-stat__value">{s.v}</span>
@@ -376,8 +376,8 @@ export default function LandingPage() {
           <p className="lp-about-text">
             The HRT AI Inspection System is a major-project submission demonstrating an end-to-end
             pipeline for AI-powered structural inspection of submerged head race tunnels. It spans dataset
-            curation (Roboflow — Underwater Crack Detection v3, 12,012 images), model training (YOLOv8s
-            fine-tuned), inference with spatial telemetry, REST API integration, and this operational dashboard.
+            evaluation on the Roboflow Underwater Crack Detection v3 test split, in-browser inference with a
+            YOLOv8n-seg crack model, spatial mapping, REST API integration, role-based access, and this operational dashboard.
           </p>
           <button
             className="lp-cta-secondary"
@@ -390,7 +390,7 @@ export default function LandingPage() {
 
         <footer className="lp-footer">
           <span className="lp-footer__brand">HRT AI Inspection System</span>
-          <span className="lp-footer__copy">YOLOv8s · Roboflow Underwater Crack Detection v3</span>
+          <span className="lp-footer__copy">YOLOv8n-seg · evaluated on Roboflow Underwater Crack Detection v3</span>
         </footer>
       </div>
     </div>
