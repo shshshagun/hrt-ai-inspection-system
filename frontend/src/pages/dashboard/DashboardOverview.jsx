@@ -5,6 +5,13 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis
 } from 'recharts';
 import { useDetections, useInspections } from '../../hooks/useApi';
+import { useAuth } from '../../auth/useAuth';
+import CountUp from '../../components/insight/CountUp';
+import TunnelRadar from '../../components/insight/TunnelRadar';
+import ChainageStrip from '../../components/insight/ChainageStrip';
+import Skeleton from '../../ui/Skeleton';
+import { buildBrief, TUNNEL_LENGTH_M } from '../../utils/defectHistory';
+import '../../components/insight/insight.css';
 import './DashboardOverview.css';
 
 function KpiCard({ label, value, unit, Icon, color, sub }) {
@@ -16,7 +23,7 @@ function KpiCard({ label, value, unit, Icon, color, sub }) {
       <div className="kpi-card__body">
         <p className="kpi-card__label">{label}</p>
         <p className="kpi-card__value">
-          {value}
+          {typeof value === 'number' ? <CountUp value={value} /> : value}
           {unit && <span className="kpi-card__unit">{unit}</span>}
         </p>
         {sub && <p className="kpi-card__sub">{sub}</p>}
@@ -48,7 +55,8 @@ export default function DashboardOverview() {
   const navigate = useNavigate();
 
   // Module 8 — live API data directly from MongoDB
-  const { data: dets } = useDetections();
+  const { user } = useAuth();
+  const { data: dets, loading: detsLoading } = useDetections();
   const detData = useMemo(() => dets ?? [], [dets]);
   const { data: rawInspections } = useInspections();
   const inspections = useMemo(() => rawInspections || [], [rawInspections]);
@@ -59,7 +67,11 @@ export default function DashboardOverview() {
     ? Math.max(...detData.map(d => Number(d.chainage_m || d.chainage || d.z || 0)))
     : 0;
   const inspectedKm = (maxChainageM / 1000).toFixed(2);
-  const totalKm = 27.3;
+  const [hour] = useState(() => new Date().getHours());
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const firstName = (user?.name || '').split(' ')[0];
+  const brief = useMemo(() => buildBrief(detData), [detData]);
+  const totalKm = TUNNEL_LENGTH_M / 1000;
   const pct = maxChainageM > 0 ? Math.min(100, Math.round((maxChainageM / (totalKm * 1000)) * 100)) : 0;
 
   const recentDets = detData.slice(0, 3);
@@ -107,7 +119,7 @@ export default function DashboardOverview() {
       {/* ── Page heading ── */}
       <header className="db-overview__header">
         <div>
-          <p className="db-overview__greeting">Good morning,</p>
+          <p className="db-overview__greeting">{greeting}{firstName ? `, ${firstName}` : ''}</p>
           <h1 className="db-overview__title">Welcome to HRT</h1>
           <p className="db-overview__sub">
             AI-powered inspection for safer, more resilient hydropower infrastructure.
@@ -139,12 +151,34 @@ export default function DashboardOverview() {
         />
         <KpiCard
           label="Tunnel Coverage"
-          value={`${pct}%`}
-          unit=""
+          value={pct}
+          unit="%"
           Icon={Activity}
           color="var(--info)"
-          sub={`${inspectedKm} / ${totalKm} km`}
+          sub={`${inspectedKm} / ${totalKm} km of the tunnel`}
         />
+      </section>
+
+      {/* ── Tunnel cross-section, chainage strip and auto-written brief ── */}
+      <section className="db-card" aria-label="Tunnel cross-section" style={{ marginBottom: 20 }}>
+        <div className="db-card__header"><h2 className="db-card__title">Tunnel cross-section</h2></div>
+        {detsLoading && !detData.length ? (
+          <div className="insight">
+            <Skeleton height={320} style={{ borderRadius: '50%', maxWidth: 320 }} />
+            <div style={{ display: 'grid', gap: 10 }}><Skeleton height={90} /><Skeleton height={96} /></div>
+          </div>
+        ) : (
+          <div className="insight">
+            <TunnelRadar defects={detData} />
+            <div>
+              <div className="brief">
+                <h3>Brief</h3>
+                <ul>{brief.map((line) => <li key={line}>{line}</li>)}</ul>
+              </div>
+              <ChainageStrip defects={detData} />
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ── Middle row: tunnel overview + defect types ── */}
