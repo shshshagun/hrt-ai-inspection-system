@@ -1,0 +1,23 @@
+.cockpit { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 6; }
+.cockpit__sweep { position: absolute; left: 50%; top: 50%; width: 150%; aspect-ratio: 1; margin: -75% 0 0 -75%; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(95, 208, 255, 0) 0deg, rgba(95, 208, 255, 0) 300deg, rgba(95, 208, 255, .22) 350deg, rgba(95, 208, 255, .5) 360deg);
+  animation: cockpit-spin 3.2s linear infinite; mix-blend-mode: screen; }
+@keyframes cockpit-spin { to { transform: rotate(360deg); } }
+.cockpit__ping { position: absolute; left: 50%; top: 42%; width: 0; height: 0; }
+.cockpit__ping span { position: absolute; left: -60px; top: -60px; width: 120px; height: 120px; border-radius: 50%; border: 2px solid #ff5470; opacity: 0; animation: cockpit-ping 1.4s ease-out forwards; }
+.cockpit__ping span:nth-child(2) { animation-delay: .25s; border-color: #ffa43a; }
+.cockpit__ping b { position: absolute; left: 50%; top: 80px; transform: translateX(-50%); white-space: nowrap; padding: 4px 12px; border-radius: 14px; background: rgba(255, 84, 112, .92); color: #fff; font: 600 11px 'JetBrains Mono', monospace; letter-spacing: .12em; animation: cockpit-label 1.5s ease forwards; }
+@keyframes cockpit-ping { 0% { transform: scale(.2); opacity: .95; } 100% { transform: scale(3.2); opacity: 0; } }
+@keyframes cockpit-label { 0% { opacity: 0; transform: translate(-50%, 8px); } 15%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+.cockpit__tape { position: absolute; left: 14px; right: 14px; bottom: 34px; height: 8px; border-radius: 4px; background: rgba(4, 16, 28, .7); border: 1px solid rgba(95, 208, 255, .35); }
+.cockpit__tape-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #1b8fd1, #5fd0ff); transition: width .25s linear; }
+.cockpit__tape-marker { position: absolute; top: -22px; transform: translateX(-50%); padding: 1px 7px; border-radius: 10px; background: #5fd0ff; color: #04101c; font: 600 11px 'JetBrains Mono', monospace; transition: left .25s linear; }
+.cockpit__tape-scale { display: flex; justify-content: space-between; margin-top: 10px; font: 10px 'JetBrains Mono', monospace; color: #9fd8ee; }
+.cockpit-help { position: fixed; inset: 0; z-index: 9400; display: grid; place-items: center; background: rgba(2, 8, 14, .66); }
+.cockpit-help > div { width: min(420px, calc(100vw - 32px)); background: #081827; border: 1px solid #25445d; border-radius: 12px; padding: 20px; color: #e6eef5; }
+.cockpit-help h3 { margin: 0 0 12px; }
+.cockpit-help dl { margin: 0 0 14px; display: grid; gap: 8px; }
+.cockpit-help dl div { display: flex; gap: 12px; align-items: center; }
+.cockpit-help dt { min-width: 74px; }
+.cockpit-help dd { margin: 0; color: #a9c2d4; font-size: 14px; }
+.cockpit-help button { background: #1b8fd1; color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; }

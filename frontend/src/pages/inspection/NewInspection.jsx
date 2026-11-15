@@ -25,6 +25,8 @@ import { API_BASE, resolveInferApi } from '../../config/api';
 import { detectVideoFrame, getYoloSession } from '../../utils/yoloBrowserInference';
 import { createDefectTracker } from '../../utils/defectTracker';
 import { authFetch } from '../../auth/authFetch';
+import { CockpitOverlay, ShortcutHelp } from '../../components/cockpit/Cockpit';
+import { useVideoShortcuts } from '../../components/cockpit/useVideoShortcuts';
 import './NewInspection.css';
 
 const SEVERITY_COLORS = {
@@ -101,6 +103,7 @@ export default function NewInspection() {
   const [activeOverlays, setActiveOverlays] = useState([]);
   const [jobId, setJobId] = useState(null);
   const [syncedToDb, setSyncedToDb] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const videoRef = useRef(null);
   const webcamVideoRef = useRef(null);
@@ -1137,8 +1140,18 @@ export default function NewInspection() {
       );
     });
 
+  useVideoShortcuts({
+    videoRef,
+    enabled: sourceMode === 'upload' && Boolean(file),
+    scanning: status === 'analyzing',
+    onStart: handleStartInspection,
+    onStop: handleStopInspection,
+    onHelp: () => setHelpOpen((o) => !o),
+  });
+
   return (
     <div className="insp-console">
+      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       {/* ── Console Header ── */}
       <div className="insp-console__header">
         <div className="insp-console__title-group">
@@ -1303,6 +1316,8 @@ export default function NewInspection() {
                     {renderBoundingBoxes()}
                   </div>
 
+                  <CockpitOverlay scanning={status === 'analyzing'} detectionCount={detections.length} chainage={currentChainage} />
+
                   <div className="insp-hud-top">
                     <span className="insp-hud-tag">
                       <Layers size={12} /> {file.name}
@@ -1316,6 +1331,7 @@ export default function NewInspection() {
                   <div className="insp-hud-bottom">
                     <span>JOB: {jobId}</span>
                     <span>SYNCED TO DB: {syncedToDb} RECORDS</span>
+                    <button type="button" className="insp-hud-help" onClick={() => setHelpOpen(true)} aria-label="Keyboard shortcuts">? shortcuts</button>
                   </div>
                 </div>
 
