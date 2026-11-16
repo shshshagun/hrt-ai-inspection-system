@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import './Auth.css';
 
 const DEPTH = 120;       // metres of tunnel kept alive
 const SPACING = 2.5;     // distance between lining rings
@@ -12,7 +13,7 @@ const SPEED = 5;         // m/s of the camera drifting down the tunnel
  * tunnel, with lining rings, a sonar sweep and glowing defect markers.
  * Decorative only; it pauses when the tab is hidden and frees every GPU resource on unmount.
  */
-export default function TunnelScene() {
+export default function TunnelScene({ boost, mono = false, hud = true }) {
   const mount = useRef(null);
   const chainageRef = useRef(null);
   const countRef = useRef(null);
@@ -69,7 +70,7 @@ export default function TunnelScene() {
     // defect markers pinned to the wall, scrolling with the rings
     const markerGeo = track(new THREE.SphereGeometry(0.07, 12, 12));
     const haloGeo = track(new THREE.RingGeometry(0.16, 0.2, 40));
-    const palette = [0xff5d5d, 0xffb347, 0xffb347, 0xffd66b];
+    const palette = mono ? [0xffffff, 0x8fd3ff, 0x8fd3ff, 0xdff3ff] : [0xff5d5d, 0xffb347, 0xffb347, 0xffd66b];
     const defects = [];
     for (let i = 0; i < 16; i += 1) {
       const color = palette[i % palette.length];
@@ -133,7 +134,7 @@ export default function TunnelScene() {
     const frame = (now) => {
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
-      const step = reduced ? 0 : SPEED * dt;
+      const step = reduced ? 0 : SPEED * dt * (1 + (boost?.current || 0) * 7);
       travelled += step;
 
       for (const r of rings) {
@@ -188,17 +189,19 @@ export default function TunnelScene() {
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, []);
+  }, [boost, mono]);
 
   return (
     <div className="auth-scene" aria-hidden="true">
       <div className="auth-scene__canvas" ref={mount} />
       <div className="auth-scene__vignette" />
+      {hud && (
       <div className="auth-hud">
         <div><span>Chainage</span><b ref={chainageRef}>000.0 m</b></div>
         <div><span>Defects in range</span><b ref={countRef}>00</b></div>
         <div><span>Model</span><b>YOLOv8n-seg</b></div>
       </div>
+      )}
     </div>
   );
 }
