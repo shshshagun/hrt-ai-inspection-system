@@ -637,6 +637,19 @@ export async function generateReport({ inspection_id, format = 'pdf' }) {
   }
 }
 
+/** Engineer review actions: { flagged: boolean } and/or { observation: string }. Returns the updated detection. */
+export async function reviewDetection(id, body) {
+  if (!id) throw new Error('Detection ID is required');
+  const res = await authFetch(`${API_BASE}/api/detections/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Update failed (${res.status})`);
+  return data;
+}
+
 /**
  * Deletes a single defect detection log (or 'ALL') from MongoDB via API.
  */
