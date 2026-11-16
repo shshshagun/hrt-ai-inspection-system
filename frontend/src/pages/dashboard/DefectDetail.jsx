@@ -1,7 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Flag, MessageSquare, ArrowLeft, ExternalLink, Download, Loader2, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
-import { generateReport, useDetection, useDetections, deleteDetectionLog } from '../../hooks/useApi';
+import { generateReport, useDetection, useDetections, deleteDetectionLog, reviewDetection } from '../../hooks/useApi';
+import { useAuth } from '../../auth/useAuth';
+import { PERMISSIONS } from '../../auth/permissions';
+import { useToast } from '../../ui/contexts';
 import DefectHistory from '../../components/insight/DefectHistory';
 import './DefectDetail.css';
 
@@ -43,6 +46,9 @@ function adaptApiDetection(api) {
     frameIndex: api.frame_index ?? api.frameIndex ?? 0,
     imageUrl: api.image_url || api.imageUrl || null,
     bbox: api.bbox || null,
+    flagged: Boolean(api.flagged_urgent),
+    flaggedBy: api.flagged_by || null,
+    observations: Array.isArray(api.observations) ? api.observations : [],
   };
 }
 
@@ -61,6 +67,13 @@ export default function DefectDetail() {
   const [exportState, setExportState] = useState('idle'); // idle | loading | done | error
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { can } = useAuth();
+  const toast = useToast();
+  const canReview = can(PERMISSIONS.DETECTIONS_REVIEW);
+  const [review, setReview] = useState(null);       // latest server copy after a flag / note
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const { data: liveDetection, loading: apiLoading } = useDetection(id);
   const { data: allDetections } = useDetections();
@@ -90,6 +103,30 @@ export default function DefectDetail() {
         </button>
       </div>
     );
+  }
+
+  const flagged = review ? Boolean(review.flagged_urgent) : detection.flagged;
+  const flaggedBy = review ? review.flagged_by : detection.flaggedBy;
+  const observations = review ? (review.observations || []) : detection.observations;
+
+  async function send(body, okMessage) {
+    setSaving(true);
+    try {
+      setReview(await reviewDetection(detection.id, body));
+      toast.success(okMessage);
+      return true;
+    } catch (err) {
+      toast.error(err.message || 'Could not save the change');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+  const toggleFlag = () => send({ flagged: !flagged }, flagged ? 'Urgent flag removed.' : 'Flagged for urgent repair.');
+  async function saveNote(e) {
+    e.preventDefault();
+    if (!noteText.trim()) return;
+    if (await send({ observation: noteText.trim() }, 'Observation added.')) { setNoteText(''); setNoteOpen(false); }
   }
 
   const { severity, category, subtype, confidence, chainage, tunnelDepthM,
@@ -334,20 +371,49 @@ export default function DefectDetail() {
           {/* ── Action buttons ── */}
           <div className="dd-actions">
             <button
-              className="dd-action-btn dd-action-btn--flag"
-              aria-label="Flag for urgent repair"
+              type="button"
+              className={`dd-action-btn dd-action-btn--flag${flagged ? ' is-on' : ''}`}
+              aria-pressed={flagged}
+              disabled={!canReview || saving}
+              title={canReview ? undefined : 'Engineers and administrators can flag defects'}
+              onClick={toggleFlag}
             >
               <Flag size={15} />
-              Flag for Urgent Repair
+              {flagged ? 'Flagged: urgent repair' : 'Flag for Urgent Repair'}
             </button>
             <button
+              type="button"
               className="dd-action-btn dd-action-btn--observe"
-              aria-label="Add observation note"
+              aria-expanded={noteOpen}
+              disabled={!canReview}
+              title={canReview ? undefined : 'Engineers and administrators can add observations'}
+              onClick={() => setNoteOpen((o) => !o)}
             >
               <MessageSquare size={15} />
               Add Observation
             </button>
           </div>
+          {!canReview && <p className="dd-readonly-note">Your role can view this defect but not change it.</p>}
+          {flagged && <p className="dd-flag-note">Marked urgent{flaggedBy ? ` by ${flaggedBy}` : ''}.</p>}
+
+          {noteOpen && (
+            <form className="dd-note-form" onSubmit={saveNote}>
+              <label htmlFor="dd-note">Observation</label>
+              <textarea id="dd-note" rows={3} maxLength={1000} autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="What did you see on site?" />
+              <div className="dd-note-form__row">
+                <button type="button" className="dd-back-btn" onClick={() => setNoteOpen(false)}>Cancel</button>
+                <button type="submit" className="dd-action-btn dd-action-btn--flag" disabled={saving || !noteText.trim()}>{saving ? 'Saving…' : 'Save'}</button>
+              </div>
+            </form>
+          )}
+
+          {observations.length > 0 && (
+            <ul className="dd-observations" aria-label="Observations">
+              {observations.map((o, i) => (
+                <li key={`${o.at}-${i}`}><p>{o.text}</p><small>{o.by} · {new Date(o.at).toLocaleString()}</small></li>
+              ))}
+            </ul>
+          )}
 
           {/* ── Historical notes ── */}
           {notes && (
