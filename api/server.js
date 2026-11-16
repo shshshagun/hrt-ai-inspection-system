@@ -241,6 +241,46 @@ app.get('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_READ), async
   }
 });
 
+// ── PATCH /api/detections/:id ──
+// Engineer-level review actions: flag a defect for urgent repair and/or add an observation note.
+app.patch('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_REVIEW), async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not initialized or unreachable' });
+  }
+  const { flagged, observation } = req.body || {};
+  if (flagged !== undefined && typeof flagged !== 'boolean') {
+    return res.status(400).json({ error: '"flagged" must be true or false' });
+  }
+  const note = typeof observation === 'string' ? observation.trim() : '';
+  if (observation !== undefined && (typeof observation !== 'string' || !note || note.length > 1000)) {
+    return res.status(400).json({ error: 'An observation must be 1 to 1000 characters' });
+  }
+  if (flagged === undefined && observation === undefined) {
+    return res.status(400).json({ error: 'Nothing to update: send "flagged" or "observation"' });
+  }
+
+  const by = req.user.name || req.user.email || 'unknown';
+  const at = new Date().toISOString();
+  const update = {};
+  if (flagged !== undefined) {
+    update.$set = flagged
+      ? { flagged_urgent: true, flagged_by: by, flagged_at: at }
+      : { flagged_urgent: false, flagged_by: null, flagged_at: null };
+  }
+  if (observation !== undefined) update.$push = { observations: { text: note, by, at } };
+
+  try {
+    const result = await db.collection('detections').findOneAndUpdate(
+      buildDetectionIdQuery(req.params.id), update, { returnDocument: 'after' });
+    const doc = result && Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : result;
+    if (!doc) return res.status(404).json({ error: `Detection ${req.params.id} not found` });
+    res.json(doc);
+  } catch (error) {
+    console.error('Error updating detection:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 // ── DELETE /api/detections/:id ──
 // Deletes a single detection log (or ALL if id === 'ALL')
 app.delete('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_DELETE), async (req, res) => {
