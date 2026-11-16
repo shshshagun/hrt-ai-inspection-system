@@ -61,3 +61,5 @@ hrt-ai-inspection-system/
 # OS
 .DS_Store
 Thumbs.db
+
+graphify-out/

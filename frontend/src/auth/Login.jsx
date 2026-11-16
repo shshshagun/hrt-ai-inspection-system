@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './useAuth';
 import { useDive } from '../ui/contexts';
-import { SonarRings, WakeNotice } from '../ui/Sonar';
+import { WakeNotice } from '../ui/Sonar';
 import './Auth.css';
+
+const TunnelScene = lazy(() => import('./TunnelScene'));
 
 export default function Login() {
   const { user, login, loading, startDemo } = useAuth();
@@ -37,7 +39,12 @@ export default function Login() {
 
   return (
     <main className="auth-page">
-      <SonarRings />
+      <Suspense fallback={null}><TunnelScene /></Suspense>
+      <section className="auth-hero">
+        <p className="auth-hero__tag">HIGH-RESOLUTION TUNNEL INSPECTION</p>
+        <h2>See every crack<br />before it matters.</h2>
+        <p>Video in, defects out: located to the metre and the clock position, tracked from one inspection to the next.</p>
+      </section>
       <form className="auth-card" onSubmit={onSubmit} noValidate>
         <div className="auth-brand"><strong>HRT</strong><span>AI INSPECTION SYSTEM</span></div>
         <h1>Sign in</h1>
