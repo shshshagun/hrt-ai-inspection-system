@@ -40,12 +40,12 @@
 .wake { display: flex; align-items: center; gap: 12px; background: rgba(95, 208, 255, .1); border: 1px solid rgba(95, 208, 255, .4); color: #bfeaff; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
 
 /* ───────── Skeletons ───────── */
-.skeleton { display: block; border-radius: 6px; background: linear-gradient(90deg, rgba(140,180,210,.08) 25%, rgba(140,180,210,.22) 50%, rgba(140,180,210,.08) 75%); background-size: 200% 100%; animation: skeleton 1.3s linear infinite; }
+.skeleton { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--cyan-dim) 25%, rgba(143,211,255,.22) 50%, var(--cyan-dim) 75%); background-size: 200% 100%; animation: skeleton 1.3s linear infinite; border: 1px solid var(--db-border); }
 @keyframes skeleton { to { background-position: -200% 0; } }
 
 /* ───────── Toasts ───────── */
 .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 9000; display: flex; flex-direction: column; gap: 8px; max-width: min(360px, calc(100vw - 32px)); }
-.toast { display: flex; gap: 10px; align-items: flex-start; background: #0b1e2f; border: 1px solid #25445d; border-left-width: 4px; color: #e6eef5; border-radius: 8px; padding: 10px 12px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.45); animation: toast-in .25s ease-out; }
+.toast { display: flex; gap: 10px; align-items: flex-start; background: var(--bg-surface); border: 1px solid var(--db-border); border-left-width: 4px; color: var(--ink); border-radius: 10px; padding: 10px 12px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.45); animation: toast-in .25s ease-out; }
 .toast--success { border-left-color: #34d399; }
 .toast--error { border-left-color: #f87171; }
 .toast--info { border-left-color: #5fd0ff; }
@@ -53,15 +53,15 @@
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ───────── Command palette ───────── */
-.cmdk-backdrop { position: fixed; inset: 0; z-index: 9500; background: rgba(2, 8, 14, .66); backdrop-filter: blur(3px); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; }
-.cmdk { width: min(560px, calc(100vw - 32px)); background: #081827; border: 1px solid #25445d; border-radius: 12px; box-shadow: 0 30px 80px rgba(0,0,0,.6); overflow: hidden; color: #e6eef5; }
-.cmdk input { width: 100%; box-sizing: border-box; background: transparent; border: 0; border-bottom: 1px solid #1d3a52; color: inherit; font-size: 16px; padding: 16px 18px; outline: none; }
+.cmdk-backdrop { position: fixed; inset: 0; z-index: 9500; background: rgba(2, 5, 8, .78); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; }
+.cmdk { width: min(560px, calc(100vw - 32px)); background: var(--bg-surface); border: 1px solid var(--cyan-border); border-radius: 16px; box-shadow: 0 10px 0 rgba(0,0,0,.35), 0 30px 80px rgba(0,0,0,.6); overflow: hidden; color: var(--ink); }
+.cmdk input { width: 100%; box-sizing: border-box; background: transparent; border: 0; border-bottom: 1px solid var(--db-border); color: inherit; font-family: 'JetBrains Mono', monospace; font-size: 16px; padding: 16px 18px; outline: none; }
 .cmdk ul { list-style: none; margin: 0; padding: 6px; max-height: 340px; overflow-y: auto; }
 .cmdk li button { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; background: transparent; border: 0; border-radius: 8px; color: inherit; padding: 10px 12px; font-size: 14px; cursor: pointer; }
-.cmdk li[aria-selected="true"] button, .cmdk li button:hover { background: #12354f; }
-.cmdk small { margin-left: auto; color: #8fa8bb; font-size: 12px; }
-.cmdk__hint { padding: 8px 14px; font-size: 12px; color: #8fa8bb; border-top: 1px solid #1d3a52; display: flex; gap: 14px; }
-kbd { background: #12354f; border: 1px solid #25445d; border-radius: 4px; padding: 1px 6px; font: 11px 'JetBrains Mono', monospace; }
+.cmdk li[aria-selected="true"] button, .cmdk li button:hover { background: var(--cyan-dim); box-shadow: inset 2px 0 0 var(--cyan); }
+.cmdk small { margin-left: auto; color: var(--ink-3); font-size: 12px; }
+.cmdk__hint { padding: 8px 14px; font-size: 12px; color: var(--ink-3); border-top: 1px solid var(--db-border); display: flex; gap: 14px; flex-wrap: wrap; }
+kbd { background: var(--bg-elevated); border: 1px solid var(--db-border); border-radius: 4px; padding: 1px 6px; font: 11px 'JetBrains Mono', monospace; color: var(--ink-2); }
 
 /* ───────── Accessibility ───────── */
 :focus-visible { outline: 2px solid #5fd0ff; outline-offset: 2px; }

@@ -1,548 +1,161 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, AlertTriangle, ShieldAlert, Activity, Eye, Compass, X } from 'lucide-react';
-import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis
-} from 'recharts';
+import { lazy, Suspense, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowUpRight, Compass } from 'lucide-react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDetections, useInspections } from '../../hooks/useApi';
 import { useAuth } from '../../auth/useAuth';
 import CountUp from '../../components/insight/CountUp';
 import TunnelRadar from '../../components/insight/TunnelRadar';
 import ChainageStrip from '../../components/insight/ChainageStrip';
+import ChainageScrubber from '../../components/insight/ChainageScrubber';
+import WhatChanged from '../../components/insight/WhatChanged';
 import Skeleton from '../../ui/Skeleton';
-import { buildBrief, TUNNEL_LENGTH_M } from '../../utils/defectHistory';
+import { buildBrief, chainageOf, TUNNEL_LENGTH_M } from '../../utils/defectHistory';
 import '../../components/insight/insight.css';
+import '../../components/insight/console.css';
 import './DashboardOverview.css';
 
-function KpiCard({ label, value, unit, Icon, color, sub }) {
-  return (
-    <div className="kpi-card">
-      <div className="kpi-card__icon" style={{ color }}>
-        <Icon size={18} />
-      </div>
-      <div className="kpi-card__body">
-        <p className="kpi-card__label">{label}</p>
-        <p className="kpi-card__value">
-          {typeof value === 'number' ? <CountUp value={value} /> : value}
-          {unit && <span className="kpi-card__unit">{unit}</span>}
-        </p>
-        {sub && <p className="kpi-card__sub">{sub}</p>}
-      </div>
-    </div>
-  );
-}
+const MiniTwin = lazy(() => import('../../components/insight/MiniTwin'));
+const WINDOW_M = 15; // defects within this distance of the marker count as "near"
 
-function SeverityDot({ level }) {
-  const colors = {
-    Critical: 'var(--critical)',
-    Major:    'var(--major)',
-    Minor:    'var(--minor)',
-    Info:     'var(--info)',
-    pending:  'var(--minor)',
-    confirmed:'var(--info)',
-    flagged:  'var(--critical)',
-  };
-  return (
-    <span
-      className="severity-dot"
-      style={{ background: colors[level] || 'var(--db-ink-3)' }}
-      aria-hidden="true"
-    />
-  );
-}
+const TYPE_COLORS = { Cracks: '#ff5d5d', Spalling: '#ffb347', Leakage: '#ffd66b', Erosion: '#8fd3ff' };
 
 export default function DashboardOverview() {
   const navigate = useNavigate();
-
-  // Module 8 — live API data directly from MongoDB
   const { user } = useAuth();
   const { data: dets, loading: detsLoading } = useDetections();
   const detData = useMemo(() => dets ?? [], [dets]);
   const { data: rawInspections } = useInspections();
   const inspections = useMemo(() => rawInspections || [], [rawInspections]);
 
-  const totalDefects = detData.length;
-  const criticalCount = detData.filter(d => d.severity === 'Critical').length;
-  const maxChainageM = detData.length > 0
-    ? Math.max(...detData.map(d => Number(d.chainage_m || d.chainage || d.z || 0)))
-    : 0;
-  const inspectedKm = (maxChainageM / 1000).toFixed(2);
+  const [chainage, setChainage] = useState(TUNNEL_LENGTH_M / 2);
+
+  const total = detData.length;
+  const critical = detData.filter((d) => d.severity === 'Critical').length;
+  const maxChainage = total ? Math.max(...detData.map(chainageOf)) : 0;
+  const coverage = Math.min(100, Math.round((maxChainage / TUNNEL_LENGTH_M) * 100));
   const [hour] = useState(() => new Date().getHours());
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const firstName = (user?.name || '').split(' ')[0];
   const brief = useMemo(() => buildBrief(detData), [detData]);
-  const totalKm = TUNNEL_LENGTH_M / 1000;
-  const pct = maxChainageM > 0 ? Math.min(100, Math.round((maxChainageM / (totalKm * 1000)) * 100)) : 0;
 
-  const recentDets = detData.slice(0, 3);
-  const [activeDefectMarker, setActiveDefectMarker] = useState(null);
+  const near = useMemo(() => detData
+    .map((d) => ({ d, gap: Math.abs(chainageOf(d) - chainage) }))
+    .filter((x) => x.gap <= WINDOW_M)
+    .sort((a, b) => a.gap - b.gap), [detData, chainage]);
 
-  const activityData = useMemo(() => {
-    if (!detData.length) return [];
-    const buckets = {};
-    detData.forEach(d => {
-      const timeKey = d.detectedAt ? new Date(d.detectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Live';
-      buckets[timeKey] = (buckets[timeKey] || 0) + 1;
-    });
-    return Object.entries(buckets).map(([time, count]) => ({ time, detections: count }));
-  }, [detData]);
-
-  const typeDistributionData = [
-    { name: 'Cracks', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('crack')).length, color: '#ef4444' },
-    { name: 'Spalling', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('spall')).length, color: '#ff9500' },
-    { name: 'Leakage', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('leak')).length, color: '#eab308' },
-    { name: 'Erosion', value: detData.filter(d => (d.class_label || d.category || '').toLowerCase().includes('eros')).length, color: '#00d4ff' },
+  const kpis = [
+    { label: 'Inspections', value: <CountUp value={inspections.length} />, sub: 'sessions on record' },
+    { label: 'Defects', value: <CountUp value={total} />, sub: 'across all inspections' },
+    { label: 'Critical', value: <CountUp value={critical} />, sub: critical ? 'need an engineer review' : 'none right now' },
+    { label: 'Coverage', value: <CountUp value={coverage} />, unit: '%', sub: `${Math.round(maxChainage)} of ${TUNNEL_LENGTH_M} m` },
   ];
 
-  const schematicDefects = detData.slice(0, 6).map((d, i) => {
-    const angle = ((d.coordinates?.x || 0) !== 0 || (d.coordinates?.y || 0) !== 0)
-      ? Math.atan2(d.coordinates?.x || 0, d.coordinates?.y || 2.95)
-      : (i * (Math.PI / 3));
-    const r = 38; // percentage radius in tunnel circle
-    const top = `${50 - Math.cos(angle) * r}%`;
-    const left = `${50 + Math.sin(angle) * r}%`;
-    return {
-      id: d.id || d._id || `DET-${i + 1}`,
-      type: d.category || d.class_label || 'Defect',
-      severity: d.severity || 'Minor',
-      chainage: Number(d.chainage_m || d.chainage || d.z || 0),
-      confidence: d.confidence || 0.88,
-      top,
-      left,
-      color: d.severity === 'Critical' ? 'var(--critical)' : d.severity === 'Major' ? 'var(--major)' : 'var(--minor)',
-      cssClass: (d.severity || 'minor').toLowerCase(),
-    };
-  });
+  const typeData = ['Cracks', 'Spalling', 'Leakage', 'Erosion'].map((name) => ({
+    name,
+    value: detData.filter((d) => (d.class_label || d.category || '').toLowerCase().includes(name.toLowerCase().slice(0, 5))).length,
+    color: TYPE_COLORS[name],
+  }));
+  const recent = detData.slice(0, 3);
 
   return (
     <div className="db-overview">
-      {/* ── Page heading ── */}
       <header className="db-overview__header">
         <div>
           <p className="db-overview__greeting">{greeting}{firstName ? `, ${firstName}` : ''}</p>
-          <h1 className="db-overview__title">Welcome to HRT</h1>
-          <p className="db-overview__sub">
-            AI-powered inspection for safer, more resilient hydropower infrastructure.
-          </p>
+          <h1 className="db-overview__title">The tunnel, end to end</h1>
+          <p className="db-overview__sub">Drag the marker along the ruler. The cross-section, the 3D view and the defect list follow it.</p>
         </div>
       </header>
 
-      {/* ── KPIs ── */}
-      <section className="db-overview__kpis" aria-label="Key performance indicators">
-        <KpiCard
-          label="Total Inspections"
-          value={inspections.length}
-          Icon={Activity}
-          color="var(--teal)"
-        />
-        <KpiCard
-          label="Defects Detected"
-          value={totalDefects}
-          Icon={AlertTriangle}
-          color="var(--major)"
-          sub="From live MongoDB pipeline"
-        />
-        <KpiCard
-          label="Critical Defects"
-          value={criticalCount}
-          Icon={ShieldAlert}
-          color="var(--critical)"
-          sub={criticalCount > 0 ? "Requires review" : "No critical breaches"}
-        />
-        <KpiCard
-          label="Tunnel Coverage"
-          value={pct}
-          unit="%"
-          Icon={Activity}
-          color="var(--info)"
-          sub={`${inspectedKm} / ${totalKm} km of the tunnel`}
-        />
-      </section>
+      <ChainageScrubber defects={detData} value={chainage} onChange={setChainage} kpis={kpis} />
 
-      {/* ── Tunnel cross-section, chainage strip and auto-written brief ── */}
-      <section className="db-card" aria-label="Tunnel cross-section" style={{ marginBottom: 20 }}>
-        <div className="db-card__header"><h2 className="db-card__title">Tunnel cross-section</h2></div>
-        {detsLoading && !detData.length ? (
-          <div className="insight">
+      <WhatChanged detections={detData} onJump={setChainage} />
+
+      <div className="console-grid">
+        <section className="console-panel" aria-label="Tunnel cross-section">
+          <h2>Cross-section</h2>
+          {detsLoading && !detData.length ? (
             <Skeleton height={320} style={{ borderRadius: '50%', maxWidth: 320 }} />
-            <div style={{ display: 'grid', gap: 10 }}><Skeleton height={90} /><Skeleton height={96} /></div>
-          </div>
-        ) : (
-          <div className="insight">
-            <TunnelRadar defects={detData} />
-            <div>
-              <div className="brief">
-                <h3>Brief</h3>
-                <ul>{brief.map((line) => <li key={line}>{line}</li>)}</ul>
-              </div>
-              <ChainageStrip defects={detData} />
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* ── Middle row: tunnel overview + defect types ── */}
-      <div className="db-overview__mid">
-        {/* Tunnel overview */}
-        <section className="db-card db-overview__tunnel" aria-label="Tunnel overview">
-          <header className="db-card__header">
-            <h2 className="db-card__title">Tunnel Overview</h2>
-            <div className="db-card__legend">
-              <span className="db-legend-item"><span className="db-legend-dot" style={{background:'var(--critical)'}} />Critical</span>
-              <span className="db-legend-item"><span className="db-legend-dot" style={{background:'var(--major)'}} />Major</span>
-              <span className="db-legend-item"><span className="db-legend-dot" style={{background:'var(--minor)'}} />Minor</span>
-            </div>
-          </header>
-
-          {/* CSS tunnel cross-section schematic */}
-          <div className="db-tunnel-schematic" aria-label="Tunnel cross-section diagram">
-            <div className="db-tunnel-schematic__ring db-tunnel-schematic__ring--outer" />
-            <div className="db-tunnel-schematic__ring db-tunnel-schematic__ring--mid" />
-            <div className="db-tunnel-schematic__ring db-tunnel-schematic__ring--inner" />
-            <div className="db-tunnel-schematic__axis" />
-
-            {/* Interactive Defect markers */}
-            {schematicDefects.map(d => {
-              const isSelected = activeDefectMarker?.id === d.id;
-              return (
-                <button
-                  key={d.id}
-                  className={`db-defect-marker ${isSelected ? 'db-defect-marker--selected' : ''}`}
-                  style={{ top: d.top, left: d.left }}
-                  title={`${d.id} — ${d.severity} ${d.type} (Click to inspect)`}
-                  aria-label={`${d.severity} defect at Ch ${d.chainage.toFixed(1)}m`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveDefectMarker(isSelected ? null : d);
-                  }}
-                  onDoubleClick={() => navigate(`/dashboard/detections/${d.id}`)}
-                >
-                  <span className={`db-defect-marker__dot db-defect-marker__dot--${d.cssClass}`} />
-                  <span className={`db-defect-marker__pulse db-defect-marker__pulse--${d.cssClass}`} />
-                </button>
-              );
-            })}
-
-            {/* In-schematic Floating Popover with Smart Clamped Position */}
-            {activeDefectMarker && (
-              <div
-                className="db-defect-popover"
-                style={{
-                  top: parseFloat(activeDefectMarker.top) <= 50 ? `calc(${activeDefectMarker.top} + 22px)` : `calc(${activeDefectMarker.top} - 130px)`,
-                  left: `clamp(12px, calc(${activeDefectMarker.left} - 90px), calc(100% - 220px))`,
-                }}
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="db-defect-popover__header">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        background: activeDefectMarker.color,
-                        flexShrink: 0
-                      }}
-                    />
-                    <strong className="db-defect-popover__id">{activeDefectMarker.id}</strong>
-                  </div>
-                  <button
-                    className="db-defect-popover__close"
-                    onClick={() => setActiveDefectMarker(null)}
-                    aria-label="Close defect card"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-
-                <div className="db-defect-popover__body">
-                  <div className="db-defect-popover__type">{activeDefectMarker.type}</div>
-                  <div className="db-defect-popover__meta">
-                    <span style={{ color: activeDefectMarker.color, fontWeight: 700 }}>{activeDefectMarker.severity.toUpperCase()}</span>
-                    <span> &bull; Ch {Number(activeDefectMarker.chainage || 0).toFixed(1)} m</span>
-                    <span> &bull; {Math.round(activeDefectMarker.confidence * 100)}% Conf</span>
-                  </div>
-                </div>
-
-                <div className="db-defect-popover__actions">
-                  <button
-                    className="db-defect-popover__btn db-defect-popover__btn--details"
-                    onClick={() => navigate(`/dashboard/detections/${activeDefectMarker.id}`)}
-                  >
-                    <Eye size={12} /> Inspect
-                  </button>
-                  <button
-                    className="db-defect-popover__btn db-defect-popover__btn--twin"
-                    onClick={() => navigate('/tunnel-twin')}
-                  >
-                    <Compass size={12} /> 3D Rover
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Active Defect Quick Inspector Card */}
-          {activeDefectMarker ? (
-            <div
-              className="db-tunnel-active-banner"
-              style={{
-                background: 'rgba(15, 23, 42, 0.95)',
-                border: `1px solid ${activeDefectMarker.color}80`,
-                borderRadius: '6px',
-                padding: '10px 14px',
-                marginBottom: '12px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '10px',
-                flexWrap: 'wrap'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span
-                  style={{
-                    width: '10px',
-                    height: '10px',
-                    borderRadius: '50%',
-                    background: activeDefectMarker.color,
-                    boxShadow: `0 0 8px ${activeDefectMarker.color}`,
-                    flexShrink: 0
-                  }}
-                />
-                <div>
-                  <strong style={{ color: '#f8fafc', fontSize: '0.88rem' }}>
-                    {activeDefectMarker.id} &middot; {activeDefectMarker.type}
-                  </strong>
-                  <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
-                    <span style={{ color: activeDefectMarker.color, fontWeight: 700 }}>{activeDefectMarker.severity.toUpperCase()}</span>
-                    <span> &bull; Location: Ch {activeDefectMarker.chainage.toFixed(2)} km &bull; Confidence: {Math.round(activeDefectMarker.confidence * 100)}%</span>
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={() => navigate(`/dashboard/detections/${activeDefectMarker.id}`)}
-                  style={{
-                    background: '#0d9488',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '6px 12px',
-                    borderRadius: '4px',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <Eye size={12} /> Inspect Defect &rarr;
-                </button>
-                <button
-                  onClick={() => navigate('/tunnel-twin')}
-                  style={{
-                    background: '#1e293b',
-                    color: '#38bdf8',
-                    border: '1px solid #38bdf8',
-                    padding: '6px 12px',
-                    borderRadius: '4px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <Compass size={12} /> 3D Rover
-                </button>
-              </div>
-            </div>
           ) : (
-            <div style={{ fontSize: '0.74rem', color: '#64748b', textAlign: 'center', marginBottom: '10px', letterSpacing: '0.02em' }}>
-              &uarr; Click on any defect marker above to inspect defect details or launch 3D twin
-            </div>
+            <>
+              <TunnelRadar defects={detData} focus={chainage} window={WINDOW_M} />
+              <ChainageStrip defects={detData} />
+            </>
           )}
-
-          <div className="db-tunnel-meta">
-            <span>Tunnel length: <strong>27.3 km</strong></span>
-            <span>Inspected: <strong className="db-tunnel-meta__inspected">22.1 km ({pct}%)</strong></span>
-          </div>
-          <div className="db-tunnel-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-            <div className="db-tunnel-progress__fill" style={{ width: `${pct}%` }} />
-          </div>
         </section>
 
-        {/* Defect types chart */}
-        <section className="db-card db-overview__defects" aria-label="Defect type distribution">
-          <header className="db-card__header">
-            <h2 className="db-card__title">Defect Types</h2>
-          </header>
-          <ResponsiveContainer width="100%" height={220}>
+        <section className="console-panel" aria-label={`Inside the tunnel at ${chainage} metres`}>
+          <h2>Inside, at {chainage} m</h2>
+          <Suspense fallback={<Skeleton height={260} />}>
+            <MiniTwin chainage={chainage} defects={detData} height={260} />
+          </Suspense>
+          {near.length ? (
+            <ul className="near" aria-label="Defects near the marker">
+              {near.slice(0, 5).map(({ d, gap }) => (
+                <li key={d.id}>
+                  <Link to={`/dashboard/detections/${d.id}`}>
+                    <i className={(d.severity || 'Minor').toLowerCase()} />
+                    <span>{d.category} <small>{chainageOf(d).toFixed(1)} m</small></span>
+                    <small>{gap < 0.5 ? 'here' : `${gap.toFixed(1)} m away`}</small>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="near__empty">No defects within {WINDOW_M} m of this point.</p>
+          )}
+          <Link className="console-link" to={`/tunnel-twin?chainage=${chainage}`}><Compass size={15} /> Open the full 3D twin here</Link>
+        </section>
+      </div>
+
+      <div className="console-grid">
+        <section className="console-panel" aria-label="Summary">
+          <h2>Brief</h2>
+          <ul className="brief-list">{brief.map((line) => <li key={line}>{line}</li>)}</ul>
+        </section>
+
+        <section className="console-panel" aria-label="Defect types">
+          <h2>Defect types</h2>
+          <ResponsiveContainer width="100%" height={180}>
             <PieChart>
-              <Pie
-                data={typeDistributionData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={88}
-                paddingAngle={2}
-                dataKey="value"
-                nameKey="name"
-              >
-                {typeDistributionData.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} stroke="none" />
-                ))}
+              <Pie data={typeData} cx="50%" cy="50%" innerRadius={52} outerRadius={78} paddingAngle={2} dataKey="value" nameKey="name" stroke="none">
+                {typeData.map((e) => <Cell key={e.name} fill={e.color} />)}
               </Pie>
-              <Tooltip
-                contentStyle={{
-                  background: '#0d1117',
-                  border: '1px solid rgba(0,212,255,0.2)',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  fontSize: '0.8rem',
-                }}
-              />
+              <Tooltip contentStyle={{ background: 'var(--db-surface)', border: '1px solid var(--db-border)', borderRadius: 6, color: 'var(--ink)', fontSize: '0.8rem' }} />
             </PieChart>
           </ResponsiveContainer>
           <ul className="db-donut-legend" aria-label="Defect type legend">
-            {typeDistributionData.map(d => (
-              <li key={d.name} className="db-donut-legend__item">
-                <span className="db-donut-legend__swatch" style={{ background: d.color }} />
-                <span className="db-donut-legend__label">{d.name}</span>
-                <span className="db-donut-legend__count">{d.value}</span>
+            {typeData.map((t) => (
+              <li key={t.name} className="db-donut-legend__item">
+                <span className="db-donut-legend__swatch" style={{ background: t.color }} />
+                <span className="db-donut-legend__label">{t.name}</span>
+                <span className="db-donut-legend__count">{t.value}</span>
               </li>
             ))}
           </ul>
         </section>
       </div>
 
-      {/* ── Bottom row: recent detections + latest inspection ── */}
-      <div className="db-overview__bottom">
-        {/* Recent detections */}
-        <section className="db-card db-overview__recent" aria-label="Recent detections">
-          <header className="db-card__header">
-            <h2 className="db-card__title">Recent Detections</h2>
-            <button
-              className="db-link-btn"
-              onClick={() => navigate('/dashboard/detections')}
-              aria-label="View all detections"
-            >
-              View all <ArrowUpRight size={14} />
-            </button>
-          </header>
-          {recentDets.length === 0 ? (
-            <div style={{ padding: '24px 0', color: 'var(--db-ink-3)', fontSize: 'var(--text-sm)' }}>
-              No detections logged yet. Upload footage in New Inspection to populate live detections.
-            </div>
-          ) : (
-            <div className="db-recent-grid">
-              {recentDets.map(d => (
-                <button
-                  key={d.id}
-                  className="db-recent-card"
-                  onClick={() => navigate(`/dashboard/detections/${d.id}`)}
-                  aria-label={`${d.category} — ${Math.round(d.confidence * 100)}% confidence`}
-                >
-                  <div className="db-recent-card__thumb" aria-hidden="true">
-                    {d.imageUrl ? (
-                      <img src={d.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <div className="db-recent-card__thumbnail-bg" />
-                    )}
-                    <SeverityDot level={d.severity} />
-                  </div>
-                  <p className="db-recent-card__category">{d.category.toUpperCase()}</p>
-                  <p className="db-recent-card__conf">{Math.round(d.confidence * 100)}% confidence</p>
-                  <p className="db-recent-card__date">
-                    {new Date(d.detectedAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </p>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Latest inspection */}
-        <section className="db-card db-overview__latest" aria-label="Latest inspection">
-          <p className="db-card__eyebrow-avoid-style">Latest Inspection</p>
-          <div className="db-latest-thumb" aria-hidden="true">
-            {detData[0]?.imageUrl ? (
-              <img src={detData[0].imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <div className="db-latest-thumb__inner" />
-            )}
-            <span className="db-latest-thumb__play" aria-label="Inspection video">▶</span>
-          </div>
-          {inspections.length > 0 ? (
-            <>
-              <h3 className="db-latest__name">{inspections[0].label}</h3>
-              <p className="db-latest__meta">
-                {new Date(inspections[0].date).toLocaleDateString('en-IN', {
-                  month: 'short', day: 'numeric', year: 'numeric'
-                })}
-                {' · '}
-                {inspections[0].totalDetections} detections
-              </p>
-              <button
-                className="db-btn-primary"
-                onClick={() => navigate('/dashboard/inspections')}
-                id="dashboard-view-inspection-btn"
-              >
-                View Details
-              </button>
-            </>
-          ) : (
-            <>
-              <h3 className="db-latest__name">Awaiting Inspection</h3>
-              <p className="db-latest__meta">0 sessions logged in database</p>
-              <button
-                className="db-btn-primary"
-                onClick={() => navigate('/inspection/new')}
-                id="dashboard-view-inspection-btn"
-              >
-                Launch Inspection
-              </button>
-            </>
-          )}
-        </section>
-      </div>
-
-      {/* ── Detection activity bar chart ── */}
-      <section className="db-card db-overview__activity" aria-label="Detection activity today">
-        <header className="db-card__header">
-          <h2 className="db-card__title">Detection Activity (live stream)</h2>
-        </header>
-        {activityData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={activityData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-              <XAxis
-                dataKey="time"
-                tick={{ fontSize: 11, fill: 'var(--db-ink-3)' }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: 'var(--db-ink-3)' }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: '#0d1117',
-                  border: '1px solid var(--db-border)',
-                  borderRadius: '4px',
-                  fontSize: '0.8rem',
-                  color: '#fff',
-                }}
-              />
-              <Bar dataKey="detections" fill="var(--teal)" radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      <section className="console-panel" aria-label="Recent detections" style={{ marginBottom: 'var(--space-6)' }}>
+        <h2 style={{ display: 'flex', justifyContent: 'space-between' }}>
+          Recent detections
+          <button className="db-link-btn" onClick={() => navigate('/dashboard/detections')} aria-label="View all detections">View all <ArrowUpRight size={14} /></button>
+        </h2>
+        {recent.length === 0 ? (
+          <p className="near__empty">No detections yet. Upload footage in New Inspection, or open the demo.</p>
         ) : (
-          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--db-ink-3)', fontSize: 'var(--text-xs)' }}>
-            No telemetry stream active. Run an inspection video to track detections in real time.
+          <div className="db-recent-grid">
+            {recent.map((d) => (
+              <button key={d.id} className="db-recent-card" onClick={() => navigate(`/dashboard/detections/${d.id}`)} aria-label={`${d.category}, ${Math.round(d.confidence * 100)}% confidence`}>
+                <div className="db-recent-card__thumb" aria-hidden="true">
+                  {d.imageUrl ? <img src={d.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div className="db-recent-card__thumbnail-bg" />}
+                </div>
+                <p className="db-recent-card__category">{d.category.toUpperCase()}</p>
+                <p className="db-recent-card__conf">{Math.round(d.confidence * 100)}% confidence · {chainageOf(d).toFixed(0)} m</p>
+                <p className="db-recent-card__date">{new Date(d.detectedAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              </button>
+            ))}
           </div>
         )}
       </section>

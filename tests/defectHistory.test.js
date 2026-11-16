@@ -70,3 +70,16 @@ test('buildBrief writes plain sentences from the data', async () => {
   assert.equal(Math.round(angleOf({ x: 2.95, y: 0 })), 90, 'right wall is 90 degrees');
   assert.equal(Math.round(angleOf({ x: 0, y: -2.95 })), 180, 'invert is 180 degrees');
 });
+
+test('diffInspections sorts every site into fresh, grown, steady or not seen', async () => {
+  const { diffInspections } = await loadHistory();
+  const { DEMO_DETECTIONS } = await loadDemo();
+  const dets = DEMO_DETECTIONS.map(norm);
+  const diff = diffInspections(dets);
+  assert.equal(diff.latestId, 'INSP-DEMO-2026-11');
+  const inLatest = dets.filter((d) => d.inspectionId === diff.latestId).length;
+  assert.equal(diff.fresh.length + diff.grown.length + diff.steady.length, inLatest, 'every defect in the latest inspection is accounted for once');
+  assert.ok(diff.grown.every((g) => g.percent >= 20));
+  assert.ok(diff.notSeen.every((n) => !n.site.sightings.some((d) => d.inspectionId === diff.latestId)));
+  assert.equal(diffInspections(dets.filter((d) => d.inspectionId === diff.latestId)), null, 'one inspection has nothing to compare');
+});

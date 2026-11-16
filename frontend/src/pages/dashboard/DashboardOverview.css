@@ -64,15 +64,15 @@
 
 .kpi-card:hover {
   background: var(--bg-elevated);
-  border-color: rgba(0,212,255,0.4);
+  border-color: rgba(143,211,255,0.4);
 }
 
 .kpi-card__icon {
   width: 34px;
   height: 34px;
-  background: rgba(0,212,255,0.08);
+  background: rgba(143,211,255,0.08);
   border-radius: var(--radius);
-  border: 1px solid rgba(0,212,255,0.15);
+  border: 1px solid rgba(143,211,255,0.15);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -139,7 +139,7 @@
   justify-content: space-between;
   margin-bottom: var(--space-5);
   padding-bottom: var(--space-3);
-  border-bottom: 1px solid rgba(0,212,255,0.08);
+  border-bottom: 1px solid rgba(143,211,255,0.08);
 }
 
 .db-card__title {
@@ -195,7 +195,7 @@
   transition: color var(--duration);
 }
 
-.db-link-btn:hover { color: rgba(0,212,255,0.7); }
+.db-link-btn:hover { color: rgba(143,211,255,0.7); }
 
 /* ── Middle row ── */
 .db-overview__mid {
@@ -223,27 +223,27 @@
 .db-tunnel-schematic__ring--outer {
   width: 180px;
   height: 180px;
-  border-color: rgba(0,212,255,0.15);
+  border-color: rgba(143,211,255,0.15);
 }
 
 .db-tunnel-schematic__ring--mid {
   width: 120px;
   height: 120px;
-  border-color: rgba(0,212,255,0.3);
+  border-color: rgba(143,211,255,0.3);
 }
 
 .db-tunnel-schematic__ring--inner {
   width: 60px;
   height: 60px;
-  border-color: rgba(0,212,255,0.5);
-  background: rgba(0,212,255,0.04);
+  border-color: rgba(143,211,255,0.5);
+  background: rgba(143,211,255,0.04);
 }
 
 .db-tunnel-schematic__axis {
   position: absolute;
   width: 200px;
   height: 1px;
-  background: rgba(0,212,255,0.1);
+  background: rgba(143,211,255,0.1);
 }
 
 /* Defect markers */
@@ -393,8 +393,8 @@
 }
 
 .db-recent-card:hover {
-  border-color: rgba(0,212,255,0.4);
-  background: rgba(0,212,255,0.03);
+  border-color: rgba(143,211,255,0.4);
+  background: rgba(143,211,255,0.03);
 }
 
 .db-recent-card__thumb {
@@ -476,8 +476,8 @@
   width: 34px;
   height: 34px;
   border-radius: var(--radius);
-  background: rgba(0,212,255,0.15);
-  border: 1px solid rgba(0,212,255,0.4);
+  background: rgba(143,211,255,0.15);
+  border: 1px solid rgba(143,211,255,0.4);
   color: var(--cyan);
   display: flex;
   align-items: center;
@@ -514,8 +514,8 @@
 }
 
 .db-btn-primary:hover {
-  background: rgba(0,212,255,0.85);
-  box-shadow: 0 0 16px rgba(0,212,255,0.3);
+  background: rgba(143,211,255,0.85);
+  box-shadow: 0 0 16px rgba(143,211,255,0.3);
 }
 
 /* ── Activity chart ── */
@@ -535,7 +535,7 @@
   width: 210px;
   background: var(--bg-surface);
   border: 1px solid var(--cyan-border);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 20px rgba(0,212,255,0.1);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 20px rgba(143,211,255,0.1);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   display: flex;
@@ -553,7 +553,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(0,212,255,0.08);
+  border-bottom: 1px solid rgba(143,211,255,0.08);
   padding-bottom: 6px;
 }
 
@@ -624,14 +624,14 @@
 }
 
 .db-defect-popover__btn--details {
-  background: rgba(0,212,255,0.08);
+  background: rgba(143,211,255,0.08);
   color: var(--cyan);
-  border: 1px solid rgba(0,212,255,0.25);
+  border: 1px solid rgba(143,211,255,0.25);
 }
 
 .db-defect-popover__btn--details:hover {
-  background: rgba(0,212,255,0.2);
-  border-color: rgba(0,212,255,0.5);
+  background: rgba(143,211,255,0.2);
+  border-color: rgba(143,211,255,0.5);
 }
 
 .db-defect-popover__btn--twin {
