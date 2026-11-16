@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { lazy, Suspense, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Flag, MessageSquare, ArrowLeft, ExternalLink, Download, Loader2, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
 import { generateReport, useDetection, useDetections, deleteDetectionLog, reviewDetection } from '../../hooks/useApi';
@@ -6,6 +6,9 @@ import { useAuth } from '../../auth/useAuth';
 import { PERMISSIONS } from '../../auth/permissions';
 import { useToast } from '../../ui/contexts';
 import DefectHistory from '../../components/insight/DefectHistory';
+import Skeleton from '../../ui/Skeleton';
+
+const MiniTwin = lazy(() => import('../../components/insight/MiniTwin'));
 import './DefectDetail.css';
 
 const SEV_COLOR = {
@@ -74,6 +77,7 @@ export default function DefectDetail() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [saving, setSaving] = useState(false);
+  const [natural, setNatural] = useState(null); // real pixel size of the snapshot, for pixel-based boxes
 
   const { data: liveDetection, loading: apiLoading } = useDetection(id);
   const { data: allDetections } = useDetections();
@@ -105,9 +109,11 @@ export default function DefectDetail() {
     );
   }
 
-  const flagged = review ? Boolean(review.flagged_urgent) : detection.flagged;
-  const flaggedBy = review ? review.flagged_by : detection.flaggedBy;
-  const observations = review ? (review.observations || []) : detection.observations;
+  // `detection` may be a raw API record or one already normalised by useApi, so read both spellings.
+  const source = review || detection;
+  const flagged = Boolean(source.flagged_urgent ?? source.flagged);
+  const flaggedBy = source.flagged_by ?? source.flaggedBy ?? null;
+  const observations = Array.isArray(source.observations) ? source.observations : [];
 
   async function send(body, okMessage) {
     setSaving(true);
@@ -127,6 +133,18 @@ export default function DefectDetail() {
     e.preventDefault();
     if (!noteText.trim()) return;
     if (await send({ observation: noteText.trim() }, 'Observation added.')) { setNoteText(''); setNoteOpen(false); }
+  }
+
+  // Boxes are stored either as percentages of the frame, or as x1..y2 (normalised 0..1, or pixels of the snapshot).
+  const bb = detection.bbox;
+  let boxStyle = null;
+  if (bb && bb.left_pct != null) {
+    boxStyle = { left: `${bb.left_pct}%`, top: `${bb.top_pct}%`, width: `${bb.width_pct}%`, height: `${bb.height_pct}%` };
+  } else if (bb && bb.x2 != null) {
+    const norm = Math.max(bb.x1, bb.y1, bb.x2, bb.y2) <= 1;
+    const w = norm ? 1 : natural?.w;
+    const h = norm ? 1 : natural?.h;
+    if (w && h) boxStyle = { left: `${(bb.x1 / w) * 100}%`, top: `${(bb.y1 / h) * 100}%`, width: `${((bb.x2 - bb.x1) / w) * 100}%`, height: `${((bb.y2 - bb.y1) / h) * 100}%` };
   }
 
   const { severity, category, subtype, confidence, chainage, tunnelDepthM,
@@ -229,6 +247,7 @@ export default function DefectDetail() {
                   src={detection.imageUrl}
                   alt={`Captured concrete lining frame #${frameIndex}`}
                   className="dd-concrete-photo"
+                  onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
                 />
                 <div className="dd-img-placeholder__annotations">
                   <span className="dd-img-ann">
@@ -238,26 +257,8 @@ export default function DefectDetail() {
                     CONFIDENCE     : {Math.round(confidence * 100)}%
                   </span>
                 </div>
-                {detection.bbox && (
-                  <div
-                    className="dd-img-placeholder__bbox"
-                    style={
-                      detection.bbox.left_pct != null
-                        ? {
-                            left: `${detection.bbox.left_pct}%`,
-                            top: `${detection.bbox.top_pct}%`,
-                            width: `${detection.bbox.width_pct}%`,
-                            height: `${detection.bbox.height_pct}%`,
-                          }
-                        : {
-                            left: `${(detection.bbox.x1 / 640) * 100}%`,
-                            top: `${(detection.bbox.y1 / 480) * 100}%`,
-                            width: `${((detection.bbox.x2 - detection.bbox.x1) / 640) * 100}%`,
-                            height: `${((detection.bbox.y2 - detection.bbox.y1) / 480) * 100}%`,
-                          }
-                    }
-                    aria-label="Bounding box"
-                  />
+                {boxStyle && (
+                  <div className="dd-img-placeholder__bbox" style={boxStyle} aria-label="Bounding box" />
                 )}
               </div>
             ) : (
@@ -283,6 +284,15 @@ export default function DefectDetail() {
               </div>
             )}
           </div>
+
+          {/* Where the defect sits in the tunnel */}
+          <section className="dd-where" aria-label="Where this defect sits">
+            <h2 className="dd-historical__title">Where it sits</h2>
+            <Suspense fallback={<Skeleton height={240} />}>
+              <MiniTwin chainage={Number(chainage) || 0} defects={allDetections ?? []} focusId={detection.id} height={240} />
+            </Suspense>
+            <p className="dd-where__caption">Chainage {Number(chainage || 0).toFixed(1)} m, {orientation}. Brighter ring is this defect; the others are in the same tunnel.</p>
+          </section>
 
           {/* Captured Frame Metadata Strip */}
           {detection.imageUrl && (

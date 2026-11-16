@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDetections } from '../hooks/useApi';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/permissions';
+import { toggleTheme } from './theme';
 import './ui.css';
 
 const PAGES = [
@@ -33,8 +34,10 @@ export default function CommandPalette() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setOpen((o) => !o); setQuery(''); setIndex(0); }
       else if (e.key === 'Escape') setOpen(false);
     };
+    const onOpen = () => { setOpen(true); setQuery(''); setIndex(0); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('hrt:palette', onOpen);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('hrt:palette', onOpen); };
   }, []);
 
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 0); }, [open]);
@@ -48,14 +51,15 @@ export default function CommandPalette() {
       hint: `${d.orientation || ''} · ${d.inspectionId || ''}`,
       to: `/dashboard/detections/${d.id}`,
     }));
-    const all = [...pages, ...defects];
+    const actions = [{ kind: 'action', label: 'Toggle light or dark theme', hint: 'Appearance', run: toggleTheme }];
+    const all = [...pages, ...actions, ...defects];
     const hits = q ? all.filter((r) => `${r.label} ${r.hint}`.toLowerCase().includes(q)) : pages;
     return hits.slice(0, 40);
   }, [query, dets, can]);
 
   if (!open) return null;
 
-  const go = (r) => { setOpen(false); navigate(r.to); };
+  const go = (r) => { setOpen(false); if (r.run) r.run(); else navigate(r.to); };
   const onInputKey = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => Math.min(i + 1, results.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex((i) => Math.max(i - 1, 0)); }
@@ -70,14 +74,14 @@ export default function CommandPalette() {
         <ul role="listbox">
           {results.length === 0 && <li style={{ padding: '14px 12px', color: '#8fa8bb' }}>Nothing found</li>}
           {results.map((r, i) => (
-            <li key={`${r.kind}-${r.to}-${i}`} role="option" aria-selected={i === index}>
+            <li key={`${r.kind}-${r.to || r.label}-${i}`} role="option" aria-selected={i === index}>
               <button type="button" onClick={() => go(r)} onMouseEnter={() => setIndex(i)}>
-                <span>{r.kind === 'defect' ? '◈' : '→'}</span><span>{r.label}</span><small>{r.hint}</small>
+                <span>{r.kind === 'defect' ? '◈' : r.kind === 'action' ? '◐' : '→'}</span><span>{r.label}</span><small>{r.hint}</small>
               </button>
             </li>
           ))}
         </ul>
-        <div className="cmdk__hint"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span></div>
+        <div className="cmdk__hint"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span><span><kbd>Ctrl</kbd> <kbd>K</kbd> toggle</span></div>
       </div>
     </div>
   );

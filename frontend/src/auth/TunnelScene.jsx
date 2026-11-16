@@ -95,16 +95,21 @@ export default function TunnelScene({ boost, mono = false, hud = true }) {
     scene.add(sweep);
 
     // drifting particles (suspended dust in the light)
-    const N = 260;
+    const N = 420;
     const pos = new Float32Array(N * 3);
     for (let i = 0; i < N; i += 1) {
       const r = Math.sqrt(Math.random()) * (RADIUS - 0.4);
       const a = Math.random() * Math.PI * 2;
       pos.set([Math.cos(a) * r, Math.sin(a) * r, -Math.random() * DEPTH], i * 3);
     }
+    // dust reacts to the pointer: particles near the cursor are pushed aside and spring back
+    const bx = new Float32Array(N); const by = new Float32Array(N);
+    const ox = new Float32Array(N); const oy = new Float32Array(N);
+    for (let i = 0; i < N; i += 1) { bx[i] = pos[i * 3]; by[i] = pos[i * 3 + 1]; }
+    const tanH = Math.tan((68 / 2) * (Math.PI / 180));
     const dustGeo = track(new THREE.BufferGeometry());
     dustGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const dust = new THREE.Points(dustGeo, track(new THREE.PointsMaterial({ color: 0x9fdcff, size: 0.028, transparent: true, opacity: 0.55, depthWrite: false })));
+    const dust = new THREE.Points(dustGeo, track(new THREE.PointsMaterial({ color: 0x9fdcff, size: 0.034, transparent: true, opacity: 0.7, depthWrite: false })));
     scene.add(dust);
 
     const pointer = { x: 0, y: 0, sx: 0, sy: 0 };
@@ -147,10 +152,27 @@ export default function TunnelScene({ boost, mono = false, hud = true }) {
         d.userData.halo.scale.setScalar(1 + 0.35 * Math.sin(now / 420 + d.userData.phase));
       }
       const pa = dustGeo.attributes.position;
+      const aspect = camera.aspect;
       for (let i = 0; i < N; i += 1) {
         let z = pa.getZ(i) + step * 1.15;
         if (z > 2) z -= DEPTH;
-        pa.setZ(i, z);
+        const depth = -z;
+        if (depth > 0.5 && depth < 70 && !reduced) {
+          const px = pointer.sx * aspect * tanH * depth;
+          const py = -pointer.sy * tanH * depth;
+          const dx = bx[i] + ox[i] - px;
+          const dy = by[i] + oy[i] - py;
+          const d = Math.hypot(dx, dy) || 0.001;
+          const R = Math.min(2.4, 0.5 + depth * 0.12);
+          if (d < R) {
+            const f = (1 - d / R) ** 2 * 0.28;
+            ox[i] += (dx / d) * f;
+            oy[i] += (dy / d) * f;
+          }
+        }
+        ox[i] *= 0.94;
+        oy[i] *= 0.94;
+        pa.setXYZ(i, bx[i] + ox[i], by[i] + oy[i], z);
       }
       pa.needsUpdate = true;
 

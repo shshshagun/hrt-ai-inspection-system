@@ -6,6 +6,8 @@
  */
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import Lenis from 'lenis';
+import 'lenis/dist/lenis.css';
 import { useAuth } from '../auth/useAuth';
 import { useDive } from '../ui/contexts';
 import './LandingPage.css';
@@ -22,6 +24,43 @@ const CHAPTERS = [
 ];
 
 const MARQUEE = ['Cracks', 'Spalling', 'Chainage', 'Clock position', 'Repeat inspections', 'Digital twin', 'Role-based access'];
+
+const INTRO_KEY = 'hrt-intro-seen';
+const INTRO_MS = 2600;
+
+/** Descent intro: a counter runs from 000 to 250 m while rings rush past, then the hero takes over. Plays once per visit. */
+function useIntro() {
+  const [playing, setPlaying] = useState(() => {
+    try {
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
+      return window.sessionStorage.getItem(INTRO_KEY) !== '1';
+    } catch { return false; }
+  });
+  const counterRef = useRef(null);
+  const finish = () => {
+    try { window.sessionStorage.setItem(INTRO_KEY, '1'); } catch { /* storage blocked: the intro may play again, that is fine */ }
+    setPlaying(false);
+  };
+  useEffect(() => {
+    if (!playing) return undefined;
+    const start = performance.now();
+    let raf = 0;
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / INTRO_MS);
+      const eased = 1 - (1 - p) ** 3;
+      if (counterRef.current) counterRef.current.textContent = String(Math.round(eased * 250)).padStart(3, '0');
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    // a plain timer ends the intro, so the page can never get stuck behind it
+    const timer = setTimeout(finish, INTRO_MS + 500);
+    const onKey = () => finish();
+    window.addEventListener('keydown', onKey);
+    return () => { cancelAnimationFrame(raf); clearTimeout(timer); window.removeEventListener('keydown', onKey); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing]);
+  return { playing, counterRef, skip: finish };
+}
 
 function useReveal() {
   useEffect(() => {
@@ -44,30 +83,52 @@ export default function LandingPage() {
   const readoutRef = useRef(null);
   const [scrolled, setScrolled] = useState(false);
   useReveal();
+  const { playing: introPlaying, counterRef: introCounter, skip: skipIntro } = useIntro();
 
   useEffect(() => {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const lenis = reduced ? null : new Lenis({ lerp: 0.085, wheelMultiplier: 0.9 });
+    const nums = [...document.querySelectorAll('.lp-chapter__num')];
+    const bodies = [...document.querySelectorAll('.lp-chapter__body')];
+    const hero = document.querySelector('.lp-hero h1');
     let last = window.scrollY;
     let raf = 0;
-    const tick = () => {
+    const tick = (t) => {
+      lenis?.raf(t);
       const y = window.scrollY;
-      const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+      const vh = window.innerHeight;
+      const max = Math.max(1, document.documentElement.scrollHeight - vh);
       const p = Math.min(1, y / max);
       boost.current = Math.min(1, boost.current * 0.92 + Math.abs(y - last) / 90);
       last = y;
       if (markRef.current) markRef.current.style.transform = `translateY(${p * 100}%)`;
       if (readoutRef.current) readoutRef.current.textContent = `${String(Math.round(p * TUNNEL_M)).padStart(3, '0')} m`;
       setScrolled((s) => (s !== y > 40 ? y > 40 : s));
+      if (!reduced) {
+        // parallax: big numerals drift slower than the page, copy drifts a little faster
+        nums.forEach((el) => { const r = el.getBoundingClientRect(); el.style.transform = `translate3d(0, ${(-(r.top + r.height / 2 - vh / 2) * 0.18).toFixed(1)}px, 0)`; });
+        bodies.forEach((el) => { const r = el.getBoundingClientRect(); el.style.transform = `translate3d(0, ${((r.top + r.height / 2 - vh / 2) * 0.05).toFixed(1)}px, 0)`; });
+        if (hero) hero.style.transform = `translate3d(0, ${(y * 0.22).toFixed(1)}px, 0)`;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => { cancelAnimationFrame(raf); lenis?.destroy(); };
   }, []);
 
   const enter = () => (user ? dive('/dashboard') : navigate('/login'));
   const demo = () => { startDemo(); dive('/dashboard', 'Loading the demo…'); };
 
   return (
-    <div className="lp">
+    <div className={`lp${introPlaying ? '' : ' is-ready'}`}>
+      {introPlaying && (
+        <div className="lp-intro" onClick={skipIntro} role="status" aria-label="Loading">
+          <div className="lp-intro__rings" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <i key={i} style={{ animationDelay: `${i * 0.38}s` }} />)}</div>
+          <p className="lp-mono">Descending into the tunnel</p>
+          <b className="lp-display lp-intro__count"><span ref={introCounter}>000</span><small>m</small></b>
+          <button type="button" className="lp-link lp-intro__skip" onClick={skipIntro}>Skip</button>
+        </div>
+      )}
       <div className="lp-scene" aria-hidden="true">
         <Suspense fallback={null}><TunnelScene boost={boost} mono hud={false} /></Suspense>
       </div>
@@ -89,10 +150,10 @@ export default function LandingPage() {
 
       <main>
         <section className="lp-hero">
-          <p className="lp-mono lp-hero__tag">Tunnel inspection / BTCS706N / SVVV</p>
+          <p className="lp-mono lp-hero__tag">Tunnel inspection / hydropower</p>
           <h1 className="lp-display">
-            <span className="lp-line"><span>See inside</span></span>
-            <span className="lp-line lp-line--outline"><span>the mountain.</span></span>
+            <span className="lp-line"><span>Every crack,</span></span>
+            <span className="lp-line lp-line--outline"><span>located.</span></span>
           </h1>
           <div className="lp-hero__foot">
             <p>AI-assisted inspection for hydropower tunnels. Video in, defects out, placed to the metre and tracked from one inspection to the next.</p>
@@ -110,7 +171,7 @@ export default function LandingPage() {
 
         {CHAPTERS.map((c) => (
           <section className="lp-chapter" key={c.n} aria-labelledby={`ch-${c.n}`}>
-            <div className="lp-chapter__num lp-display" data-reveal aria-hidden="true">{c.n}</div>
+            <div className="lp-chapter__num lp-display" aria-hidden="true">{c.n}</div>
             <div className="lp-chapter__body">
               <p className="lp-mono lp-chapter__tag" data-reveal>{c.tag}</p>
               <h2 id={`ch-${c.n}`} className="lp-display lp-chapter__title" data-reveal>{c.title}</h2>
@@ -137,7 +198,6 @@ export default function LandingPage() {
 
       <footer className="lp-foot lp-mono">
         <span>HRT AI Inspection System</span>
-        <span>Shri Vaishnav Vidyapeeth Vishwavidyalaya / major project</span>
       </footer>
     </div>
   );

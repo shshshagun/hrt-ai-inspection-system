@@ -1,0 +1,12 @@
+/* 404: same jet black and sky blue as the landing page */
+.nf { position: relative; min-height: 100vh; display: flex; align-items: center; padding: 0 clamp(20px, 8vw, 120px); background: #05070a; color: #eaf2f8; overflow: hidden; }
+.nf__body { position: relative; z-index: 1; max-width: 760px; }
+.nf__code { font: 500 12px 'JetBrains Mono', monospace; letter-spacing: .22em; text-transform: uppercase; color: #8fd3ff; margin-bottom: 22px; }
+.nf h1 { font: 400 clamp(72px, 15vw, 230px)/.88 'Anton', 'Impact', sans-serif; text-transform: uppercase; margin-bottom: 24px; }
+.nf h1 span { color: transparent; -webkit-text-stroke: 2px #8fd3ff; }
+.nf__text { max-width: 44ch; color: #9db0bf; font-size: 17px; line-height: 1.6; margin-bottom: 30px; }
+.nf__actions { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.nf__btn { display: inline-flex; padding: 15px 28px; border-radius: 999px; font-weight: 600; color: #05070a; background: linear-gradient(180deg, #b6e4ff, #8fd3ff 60%, #78c3f2); box-shadow: 0 5px 0 #3e86b3, 0 12px 18px rgba(0, 0, 0, .5); transform: translateY(-5px); transition: transform .12s, box-shadow .12s; }
+.nf__btn:active { transform: translateY(0); box-shadow: 0 0 0 #3e86b3; }
+.nf__link { color: #9db0bf; text-decoration: underline; text-underline-offset: 4px; }
+.nf__link:hover { color: #8fd3ff; }
