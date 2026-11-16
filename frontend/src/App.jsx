@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import LandingPage from './pages/LandingPage';
+import NotFound from './pages/NotFound';
 import DashboardLayout from './layouts/DashboardLayout';
 import DashboardOverview from './pages/dashboard/DashboardOverview';
 import TunnelView from './pages/dashboard/TunnelView';
@@ -81,7 +82,7 @@ export default function App() {
         </Route>
 
         {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
         </Suspense>
     </ErrorBoundary>

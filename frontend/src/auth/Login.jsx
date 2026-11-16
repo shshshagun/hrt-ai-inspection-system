@@ -39,10 +39,10 @@ export default function Login() {
 
   return (
     <main className="auth-page">
-      <Suspense fallback={null}><TunnelScene /></Suspense>
+      <Suspense fallback={null}><TunnelScene mono /></Suspense>
       <section className="auth-hero">
-        <p className="auth-hero__tag">HIGH-RESOLUTION TUNNEL INSPECTION</p>
-        <h2>See every crack<br />before it matters.</h2>
+        <p className="auth-hero__tag">HRT / TUNNEL INSPECTION</p>
+        <h2><span>Every crack,</span><span className="auth-hero__outline">located.</span></h2>
         <p>Video in, defects out: located to the metre and the clock position, tracked from one inspection to the next.</p>
       </section>
       <form className="auth-card" onSubmit={onSubmit} noValidate>

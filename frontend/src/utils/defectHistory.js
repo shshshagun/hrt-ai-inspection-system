@@ -89,3 +89,35 @@ export function buildBrief(detections) {
   if (pending) lines.push(`${pending} finding${pending === 1 ? ' is' : 's are'} waiting for an engineer to review.`);
   return lines;
 }
+
+/**
+ * What changed between the two most recent inspections.
+ *  - fresh:   first seen in the latest inspection
+ *  - grown:   seen in both and larger by 20% or more
+ *  - steady:  seen in both, little change
+ *  - notSeen: seen in the previous inspection but not matched in the latest one. This does not prove the
+ *             defect was repaired: the latest footage may simply not have covered that stretch.
+ * Returns null when fewer than two inspections exist.
+ */
+export function diffInspections(detections) {
+  const newest = new Map();
+  detections.forEach((d) => { newest.set(d.inspectionId, Math.max(newest.get(d.inspectionId) || 0, timeOf(d))); });
+  const order = [...newest.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  if (order.length < 2) return null;
+  const [latestId, previousId] = order;
+  const result = { latestId, previousId, fresh: [], grown: [], steady: [], notSeen: [] };
+  for (const site of groupSites(detections)) {
+    const inLatest = site.sightings.filter((d) => d.inspectionId === latestId);
+    const inPrevious = site.sightings.filter((d) => d.inspectionId === previousId);
+    if (inLatest.length && !inPrevious.length) { result.fresh.push({ site }); continue; }
+    if (!inLatest.length && inPrevious.length) { result.notSeen.push({ site }); continue; }
+    if (inLatest.length && inPrevious.length) {
+      const a0 = areaOf(inPrevious[0]) || lengthOf(inPrevious[0]);
+      const a1 = areaOf(inLatest[0]) || lengthOf(inLatest[0]);
+      const percent = a0 ? Math.round((a1 / a0 - 1) * 100) : 0;
+      (percent >= 20 ? result.grown : result.steady).push({ site, percent });
+    }
+  }
+  result.grown.sort((a, b) => b.percent - a.percent);
+  return result;
+}

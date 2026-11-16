@@ -12,7 +12,7 @@ const RINGS = [50, 100, 150, 200, 250];
  * The tunnel seen end-on, like a sonar scope: the angle is the clock position around the lining
  * (12 o'clock = crown at the top) and the distance from the centre is the chainage (intake in the middle).
  */
-export default function TunnelRadar({ defects, onSelect }) {
+export default function TunnelRadar({ defects, onSelect, focus = null, window: windowM = 15 }) {
   const navigate = useNavigate();
   const point = (angleDeg, z, extra = 0) => {
     const r = R_IN + Math.min(1, z / TUNNEL_LENGTH_M) * (R_OUT - R_IN) + extra;
@@ -53,13 +53,16 @@ export default function TunnelRadar({ defects, onSelect }) {
         <g className="radar__sweep" style={{ transformOrigin: `${C}px ${C}px` }}>
           <path d={`M ${C} ${C} L ${C} ${C - R_OUT - 14} A ${R_OUT + 14} ${R_OUT + 14} 0 0 0 ${C - 58} ${C - (R_OUT + 14) * 0.93} Z`} fill="url(#radar-sweep)" />
         </g>
+        {focus != null && (
+          <circle cx={C} cy={C} r={R_IN + Math.min(1, focus / TUNNEL_LENGTH_M) * (R_OUT - R_IN)} fill="none" stroke="#8fd3ff" strokeWidth="2" className="radar__focus" />
+        )}
         <circle cx={C} cy={C} r="3" fill="#5fd0ff" />
         {defects.map((d) => {
           const [x, y] = point(angleOf(d), chainageOf(d));
           const size = 3.5 + Math.min(5, Math.sqrt(areaOf(d) || 600) / 12);
           const color = SEVERITY_COLOR[d.severity] || '#8fd8ff';
           return (
-            <g key={d.id} className="radar__dot" tabIndex={0} role="link"
+            <g key={d.id} className="radar__dot" tabIndex={0} role="link" opacity={focus == null || Math.abs(chainageOf(d) - focus) <= windowM ? 1 : 0.28}
               aria-label={`${d.severity} ${d.category}, ${chainageOf(d).toFixed(0)} metres`}
               onClick={() => open(d)} onKeyDown={(e) => { if (e.key === 'Enter') open(d); }}>
               <circle cx={x} cy={y} r={size + 5} fill={color} opacity=".16" />
