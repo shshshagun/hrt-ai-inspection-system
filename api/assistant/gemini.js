@@ -28,9 +28,33 @@ function classify(status, body) {
  * Creates a `generate(body)` function. Tries the configured model first, and on "model not found" falls back through
  * `fallbacks` once, remembering whichever model worked.
  */
+/** Picks the newest plain Flash / Flash-Lite model that supports generateContent, preferring Flash-Lite on a tie. */
+function pickModel(list) {
+  const scored = (list || [])
+    .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+    .map((m) => {
+      const name = String(m.name || '').replace(/^models\//, '');
+      const hit = name.match(/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$/);
+      return hit ? { name, version: parseFloat(hit[1]), lite: Boolean(hit[2]) } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.version - a.version || Number(b.lite) - Number(a.lite));
+  return scored[0]?.name || null;
+}
+
 function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeoutMs = 25000 }) {
   let active = model;
-  const candidates = () => [active, ...[model, ...fallbacks].filter((m) => m !== active)];
+  let discovered = false;
+  const candidates = () => [active, ...[model, ...fallbacks].filter((m) => m !== active)].filter((m, i, a) => a.indexOf(m) === i);
+
+  async function discover() {
+    discovered = true; // ask Google at most once per server start
+    try {
+      const res = await fetchImpl(`${BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': apiKey } });
+      if (!res.ok) return null;
+      return pickModel((await res.json().catch(() => ({}))).models);
+    } catch { return null; }
+  }
 
   async function once(m, body) {
     const controller = new AbortController();
@@ -56,7 +80,9 @@ function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeou
 
   return async function generate(body) {
     let last;
+    const tried = [];
     for (const m of candidates()) {
+      tried.push(m);
       try {
         const json = await once(m, body);
         active = m;
@@ -66,8 +92,19 @@ function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeou
         if (err.kind !== 'notfound') throw err;
       }
     }
+    // None of the configured names exist for this key: ask Google which models it can use, once.
+    if (!discovered) {
+      const found = await discover();
+      if (found && !tried.includes(found)) {
+        const json = await once(found, body);
+        active = found;
+        console.warn(`Gemini model "${model}" was not found; using "${found}". Set GEMINI_MODEL=${found} to silence this.`);
+        return json;
+      }
+    }
+    last.publicMessage = `The configured AI model was not found (tried: ${tried.join(', ')}). An administrator should set GEMINI_MODEL to a model listed in Google AI Studio.`;
     throw last;
   };
 }
 
-module.exports = { createGemini, GeminiError };
+module.exports = { createGemini, GeminiError, pickModel };
