@@ -137,7 +137,7 @@ export default function TunnelView() {
           }}
           id="btn-launch-3d-twin"
         >
-          ENTER 3D ROVER DIGITAL TWIN →
+          ENTER THE 3D DIGITAL TWIN →
         </button>
       </div>
 

@@ -27,6 +27,7 @@ export default function MiniTwin({ chainage, defects, focusId = null, height = 2
     el.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
+    scene.scale.x = -1; // mirror for display: 3 o'clock appears on the observer's right when looking downstream, like the radar
     scene.fog = new THREE.FogExp2(0x05070a, 0.045);
     const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 120);
 
