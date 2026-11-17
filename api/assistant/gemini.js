@@ -31,20 +31,26 @@ function classify(status, body) {
   return new GeminiError('network', `The AI service answered unexpectedly (HTTP ${status}${detail(body)}).`, 502);
 }
 
+// Text models that Google's pricing page lists as free of charge on the Free tier (checked 2026-11-17). Anything else
+// (Gemini 4 Carbon and Argon, the Pro models, retired models) is refused unless GEMINI_ALLOW_PAID=true, so a key can never
+// be spent by accident.
+const FREE_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-4-hydrogen'];
+const isFree = (name) => FREE_MODELS.includes(String(name).replace(/^models\//, ''));
+
 const SKIP = /image|tts|embed|live|audio|robot|veo|imagen|computer|vision|aqa|learnlm|gemma|native/i;
 
 /** Names of the models that can generate text for this key, best choice first: Flash-Lite, then Flash, then anything else; newest first. */
-function usableModels(list) {
+function usableModels(list, { allowPaid = false } = {}) {
   const rows = (list || [])
     .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
     .map((m) => String(m.name || '').replace(/^models\//, ''))
-    .filter((name) => /^gemini-/.test(name) && !SKIP.test(name));
+    .filter((name) => /^gemini-/.test(name) && !SKIP.test(name) && (allowPaid || isFree(name)));
   const rank = (n) => (/-flash-lite/.test(n) ? 0 : /-flash/.test(n) ? 1 : 2);
   const version = (n) => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1]) || 0;
   return rows.sort((a, b) => rank(a) - rank(b) || version(b) - version(a) || (/preview|exp/.test(a) ? 1 : 0) - (/preview|exp/.test(b) ? 1 : 0));
 }
 
-function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeoutMs = 25000, retryDelayMs = 1200 }) {
+function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeoutMs = 25000, retryDelayMs = 1200, allowPaid = false }) {
   let active = model;
   let discovered = false;
   const candidates = () => [active, ...[model, ...fallbacks].filter((m) => m !== active)].filter((m, i, a) => a.indexOf(m) === i);
@@ -55,7 +61,7 @@ function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeou
     try {
       const res = await fetchImpl(`${BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': apiKey } });
       if (!res.ok) { console.error(`Gemini model list answered HTTP ${res.status}`); return null; }
-      available = usableModels((await res.json().catch(() => ({}))).models);
+      available = usableModels((await res.json().catch(() => ({}))).models, { allowPaid });
       console.warn(`Gemini models this key can use: ${available.slice(0, 15).join(', ') || 'none'}`);
       return available[0] || null;
     } catch (err) { console.error('Gemini model list failed:', err?.message); return null; }
@@ -125,4 +131,4 @@ function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeou
   };
 }
 
-module.exports = { createGemini, GeminiError, usableModels };
+module.exports = { createGemini, GeminiError, usableModels, FREE_MODELS, isFree };

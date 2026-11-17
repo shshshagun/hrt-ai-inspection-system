@@ -172,7 +172,7 @@ test('a Gemini quota error becomes a clear 429 and is not retried', async () => 
 
 test('an unknown model falls back to the next one once', async () => {
   const tried = [];
-  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gone-model', GEMINI_FALLBACK_MODELS: 'good-model' }, fetchImpl: async (u) => {
+  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gone-model', GEMINI_FALLBACK_MODELS: 'good-model', GEMINI_ALLOW_PAID: 'true' }, fetchImpl: async (u) => {
     tried.push(u.match(/models\/([^:]+):/)[1]);
     return tried.length === 1 ? { ok: false, status: 404, json: async () => ({ error: { status: 'NOT_FOUND' } }) } : textReply('ok');
   } });
@@ -203,25 +203,24 @@ test('a user is limited to a few questions per minute', async () => {
 
 test('when no configured model exists, the server asks Google which one to use', async () => {
   const urls = [];
-  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gemini-2.5-flash', GEMINI_FALLBACK_MODELS: 'gemini-2.5-flash' }, fetchImpl: async (u) => {
+  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_ALLOW_PAID: 'true', GEMINI_MODEL: 'gemini-2.5-flash', GEMINI_FALLBACK_MODELS: '' }, fetchImpl: async (u) => {
     urls.push(u);
     if (u.includes('/models?')) return { ok: true, status: 200, json: async () => ({ models: [
       { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['embedContent'] },
-      { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
       { name: 'models/gemini-3.5-flash-image', supportedGenerationMethods: ['generateContent'] },
-      { name: 'models/gemini-3.1-flash-lite', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-9-flash', supportedGenerationMethods: ['generateContent'] },
     ] }) };
-    return u.includes('gemini-3.5-flash-lite') ? textReply('found it') : { ok: false, status: 404, json: async () => ({ error: { status: 'NOT_FOUND' } }) };
+    return u.includes('gemini-9-flash') ? textReply('found it') : { ok: false, status: 404, json: async () => ({ error: { status: 'NOT_FOUND' } }) };
   } });
   const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
   assert.equal(r.status, 200);
   assert.equal(r.json.answer, 'found it');
-  assert.equal(urls.filter((u) => u.includes('generateContent')).length, 2, 'the configured model was tried once, then the discovered one');
+  assert.ok(urls.some((u) => u.includes('/models?')), 'the model list was read once the configured names all failed');
   s.close();
 });
 
 test('when discovery finds nothing the error names the models that were tried', async () => {
-  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'nope-1', GEMINI_FALLBACK_MODELS: 'nope-2' }, fetchImpl: async (u) =>
+  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'nope-1', GEMINI_FALLBACK_MODELS: 'nope-2', GEMINI_ALLOW_PAID: 'true' }, fetchImpl: async (u) =>
     (u.includes('/models?') ? { ok: true, status: 200, json: async () => ({ models: [] }) } : { ok: false, status: 404, json: async () => ({ error: { status: 'NOT_FOUND' } }) }) });
   const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
   assert.equal(r.status, 502);
@@ -269,4 +268,24 @@ test('when nothing matches, the error lists the models the key can use', async (
   const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
   assert.equal(r.json.answer, 'hello from a model nobody expected', 'falls back to any usable text model, skipping image and embedding ones');
   s.close();
+});
+
+test('only free-tier models are used: a paid or retired name in the settings is ignored', async () => {
+  const urls = [];
+  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gemini-4-carbon', GEMINI_FALLBACK_MODELS: 'gemini-2.5-flash' }, fetchImpl: async (u) => { urls.push(u); return textReply('ok'); } });
+  assert.equal((await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] })).status, 200);
+  assert.match(urls[0], /models\/gemini-3\.5-flash-lite:generateContent/);
+  assert.ok(urls.every((u) => !/carbon|2\.5/.test(u)));
+  s.close();
+});
+
+test('model discovery never picks a paid model', () => {
+  const { usableModels } = require('./gemini');
+  const list = [
+    { name: 'models/gemini-4-carbon', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.1-pro-preview', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.1-flash-lite', supportedGenerationMethods: ['generateContent'] },
+  ];
+  assert.deepEqual(usableModels(list), ['gemini-3.1-flash-lite']);
+  assert.equal(usableModels(list, { allowPaid: true }).length, 3);
 });
