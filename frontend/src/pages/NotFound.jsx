@@ -1,10 +1,12 @@
 import { lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
+import { usePageTitle } from '../ui/usePageTitle';
 import './NotFound.css';
 
 const TunnelScene = lazy(() => import('../auth/TunnelScene'));
 
 export default function NotFound() {
+  usePageTitle('Page not found');
   return (
     <main className="nf">
       <Suspense fallback={null}><TunnelScene mono hud={false} /></Suspense>

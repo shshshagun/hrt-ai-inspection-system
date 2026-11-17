@@ -191,14 +191,14 @@ app.post('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_CREATE), async 
 });
 
 // ── GET /api/detections ──
-// Returns the latest 100 detections
+// Returns the latest detections (default 1000, at most 2000; ?limit= to change)
 app.get('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_READ), async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: 'Database not initialized or unreachable' });
   }
 
   try {
-    const { inspection_id, severity, limit = 100 } = req.query;
+    const { inspection_id, severity, limit = 1000 } = req.query;
     const filter = {};
     if (inspection_id) filter.inspection_id = inspection_id;
     if (severity && severity !== 'All') filter.severity = severity;
@@ -206,7 +206,7 @@ app.get('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_READ), async (re
     const detections = await db.collection('detections')
       .find(filter)
       .sort({ timestamp: -1 })
-      .limit(parseInt(limit, 10) || 100)
+      .limit(Math.min(Math.max(parseInt(limit, 10) || 1000, 1), 2000))
       .toArray();
       
     res.json(detections);

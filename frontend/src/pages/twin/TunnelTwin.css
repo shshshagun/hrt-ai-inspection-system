@@ -32,7 +32,7 @@
 .tw__back { display: inline-flex; align-items: center; gap: 6px; color: #eaf2f8; text-decoration: none; font-size: 14px; padding: 6px 10px; border: 1px solid var(--tw-line); border-radius: 10px; background: var(--tw-surface); }
 .tw__back:hover { border-color: var(--tw-sky); color: var(--tw-sky); }
 .tw__title { display: flex; flex-direction: column; min-width: 0; }
-.tw__title b { font: 400 22px/1 'Anton', sans-serif; text-transform: uppercase; letter-spacing: .02em; }
+.tw__title h1, .tw__title b { margin: 0; font: 400 22px/1 'Anton', sans-serif; text-transform: uppercase; letter-spacing: .02em; }
 .tw__title span { font-size: 12px; color: #8fa8bb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tw__readout { margin-left: auto; display: flex; gap: 14px; color: var(--tw-sky); }
 .tw__seg { display: inline-flex; border: 1px solid var(--tw-line); border-radius: 10px; overflow: hidden; background: var(--tw-surface); }
@@ -114,4 +114,19 @@
   .tw__inspector, .tw__list { width: calc(100vw - 32px); left: 16px; right: 16px; top: auto; bottom: 150px; max-height: 45vh; }
   .tw-clock, .tw__help { display: none; }
   .tw__bottom { padding-left: 16px; padding-right: 16px; }
+}
+
+/* phones: keep the camera toggle on screen, make the panels compact so the view stays visible */
+@media (max-width: 900px) {
+  .tw__top { gap: 8px; padding: 8px; flex-wrap: nowrap; }
+  .tw__back { padding: 6px 8px; font-size: 13px; }
+  .tw__title { flex: 1; }
+  .tw__title h1 { font-size: 18px; }
+  .tw__readout { display: none; }
+  .tw__seg { flex-shrink: 0; }
+  .tw__rail { left: 8px; top: 60px; gap: 8px; }
+  .tw__tool { width: 36px; height: 36px; }
+  .tw__inspector { max-height: 34vh; bottom: 124px; }
+  .tw__list { max-height: 40vh; bottom: 124px; }
+  .tw__notes, .tw__measure { bottom: 124px; }
 }

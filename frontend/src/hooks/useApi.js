@@ -259,7 +259,7 @@ export function useDetections(filters = {}) {
       if (sort_by)      params.set('sort_by', sort_by);
       if (order)        params.set('order', order);
 
-      const json = await apiFetch('/api/detections');
+      const json = await apiFetch('/api/detections?limit=1000');
       let list = Array.isArray(json) ? json : (json.data ?? []);
       list = list.map(normalizeDetection).filter(Boolean);
       if (severity) {
@@ -290,10 +290,9 @@ export function useDetection(id) {
   return useApiData(
     async () => {
       if (!id) return null;
-      const json = await apiFetch('/api/detections');
-      const list = Array.isArray(json) ? json : (json.data ?? []);
-      const found = list.find(d => String(d._id) === id || String(d.id) === id || String(d.detection_id) === id);
-      if (found) return normalizeDetection(found);
+      // by id, so a defect outside the latest page of the list is still found
+      const found = await apiFetch(`/api/detections/${encodeURIComponent(id)}`);
+      if (found && !Array.isArray(found)) return normalizeDetection(found);
       throw new Error(`Detection ${id} not found`);
     },
     () => null,
@@ -385,7 +384,7 @@ export function useKpiSummary() {
     async () => {
       const [inspRes, detRes] = await Promise.allSettled([
         apiFetch('/api/inspections'),
-        apiFetch('/api/detections?limit=500'),
+        apiFetch('/api/detections?limit=1000'),
       ]);
 
       const inspections = inspRes.status === 'fulfilled'
@@ -463,7 +462,7 @@ export function useReports() {
 export function useDefectDistributions() {
   return useApiData(
     async () => {
-      const json = await apiFetch('/api/detections?limit=500');
+      const json = await apiFetch('/api/detections?limit=1000');
       const list = Array.isArray(json) ? json : (json.data ?? []);
 
       const typeCounts = {};

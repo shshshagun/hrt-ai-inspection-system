@@ -10,6 +10,7 @@ import Lenis from 'lenis';
 import 'lenis/dist/lenis.css';
 import { useAuth } from '../auth/useAuth';
 import { useDive } from '../ui/contexts';
+import { usePageTitle } from '../ui/usePageTitle';
 import './LandingPage.css';
 
 const TunnelScene = lazy(() => import('../auth/TunnelScene'));
@@ -77,6 +78,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const { user, startDemo } = useAuth();
   const { dive } = useDive();
+  usePageTitle('Every crack, located');
   const boost = useRef(0);
   const rulerRef = useRef(null);
   const markRef = useRef(null);

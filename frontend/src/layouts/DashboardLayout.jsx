@@ -10,6 +10,7 @@ import { useAuth } from '../auth/useAuth';
 import CommandPalette from '../ui/CommandPalette';
 import { PERMISSIONS } from '../auth/permissions';
 import { useTheme } from '../ui/theme';
+import { usePageTitle } from '../ui/usePageTitle';
 import AssistantDrawer from '../assistant/AssistantDrawer';
 import './DashboardLayout.css';
 import '../auth/Auth.css';
@@ -73,6 +74,7 @@ export default function DashboardLayout() {
   const location = useLocation();
   const pageTitle = getPageTitle(location.pathname);
   const breadcrumbs = getBreadcrumbs(location.pathname);
+  usePageTitle(pageTitle);
   const { theme, toggle } = useTheme();
 
   return (
@@ -165,7 +167,7 @@ export default function DashboardLayout() {
               </nav>
             )}
             {breadcrumbs.length === 0 && (
-              <h1 className="db-topbar__title">{pageTitle}</h1>
+              <p className="db-topbar__title">{pageTitle}</p>
             )}
           </div>
 

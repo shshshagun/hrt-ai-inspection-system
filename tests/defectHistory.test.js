@@ -83,3 +83,13 @@ test('diffInspections sorts every site into fresh, grown, steady or not seen', a
   assert.ok(diff.notSeen.every((n) => !n.site.sightings.some((d) => d.inspectionId === diff.latestId)));
   assert.equal(diffInspections(dets.filter((d) => d.inspectionId === diff.latestId)), null, 'one inspection has nothing to compare');
 });
+
+test('detections without a recorded position are not placed, matched or used in the location figures', async () => {
+  const { groupSites, buildBrief } = await loadHistory();
+  const mk = (id, insp, z) => ({ id, class_label: 'crack', category: 'crack', inspectionId: insp, chainage_m: z, angle_deg: 0, severity: 'Critical', crack_area_mm2: 100, detectedAt: insp === 'A' ? '2026-01-01T00:00:00Z' : '2026-02-01T00:00:00Z' });
+  const dets = [mk('a1', 'A', 0), mk('a2', 'A', 0), mk('b1', 'B', 0), mk('b2', 'B', 40)];
+  assert.equal(groupSites(dets).length, 1, 'only the detection with a chainage becomes a site');
+  const text = buildBrief(dets).join(' ');
+  assert.match(text, /1 of them has no recorded position and is left out of the location figures/);
+  assert.match(text, /Critical defects lie between 40 m and 40 m/);
+});

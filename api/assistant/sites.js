@@ -33,9 +33,10 @@ function normalize(d) {
   };
 }
 
+// A chainage of 0 is how a missing position is stored, so those detections cannot be matched and are left out.
 function groupSites(detections) {
   const sites = [];
-  for (const d of [...detections].sort((a, b) => timeOf(a) - timeOf(b))) {
+  for (const d of [...detections].filter((x) => x.chainage_m > 0.05).sort((a, b) => timeOf(a) - timeOf(b))) {
     const z = d.chainage_m;
     const a = d.angle_deg;
     const site = sites.find((s) => s.cls === d.cls && Math.abs(s.z - z) <= 3 && angleGap(s.angle, a) <= 35

@@ -32,10 +32,14 @@ function angleGap(a, b) {
   return Math.abs((((a - b) % 360) + 540) % 360 - 180);
 }
 
-/** Groups detections into sites; each site lists its sightings oldest first. */
+/** A chainage of 0 is how a missing position is stored, so those detections are not placed anywhere. */
+export const MIN_LOCATED_M = 0.05;
+export const isLocated = (d) => chainageOf(d) > MIN_LOCATED_M;
+
+/** Groups detections into sites; each site lists its sightings oldest first. Detections without a position cannot be matched, so they are left out. */
 export function groupSites(detections) {
   const sites = [];
-  for (const d of [...detections].sort((a, b) => timeOf(a) - timeOf(b))) {
+  for (const d of [...detections].filter(isLocated).sort((a, b) => timeOf(a) - timeOf(b))) {
     const cls = (d.class_label || d.category || '').toLowerCase();
     const z = chainageOf(d);
     const a = angleOf(d);
@@ -71,15 +75,18 @@ export function buildBrief(detections) {
   const latest = detections.filter((d) => d.inspectionId === latestId);
   const lines = [];
   const critical = latest.filter((d) => d.severity === 'Critical');
+  const placed = latest.filter(isLocated);
   lines.push(`The latest inspection (${latestId}) found ${latest.length} defect${latest.length === 1 ? '' : 's'}, ${critical.length} of them critical.`);
-  if (critical.length) {
-    const zs = critical.map(chainageOf);
+  const placedCritical = critical.filter(isLocated);
+  if (placedCritical.length) {
+    const zs = placedCritical.map(chainageOf);
     lines.push(`Critical defects lie between ${Math.min(...zs).toFixed(0)} m and ${Math.max(...zs).toFixed(0)} m from the intake.`);
   }
+  if (placed.length < latest.length) lines.push(`${latest.length - placed.length} of them ${latest.length - placed.length === 1 ? 'has' : 'have'} no recorded position and ${latest.length - placed.length === 1 ? 'is' : 'are'} left out of the location figures.`);
   const hours = {};
-  latest.forEach((d) => { const h = Math.round(angleOf(d) / 30) % 12 || 12; hours[h] = (hours[h] || 0) + 1; });
+  placed.forEach((d) => { const h = Math.round(angleOf(d) / 30) % 12 || 12; hours[h] = (hours[h] || 0) + 1; });
   const top = Object.entries(hours).sort((a, b) => b[1] - a[1])[0];
-  if (top && top[1] > 1) lines.push(`Most defects sit near ${top[0]} o'clock (${top[1]} of ${latest.length}).`);
+  if (top && top[1] > 1) lines.push(`Most located defects sit near ${top[0]} o'clock (${top[1]} of ${placed.length}).`);
   const grown = sites.map((s) => ({ s, g: siteGrowth(s) })).filter((x) => x.g && x.g.percent >= 20).sort((a, b) => b.g.percent - a.g.percent);
   if (grown.length) {
     const w = grown[0];
