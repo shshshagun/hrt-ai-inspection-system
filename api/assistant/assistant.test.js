@@ -200,3 +200,31 @@ test('a user is limited to a few questions per minute', async () => {
   assert.equal((await send()).status, 429);
   s.close();
 });
+
+test('when no configured model exists, the server asks Google which one to use', async () => {
+  const urls = [];
+  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gemini-2.5-flash', GEMINI_FALLBACK_MODELS: 'gemini-2.5-flash' }, fetchImpl: async (u) => {
+    urls.push(u);
+    if (u.includes('/models?')) return { ok: true, status: 200, json: async () => ({ models: [
+      { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['embedContent'] },
+      { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-3.5-flash-image', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-3.1-flash-lite', supportedGenerationMethods: ['generateContent'] },
+    ] }) };
+    return u.includes('gemini-3.5-flash-lite') ? textReply('found it') : { ok: false, status: 404, json: async () => ({ error: { status: 'NOT_FOUND' } }) };
+  } });
+  const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.answer, 'found it');
+  assert.equal(urls.filter((u) => u.includes('generateContent')).length, 2, 'the configured model was tried once, then the discovered one');
+  s.close();
+});
+
+test('when discovery finds nothing the error names the models that were tried', async () => {
+  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'nope-1', GEMINI_FALLBACK_MODELS: 'nope-2' }, fetchImpl: async (u) =>
+    (u.includes('/models?') ? { ok: true, status: 200, json: async () => ({ models: [] }) } : { ok: false, status: 404, json: async () => ({ error: { status: 'NOT_FOUND' } }) }) });
+  const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.equal(r.status, 502);
+  assert.match(r.json.error, /nope-1, nope-2/);
+  s.close();
+});
