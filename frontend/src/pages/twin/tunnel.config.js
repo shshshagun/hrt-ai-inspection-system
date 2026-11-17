@@ -21,7 +21,7 @@ export const TUNNEL_CONFIG = {
   // Coordinate frame definition
   coordinate_frame: 'Model coordinates, origin at intake (0, 0, 0), +Z along the tunnel',
 
-  // Submerged underwater environment optics (cinematic deep abyss teal)
+  // Water atmosphere (the Dry atmosphere uses its own settings in engine.js)
   water_fog: {
     color: 0x061521,          // Deep cinematic aquatic navy
     density: 0.016,           // Natural underwater visibility without blowout or blackness
@@ -34,21 +34,5 @@ export const TUNNEL_CONFIG = {
     size: 0.04,               // Subtly visible suspended sediment
     color: 0x5eead4,          // Bioluminescent cyan-tinted suspended sediment
     drift_speed: 0.18,
-  },
-
-  // Subsea Inspection ROV dynamics & optics
-  rover: {
-    start_pos: [0.0, -0.5, 6.0],  // Initial XYZ inside tunnel bore
-    collision_radius: 0.45,       // Hard collision bounding sphere radius (meters)
-    max_radial_distance: 2.45,    // (radius_m - collision_radius - buffer)
-    max_speed: 7.0,               // Forward/reverse cruising speed (m/s)
-    boost_mult: 2.0,              // Speed multiplier when Shift is held
-    acceleration: 12.0,           // Smooth hydrodynamic acceleration
-    damping: 5.0,                 // Water drag / resistance factor
-    turn_speed: 1.8,              // Angular turn rate (rad/s)
-    vertical_speed: 3.2,          // Vertical traverse speed (m/s)
-    headlight_intensity: 28.0,    // Balanced inspection LED lumens
-    headlight_distance: 42.0,     // Beam throw distance (meters)
-    fill_intensity: 8.0,          // Near-field ambient fill
   },
 };

@@ -47,7 +47,7 @@ export default function App() {
         {/* Landing page */}
         <Route path="/" element={<LandingPage />} />
 
-        {/* Immersive 3D Digital Twin Rover Simulator */}
+        {/* Immersive 3D digital twin of the tunnel */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/tunnel-twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
