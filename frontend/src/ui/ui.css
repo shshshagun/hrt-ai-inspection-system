@@ -68,3 +68,7 @@ kbd { background: var(--bg-elevated); border: 1px solid var(--db-border); border
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
 }
+
+.cmdk__status { padding: 8px 16px; font-size: 12px; color: var(--ink-2); border-bottom: 1px solid var(--db-border); }
+.cmdk__status--error { color: var(--critical); }
+.cmdk__chip { display: inline-block; margin: 0 4px 0 0; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--cyan-border); color: var(--cyan); font: 500 11px 'JetBrains Mono', monospace; }

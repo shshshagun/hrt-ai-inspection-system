@@ -8,6 +8,7 @@ const { MongoUserRepository } = require('./auth/userRepository');
 const { createAuthMiddleware } = require('./auth/middleware');
 const { createAuthRouter } = require('./auth/routes');
 const { PERMISSIONS } = require('./auth/roles');
+const { createAssistantRouter } = require('./assistant/routes');
 
 const app = express();
 app.use(express.json({ limit: '15mb' }));
@@ -56,6 +57,8 @@ let authService = null;
 const authEnabled = process.env.AUTH_ENABLED !== 'false';
 const auth = createAuthMiddleware(() => authService, { enabled: authEnabled });
 app.use(createAuthRouter(() => authService, auth, { allowRegistration: process.env.ALLOW_REGISTRATION !== 'false' }));
+// AI assistant (chat and natural-language search). Off until GEMINI_API_KEY is set on the server.
+app.use(createAssistantRouter({ auth, getDb: () => db }));
 if (!authEnabled) console.warn('⚠️ AUTH_ENABLED=false: every request is treated as an Administrator. Never use this in production.');
 
 async function initAuth(database) {
