@@ -3,6 +3,7 @@ const express = require('express');
 const { PERMISSIONS } = require('../auth/roles');
 const { createProviders } = require('./providers');
 const { runAgent, runSearch, toolExecutor, AssistantError } = require('./service');
+const { buildFacts, draftNarrative, loadAll } = require('./report');
 
 const MAX_MESSAGES = 12;
 const MAX_TEXT = 1000;
@@ -40,8 +41,8 @@ function createAssistantRouter({ auth, getDb, env = process.env, fetchImpl }) {
     res.status(status).json({ error: err.publicMessage || 'The assistant ran into a problem.' });
   }
 
-  async function limited(req, res, work) {
-    if (!enabled) return res.status(503).json({ error: 'The assistant is not configured on this server.' });
+  async function limited(req, res, work, { requireAi = true } = {}) {
+    if (!enabled && requireAi) return res.status(503).json({ error: 'The assistant is not configured on this server.' });
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'The database is not available right now.' });
     const who = req.user?.id || req.user?.email || req.ip;
@@ -75,6 +76,16 @@ function createAssistantRouter({ auth, getDb, env = process.env, fetchImpl }) {
     if (query.length < 2 || query.length > 200) throw new AssistantError('Type a search of 2 to 200 characters.', 400);
     res.json(await runSearch({ query, generate, db }));
   }));
+
+  // Report summary draft. Works without an AI key (the standard summary is returned); with one, the AI writes the prose
+  // and every number in it is checked against the facts.
+  router.post('/api/assistant/report-draft', ...auth.guard(PERMISSIONS.REPORTS_GENERATE), (req, res) => limited(req, res, async (db) => {
+    const id = typeof req.body?.inspection_id === 'string' ? req.body.inspection_id.trim() : '';
+    if (!/^[\w.\- ]{1,64}$/.test(id)) throw new AssistantError('Choose an inspection to summarise.', 400);
+    const facts = buildFacts(await loadAll(db), id);
+    if (!facts.total) throw new AssistantError('That inspection has no detections to summarise.', 404);
+    res.json({ ...(await draftNarrative(facts, enabled ? generate : null)), facts });
+  }, { requireAi: false }));
 
   return router;
 }

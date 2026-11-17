@@ -4,7 +4,7 @@
   "private": true,
   "description": "HRT AI Inspection System",
   "scripts": {
-    "test": "node backend/src/api.test.js && node backend/src/routes/spatial.test.js && node api/auth/auth.test.js && node api/auth/registration.test.js && node tests/defectTracker.test.js && node tests/defectHistory.test.js && node api/assistant/assistant.test.js && node tests/assistantSites.test.js && node tests/keywordSearch.test.js && node tests/twinGeometry.test.js",
+    "test": "node backend/src/api.test.js && node backend/src/routes/spatial.test.js && node api/auth/auth.test.js && node api/auth/registration.test.js && node tests/defectTracker.test.js && node tests/defectHistory.test.js && node api/assistant/assistant.test.js && node tests/assistantSites.test.js && node tests/keywordSearch.test.js && node tests/twinGeometry.test.js && node tests/reportDraft.test.js",
     "test:api": "node backend/src/api.test.js",
     "test:spatial": "node backend/src/routes/spatial.test.js",
     "test:auth": "node api/auth/auth.test.js && node tests/defectTracker.test.js",
