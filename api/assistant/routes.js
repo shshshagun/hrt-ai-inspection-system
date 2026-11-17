@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const { PERMISSIONS } = require('../auth/roles');
-const { createGemini, FREE_MODELS, isFree } = require('./gemini');
+const { createProviders } = require('./providers');
 const { runAgent, runSearch, toolExecutor, AssistantError } = require('./service');
 
 const MAX_MESSAGES = 12;
@@ -20,27 +20,14 @@ function windowLimiter(limit) {
 }
 
 /**
- * /api/assistant/*: status, chat and natural-language search. Disabled (503) until GEMINI_API_KEY is set.
+ * /api/assistant/*: status, chat and natural-language search. Disabled (503) until GEMINI_API_KEY or GROQ_API_KEY is set; when both are, the second is a backup.
  * The key lives only in the server environment.
  */
 function createAssistantRouter({ auth, getDb, env = process.env, fetchImpl }) {
   const router = express.Router();
-  const apiKey = (env.GEMINI_API_KEY || '').trim();
-  const enabled = apiKey.length > 0;
-  // Only free-tier models are used unless GEMINI_ALLOW_PAID=true, so a key can never be charged by accident.
-  const allowPaid = env.GEMINI_ALLOW_PAID === 'true';
-  const wanted = [env.GEMINI_MODEL, ...(env.GEMINI_FALLBACK_MODELS || '').split(',')].map((s) => (s || '').trim()).filter(Boolean);
-  const skipped = allowPaid ? [] : wanted.filter((m) => !isFree(m));
-  if (enabled && skipped.length) console.warn(`Ignoring non-free Gemini model(s) ${skipped.join(', ')}; using free-tier models. Set GEMINI_ALLOW_PAID=true to allow others.`);
-  const chosen = [...(allowPaid ? wanted : wanted.filter(isFree)), ...FREE_MODELS].filter((m, i, all) => all.indexOf(m) === i);
-  const generate = enabled ? createGemini({
-    apiKey,
-    model: chosen[0],
-    fallbacks: chosen.slice(1),
-    fetchImpl,
-    allowPaid,
-    retryDelayMs: env.ASSISTANT_RETRY_MS !== undefined ? Number(env.ASSISTANT_RETRY_MS) : 1200,
-  }) : null;
+  const providers = createProviders(env, fetchImpl);
+  const enabled = providers.enabled;
+  const generate = providers.generate;
 
   const perUser = windowLimiter(Number(env.ASSISTANT_RPM_USER) || 8);
   const global = windowLimiter(Number(env.ASSISTANT_RPM_GLOBAL) || 12);
@@ -65,7 +52,7 @@ function createAssistantRouter({ auth, getDb, env = process.env, fetchImpl }) {
   }
 
   router.get('/api/assistant/status', ...guard, (req, res) => {
-    res.json({ enabled });
+    res.json({ enabled, providers: providers.names });
   });
 
   router.post('/api/assistant/chat', ...guard, (req, res) => limited(req, res, async (db) => {
