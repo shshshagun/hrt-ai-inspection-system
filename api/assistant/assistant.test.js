@@ -228,3 +228,31 @@ test('when discovery finds nothing the error names the models that were tried', 
   assert.match(r.json.error, /nope-1, nope-2/);
   s.close();
 });
+
+test('a temporary Gemini 5xx is retried once, and a persistent one names its status and reason', async () => {
+  let n = 0;
+  const flaky = await serve({ env: { GEMINI_API_KEY: 'k', ASSISTANT_RETRY_MS: '0' }, fetchImpl: async () => { n += 1; return n === 1 ? { ok: false, status: 503, json: async () => ({ error: { message: 'The model is overloaded.' } }) } : textReply('second try works'); } });
+  assert.equal((await flaky.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] })).json.answer, 'second try works');
+  flaky.close();
+
+  const down = await serve({ env: { GEMINI_API_KEY: 'k', ASSISTANT_RETRY_MS: '0' }, fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ error: { message: 'The model is overloaded.' } }) }) });
+  const r = await down.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.equal(r.status, 502);
+  assert.match(r.json.error, /HTTP 503: The model is overloaded/);
+  down.close();
+});
+
+test('a failed network call keeps its technical reason and never the key', async () => {
+  const s = await serve({ env: { GEMINI_API_KEY: 'secret-key-xyz' }, fetchImpl: async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND' } }); } });
+  const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.match(r.json.error, /fetch failed \/ ENOTFOUND/);
+  assert.ok(!JSON.stringify(r.json).includes('secret-key-xyz'));
+  s.close();
+});
+
+test('a 400 from Gemini reports why, so a wrong request shape is visible', async () => {
+  const s = await serve({ env: { GEMINI_API_KEY: 'k' }, fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error: { status: 'INVALID_ARGUMENT', message: 'Unknown name "foo" at tools[0]' } }) }) });
+  const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.match(r.json.error, /HTTP 400: Unknown name/);
+  s.close();
+});

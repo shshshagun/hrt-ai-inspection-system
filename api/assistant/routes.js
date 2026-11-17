@@ -32,6 +32,7 @@ function createAssistantRouter({ auth, getDb, env = process.env, fetchImpl }) {
     model: env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
     fallbacks: (env.GEMINI_FALLBACK_MODELS || 'gemini-2.5-flash').split(',').map((s) => s.trim()).filter(Boolean),
     fetchImpl,
+    retryDelayMs: env.ASSISTANT_RETRY_MS !== undefined ? Number(env.ASSISTANT_RETRY_MS) : 1200,
   }) : null;
 
   const perUser = windowLimiter(Number(env.ASSISTANT_RPM_USER) || 8);

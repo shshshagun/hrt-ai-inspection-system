@@ -15,19 +15,22 @@ class GeminiError extends Error {
   }
 }
 
+/** A short, safe reason from Google (its own error text never contains our key) so failures can be diagnosed. */
+function detail(body) {
+  const msg = body?.error?.message;
+  return typeof msg === 'string' && msg ? `: ${msg.replace(/\s+/g, ' ').slice(0, 160)}` : '';
+}
+
 function classify(status, body) {
   const code = body?.error?.status;
   if (status === 429 || code === 'RESOURCE_EXHAUSTED') return new GeminiError('quota', 'The AI service is at its free-plan limit right now. Please try again in a minute.', 429);
-  if (status === 401 || status === 403 || code === 'PERMISSION_DENIED' || code === 'UNAUTHENTICATED') return new GeminiError('auth', 'The AI service rejected the server\'s API key. An administrator needs to check it.', 502);
+  if (status === 401 || status === 403 || code === 'PERMISSION_DENIED' || code === 'UNAUTHENTICATED') return new GeminiError('auth', `The AI service rejected the server's API key (HTTP ${status}${detail(body)}). An administrator needs to check it.`, 502);
   if (status === 404 || code === 'NOT_FOUND') return new GeminiError('notfound', 'The configured AI model was not found.', 502);
-  if (status === 400) return new GeminiError('bad', 'The AI service could not process that request.', 502);
-  return new GeminiError('network', 'The AI service is unavailable right now.', 502);
+  if (status === 400) return new GeminiError('bad', `The AI service could not process that request (HTTP 400${detail(body)}).`, 502);
+  if (status >= 500) return new GeminiError('server', `The AI service had a problem (HTTP ${status}${detail(body)}). Please try again.`, 502);
+  return new GeminiError('network', `The AI service answered unexpectedly (HTTP ${status}${detail(body)}).`, 502);
 }
 
-/**
- * Creates a `generate(body)` function. Tries the configured model first, and on "model not found" falls back through
- * `fallbacks` once, remembering whichever model worked.
- */
 /** Picks the newest plain Flash / Flash-Lite model that supports generateContent, preferring Flash-Lite on a tie. */
 function pickModel(list) {
   const scored = (list || [])
@@ -42,7 +45,7 @@ function pickModel(list) {
   return scored[0]?.name || null;
 }
 
-function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeoutMs = 25000 }) {
+function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeoutMs = 25000, retryDelayMs = 1200 }) {
   let active = model;
   let discovered = false;
   const candidates = () => [active, ...[model, ...fallbacks].filter((m) => m !== active)].filter((m, i, a) => a.indexOf(m) === i);
@@ -67,12 +70,18 @@ function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeou
         signal: controller.signal,
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw classify(res.status, json);
+      if (!res.ok) {
+        console.error(`Gemini ${m} answered HTTP ${res.status}:`, json?.error?.status || '', String(json?.error?.message || '').slice(0, 200));
+        throw classify(res.status, json);
+      }
       return json;
     } catch (err) {
       if (err instanceof GeminiError) throw err;
       if (err?.name === 'AbortError') throw new GeminiError('timeout', 'The AI service took too long to answer.', 504);
-      throw new GeminiError('network', 'The AI service is unavailable right now.', 502);
+      // fetch itself failed (DNS, TLS, a bad header value...): keep the technical reason for the server log and the message
+      const why = [err?.message, err?.cause?.code || err?.cause?.message].filter(Boolean).join(' / ').slice(0, 120);
+      console.error('Gemini request failed:', why);
+      throw new GeminiError('network', `The server could not reach the AI service (${why || 'network error'}).`, 502);
     } finally {
       clearTimeout(timer);
     }
@@ -84,7 +93,13 @@ function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeou
     for (const m of candidates()) {
       tried.push(m);
       try {
-        const json = await once(m, body);
+        let json;
+        try { json = await once(m, body); }
+        catch (err) {
+          if (err.kind !== 'server') throw err;
+          await new Promise((r) => setTimeout(r, retryDelayMs)); // transient overload: one more try
+          json = await once(m, body);
+        }
         active = m;
         return json;
       } catch (err) {
