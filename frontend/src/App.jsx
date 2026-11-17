@@ -19,6 +19,7 @@ const NewInspection = lazy(() => import('./pages/inspection/NewInspection'));
 import Users from './pages/dashboard/Users';
 import Login from './auth/Login';
 import Register from './auth/Register';
+import ForgotPassword from './auth/ForgotPassword';
 import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
 import { DiveProvider } from './ui/DiveProvider';
@@ -50,6 +51,7 @@ export default function App() {
         {/* Immersive 3D digital twin of the tunnel */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/tunnel-twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
         <Route path="/twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
 

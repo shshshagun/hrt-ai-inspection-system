@@ -7,13 +7,15 @@ const { PERMISSIONS, ROLE_NAMES } = require('./roles');
  * Authentication and user-management routes.
  *   POST   /api/auth/login        public
  *   POST   /api/auth/register     public (read-only Viewer role); can be switched off
+ *   POST   /api/auth/forgot-password  public; e-mails a 6-digit code (503 when e-mail is not set up)
+ *   POST   /api/auth/reset-password   public; code + new password
  *   GET    /api/auth/me           any signed-in user
  *   GET    /api/users             users:manage
  *   POST   /api/users             users:manage
  *   PATCH  /api/users/:id         users:manage
  *   GET    /api/roles             any signed-in user (role names and permissions)
  */
-function createAuthRouter(getService, middleware, { allowRegistration = true } = {}) {
+function createAuthRouter(getService, middleware, { allowRegistration = true, getResetService = () => null } = {}) {
   const router = express.Router();
   const { authenticate, guard, sendError } = middleware;
   const need = () => ({ error: 'Authentication is not configured on the server' });
@@ -39,7 +41,29 @@ function createAuthRouter(getService, middleware, { allowRegistration = true } =
     } catch (err) { sendError(res, err); }
   });
 
-  router.get('/api/auth/config', (_req, res) => res.json({ registrationEnabled: allowRegistration }));
+  const resetOff = { error: 'Password reset by e-mail is not set up on this server. Ask an Administrator.' };
+  const ipOf = (req) => req.ip || req.socket?.remoteAddress;
+
+  router.post('/api/auth/forgot-password', async (req, res) => {
+    const reset = getResetService();
+    if (!reset) return res.status(503).json(resetOff);
+    try {
+      const message = await reset.requestCode({ email: req.body?.email, ip: ipOf(req) });
+      res.json({ message });
+    } catch (err) { sendError(res, err); }
+  });
+
+  router.post('/api/auth/reset-password', async (req, res) => {
+    const reset = getResetService();
+    if (!reset) return res.status(503).json(resetOff);
+    try {
+      const { email, otp, password } = req.body || {};
+      const message = await reset.resetPassword({ email, otp, password, ip: ipOf(req) });
+      res.json({ message });
+    } catch (err) { sendError(res, err); }
+  });
+
+  router.get('/api/auth/config', (_req, res) => res.json({ registrationEnabled: allowRegistration, passwordResetEnabled: Boolean(getResetService()) }));
 
   router.get('/api/auth/me', authenticate, (req, res) => res.json({ user: req.user.toPublic() }));
 

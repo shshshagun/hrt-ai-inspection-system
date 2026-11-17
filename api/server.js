@@ -7,10 +7,14 @@ const { AuthService } = require('./auth/authService');
 const { MongoUserRepository } = require('./auth/userRepository');
 const { createAuthMiddleware } = require('./auth/middleware');
 const { createAuthRouter } = require('./auth/routes');
+const { PasswordResetService, MongoResetStore } = require('./auth/passwordReset');
+const { createMailer } = require('./auth/mailer');
 const { PERMISSIONS } = require('./auth/roles');
 const { createAssistantRouter } = require('./assistant/routes');
 
 const app = express();
+// Render puts one proxy in front of the gateway: trust it, so req.ip is the real client address (used by the rate limits).
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '15mb' }));
 
 // In-memory rate limiting to protect API from denial-of-service
@@ -54,9 +58,10 @@ app.use((req, res, next) => {
 // AUTH_ENABLED=false disables checks for local development only.
 // JWT_SECRET (>= 16 chars) signs session tokens; ADMIN_EMAIL / ADMIN_PASSWORD seed the first Administrator.
 let authService = null;
+let passwordReset = null; // e-mail OTP reset; stays null until e-mail is configured
 const authEnabled = process.env.AUTH_ENABLED !== 'false';
 const auth = createAuthMiddleware(() => authService, { enabled: authEnabled });
-app.use(createAuthRouter(() => authService, auth, { allowRegistration: process.env.ALLOW_REGISTRATION !== 'false' }));
+app.use(createAuthRouter(() => authService, auth, { allowRegistration: process.env.ALLOW_REGISTRATION !== 'false', getResetService: () => passwordReset }));
 // AI assistant (chat and natural-language search). Off until GEMINI_API_KEY is set on the server.
 app.use(createAssistantRouter({ auth, getDb: () => db }));
 if (!authEnabled) console.warn('⚠️ AUTH_ENABLED=false: every request is treated as an Administrator. Never use this in production.');
@@ -70,6 +75,15 @@ async function initAuth(database) {
   const repository = new MongoUserRepository(database);
   await repository.init();
   authService = new AuthService({ repository, jwtSecret: secret, expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
+  const mailer = createMailer(process.env);
+  if (mailer) {
+    const store = new MongoResetStore(database);
+    await store.init();
+    passwordReset = new PasswordResetService({ authService, store, mailer, pepper: secret });
+    console.log(`✅ Password reset by e-mail is on (${mailer.kind}).`);
+  } else {
+    console.warn('⚠️ Password reset by e-mail is off: set SMTP_HOST, SMTP_USER, SMTP_PASS and MAIL_FROM to turn it on.');
+  }
   // Administrator accounts come only from the server configuration, never from the API or the sign-up form.
   const admins = adminAccountsFromEnv();
   for (const account of admins) {
