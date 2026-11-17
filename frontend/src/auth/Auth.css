@@ -91,3 +91,7 @@
 .auth-error { border-radius: 10px; }
 .auth-scene__vignette { background: radial-gradient(ellipse at 50% 50%, transparent 30%, rgba(5, 7, 10, .85) 100%), linear-gradient(90deg, rgba(5, 7, 10, .75) 0%, transparent 55%); }
 .auth-hud b { color: #8fd3ff; }
+
+.auth-forgot { margin: -4px 0 14px; text-align: right; font-size: 12px; }
+.auth-forgot a { color: #8fd3ff; }
+.auth-linkbtn { background: none; border: 0; padding: 0; color: #8fd3ff; text-decoration: underline; cursor: pointer; font: inherit; }

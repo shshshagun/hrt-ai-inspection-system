@@ -59,6 +59,7 @@ export default function Login() {
         <label className="auth-field">Password
           <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
+        <p className="auth-forgot"><Link to="/forgot-password">Forgot your password?</Link></p>
         <button className="auth-btn" type="submit" disabled={busy || !email || !password}>{busy ? 'Signing in…' : 'Sign in'}</button>
         <button type="button" className="auth-btn auth-btn--ghost" onClick={() => { startDemo(); dive('/dashboard', 'Loading the demo…'); }}>Try the read-only demo</button>
         <p className="auth-hint">New here? <Link to="/register" state={{ from }}>Create an account</Link></p>

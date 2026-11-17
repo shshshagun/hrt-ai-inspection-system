@@ -110,10 +110,20 @@ class AuthService {
     const changes = {};
     if (existing.roleName !== 'Administrator') changes.role = 'Administrator';
     if (!existing.active) changes.active = true;
-    if (!(await bcrypt.compare(password, existing.passwordHash))) changes.passwordHash = await bcrypt.hash(password, this.#rounds);
+    if (!(await bcrypt.compare(password, existing.passwordHash))) { changes.passwordHash = await bcrypt.hash(password, this.#rounds); changes.passwordChangedAt = new Date(); }
     if (Object.keys(changes).length === 0) return 'unchanged';
     await this.#repo.update(existing.id, changes);
     return 'updated';
+  }
+
+  /** Looks a user up by e-mail (used by the password reset flow). */
+  findByEmail(email) { return this.#repo.findByEmail(email); }
+
+  /** Sets a new password, and ends every session that was issued before now. */
+  async setPassword(id, password) {
+    AuthService.validate({ email: 'x@y.zz', password });
+    const passwordHash = await bcrypt.hash(password, this.#rounds);
+    return this.#repo.update(id, { passwordHash, passwordChangedAt: new Date() });
   }
 
   countAdministrators() { return this.#repo.list().then((us) => us.filter((u) => u.roleName === 'Administrator' && u.active).length); }
@@ -148,6 +158,8 @@ class AuthService {
     }
     const user = await this.#repo.findById(payload.sub);
     if (!user || !user.active) throw new AuthError(401, 'Account is not available');
+    // a password change ends older sessions (compared in whole seconds, the resolution of a token's issue time)
+    if (user.passwordChangedAt && payload.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)) throw new AuthError(401, 'Your password was changed. Please log in again.');
     return user; // role is read from the store, so a role change takes effect immediately
   }
 
@@ -162,7 +174,7 @@ class AuthService {
     if (role !== undefined) changes.role = role;
     if (name !== undefined) changes.name = name.trim();
     if (active !== undefined) changes.active = Boolean(active);
-    if (password !== undefined) changes.passwordHash = await bcrypt.hash(password, this.#rounds);
+    if (password !== undefined) { changes.passwordHash = await bcrypt.hash(password, this.#rounds); changes.passwordChangedAt = new Date(); }
     const demotes = (changes.role && changes.role !== 'Administrator') || changes.active === false;
     if (demotes && target.roleName === 'Administrator') {
       const admins = (await this.#repo.list()).filter((u) => u.roleName === 'Administrator' && u.active);

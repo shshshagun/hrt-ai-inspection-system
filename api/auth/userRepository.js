@@ -57,7 +57,7 @@ class MongoUserRepository {
     if (!doc) return null;
     return new User({
       id: doc._id, email: doc.email, name: doc.name, role: doc.role,
-      passwordHash: doc.passwordHash, active: doc.active, createdAt: doc.createdAt,
+      passwordHash: doc.passwordHash, active: doc.active, createdAt: doc.createdAt, passwordChangedAt: doc.passwordChangedAt || null,
     });
   }
 
