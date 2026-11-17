@@ -133,7 +133,7 @@ const textReply = (t) => ({ ok: true, status: 200, json: async () => ({ candidat
 
 test('without GEMINI_API_KEY the assistant is off and says so', async () => {
   const s = await serve({ env: {} });
-  assert.deepEqual((await s.call('/api/assistant/status')).json, { enabled: false });
+  assert.deepEqual((await s.call('/api/assistant/status')).json, { enabled: false, providers: [] });
   const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
   assert.equal(r.status, 503);
   s.close();
@@ -288,4 +288,101 @@ test('model discovery never picks a paid model', () => {
   ];
   assert.deepEqual(usableModels(list), ['gemini-3.1-flash-lite']);
   assert.equal(usableModels(list, { allowPaid: true }).length, 3);
+});
+
+// ---------- Groq adapter and provider failover ----------
+const { toMessages, toRequest, fromResponse } = require('./groq');
+
+test('Groq adapter translates the internal request into OpenAI chat format', () => {
+  const body = {
+    systemInstruction: { parts: [{ text: 'Be brief.' }] },
+    contents: [
+      { role: 'user', parts: [{ text: 'critical cracks?' }] },
+      // a model turn produced by Gemini: thought signature, no call id
+      { role: 'model', parts: [{ functionCall: { name: 'search_detections', args: { severity: 'Critical' } }, thoughtSignature: 'SIG' }, { text: 'thinking', thought: true }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'search_detections', response: { result: { count: 1 } } } }] },
+    ],
+    tools: [{ functionDeclarations: [{ name: 'search_detections', description: 'd', parameters: { type: 'object', properties: {} } }] }],
+    toolConfig: { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: ['search_detections'] } },
+    generationConfig: { maxOutputTokens: 256 },
+  };
+  const req = toRequest('openai/gpt-oss-20b', body);
+  assert.deepEqual(req.messages.map((m) => m.role), ['system', 'user', 'assistant', 'tool']);
+  const call = req.messages[2].tool_calls[0];
+  assert.equal(call.function.arguments, '{"severity":"Critical"}');
+  assert.equal(req.messages[3].tool_call_id, call.id, 'the result is matched to the call it answers, even without an id from the source');
+  assert.equal(req.messages[3].content, '{"count":1}');
+  assert.deepEqual(req.tool_choice, { type: 'function', function: { name: 'search_detections' } });
+  assert.equal(req.max_completion_tokens, 256);
+  assert.equal(req.tools[0].type, 'function');
+  assert.ok(!JSON.stringify(req).includes('thinking'), 'internal thought text is not forwarded');
+  assert.deepEqual(toMessages({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }), [{ role: 'user', content: 'hi' }]);
+});
+
+test('Groq adapter turns tool calls and text back into the internal shape', () => {
+  const calls = fromResponse({ choices: [{ message: { content: null, tool_calls: [
+    { id: 'c1', function: { name: 'list_inspections', arguments: '{}' } },
+    { id: 'c2', function: { name: 'search_detections', arguments: 'not json' } },
+  ] }, finish_reason: 'tool_calls' }] });
+  const parts = calls.candidates[0].content.parts;
+  assert.deepEqual(parts[0].functionCall, { id: 'c1', name: 'list_inspections', args: {} });
+  assert.deepEqual(parts[1].functionCall.args, {}, 'unreadable arguments become an empty object instead of crashing');
+  assert.deepEqual(fromResponse({ choices: [{ message: { content: 'done' }, finish_reason: 'length' }] }).candidates[0], { content: { role: 'model', parts: [{ text: 'done' }] }, finishReason: 'MAX_TOKENS' });
+  assert.deepEqual(fromResponse({}), { candidates: [] });
+});
+
+const groqReply = (message) => ({ ok: true, status: 200, json: async () => ({ choices: [{ message, finish_reason: 'stop' }] }) });
+
+test('the whole tool loop runs on Groq, with the key in the Authorization header only', async () => {
+  const seen = [];
+  const s = await serve({ env: { GROQ_API_KEY: 'groq-secret-1' }, fetchImpl: async (u, init) => {
+    seen.push({ u, init });
+    const sent = JSON.parse(init.body);
+    return sent.messages.some((m) => m.role === 'tool')
+      ? groqReply({ content: 'One critical crack.' })
+      : groqReply({ content: null, tool_calls: [{ id: 'g1', function: { name: 'search_detections', arguments: '{"severity":"Critical"}' } }] });
+  } });
+  assert.deepEqual((await s.call('/api/assistant/status')).json, { enabled: true, providers: ['groq'] });
+  const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'critical cracks?' }] });
+  assert.equal(r.json.answer, 'One critical crack.');
+  assert.deepEqual(r.json.sources, ['aaaaaaaaaaaaaaaaaaaaaaa1']);
+  assert.ok(seen.every((x) => x.u === 'https://api.groq.com/openai/v1/chat/completions' && x.init.headers.Authorization === 'Bearer groq-secret-1' && !x.u.includes('groq-secret-1')));
+  assert.ok(!JSON.stringify(r.json).includes('groq-secret-1'));
+  s.close();
+});
+
+test('when Gemini is at its limit the question is answered by Groq', async () => {
+  const hosts = [];
+  const s = await serve({ env: { GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q', ASSISTANT_RETRY_MS: '0' }, fetchImpl: async (u) => {
+    hosts.push(new URL(u).host);
+    return u.includes('generativelanguage') ? { ok: false, status: 429, json: async () => ({ error: { status: 'RESOURCE_EXHAUSTED' } }) } : groqReply({ content: 'Answered by the backup.' });
+  } });
+  assert.deepEqual((await s.call('/api/assistant/status')).json.providers, ['gemini', 'groq']);
+  const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.equal(r.json.answer, 'Answered by the backup.');
+  assert.deepEqual(hosts, ['generativelanguage.googleapis.com', 'api.groq.com']);
+  s.close();
+});
+
+test('ASSISTANT_PROVIDERS sets the order, and when every provider fails the first one is reported', async () => {
+  const first = [];
+  const ordered = await serve({ env: { GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q', ASSISTANT_PROVIDERS: 'groq,gemini' }, fetchImpl: async (u) => { first.push(new URL(u).host); return groqReply({ content: 'ok' }); } });
+  await ordered.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.equal(first[0], 'api.groq.com');
+  ordered.close();
+
+  const down = await serve({ env: { GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q', ASSISTANT_RETRY_MS: '0' }, fetchImpl: async (u) =>
+    (u.includes('generativelanguage') ? { ok: false, status: 429, json: async () => ({ error: { status: 'RESOURCE_EXHAUSTED' } }) } : { ok: false, status: 503, json: async () => ({}) }) });
+  const r = await down.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.equal(r.status, 429);
+  assert.match(r.json.error, /limit/);
+  down.close();
+});
+
+test('a Groq model outside the free production list is ignored', async () => {
+  let sentModel;
+  const s = await serve({ env: { GROQ_API_KEY: 'q', GROQ_MODEL: 'llama-3.3-70b-versatile' }, fetchImpl: async (u, init) => { sentModel = JSON.parse(init.body).model; return groqReply({ content: 'ok' }); } });
+  await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.equal(sentModel, 'openai/gpt-oss-20b');
+  s.close();
 });
