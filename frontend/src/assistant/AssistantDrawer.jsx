@@ -21,7 +21,7 @@ export default function AssistantDrawer({ open, onClose }) {
   const [busy, setBusy] = useState(false);
   const [slow, setSlow] = useState(false);
   const [error, setError] = useState('');
-  const [enabled, setEnabled] = useState(null); // null = not checked yet
+  const [enabled, setEnabled] = useState(null); // null = not known yet (not checked, or the check failed)
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const demo = isDemo();
@@ -36,7 +36,8 @@ export default function AssistantDrawer({ open, onClose }) {
 
   useEffect(() => {
     if (!open || demo || enabled !== null) return;
-    assistantStatus().then((s) => setEnabled(Boolean(s.enabled))).catch(() => setEnabled(false));
+    // A failed check (server asleep, network) must not read as "not switched on": stay undecided and check again next time.
+    assistantStatus().then((st) => setEnabled(Boolean(st.enabled))).catch(() => setEnabled(null));
   }, [open, demo, enabled]);
 
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight }); }, [messages, busy]);
