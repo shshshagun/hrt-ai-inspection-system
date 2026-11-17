@@ -592,7 +592,7 @@ function createClientFallbackReport({ inspection_id, format, detections = [] }) 
  * Falls back to client-generated report if the backend is unreachable,
  * guaranteeing the user action never hangs or breaks without feedback.
  */
-export async function generateReport({ inspection_id, format = 'pdf' }) {
+export async function generateReport({ inspection_id, format = 'pdf', narrative = '', narrative_ai = false }) {
   const normFormat = (format || 'pdf').toLowerCase() === 'csv' ? 'csv' : 'pdf';
   const filename = `HRT_Report_${inspection_id || 'export'}.${normFormat}`;
 
@@ -608,7 +608,7 @@ export async function generateReport({ inspection_id, format = 'pdf' }) {
         'Content-Type': 'application/json',
         Accept: '*/*',
       },
-      body: JSON.stringify({ inspection_id, format: normFormat }),
+      body: JSON.stringify({ inspection_id, format: normFormat, ...(normFormat === 'pdf' && narrative ? { narrative, narrative_ai } : {}) }),
     });
 
     if (!res.ok) {

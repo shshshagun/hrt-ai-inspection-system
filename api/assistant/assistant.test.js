@@ -386,3 +386,29 @@ test('a Groq model outside the free production list is ignored', async () => {
   assert.equal(sentModel, 'openai/gpt-oss-20b');
   s.close();
 });
+
+// ---------- report summary draft ----------
+test('report draft works without an AI key and returns the facts it used', async () => {
+  const s = await serve({ env: {}, docs: [doc(), doc({ _id: 'aaaaaaaaaaaaaaaaaaaaaaa2', severity: 'Major', z: 80 })] });
+  const r = await s.call('/api/assistant/report-draft', { inspection_id: 'INSP-2' });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.source, 'template');
+  assert.equal(r.json.facts.total, 2);
+  assert.match(r.json.draft, /Inspection INSP-2 recorded 2 defects: 1 critical, 1 major\./);
+  assert.equal((await s.call('/api/assistant/report-draft', { inspection_id: '../x' })).status, 400);
+  assert.equal((await s.call('/api/assistant/report-draft', { inspection_id: 'NOPE' })).status, 404);
+  s.close();
+});
+
+test('with an AI key the draft is AI prose, but an invented figure falls back to the template', async () => {
+  const say = (text) => async () => ({ ok: true, status: 200, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP' }] }) });
+  const honest = await serve({ env: { GEMINI_API_KEY: 'k' }, fetchImpl: say('Inspection INSP-2 recorded 1 defect, 1 of them critical. All are AI predictions pending engineer review.') });
+  const a = await honest.call('/api/assistant/report-draft', { inspection_id: 'INSP-2' });
+  assert.equal(a.json.source, 'ai');
+  honest.close();
+  const liar = await serve({ env: { GEMINI_API_KEY: 'k' }, fetchImpl: say('Inspection INSP-2 recorded 99 defects.') });
+  const b = await liar.call('/api/assistant/report-draft', { inspection_id: 'INSP-2' });
+  assert.equal(b.json.source, 'template');
+  assert.match(b.json.note, /not in the findings/);
+  liar.close();
+});

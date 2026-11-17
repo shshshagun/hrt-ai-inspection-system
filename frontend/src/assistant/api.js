@@ -38,3 +38,6 @@ export const askAssistant = (messages) => call('/api/assistant/chat', { messages
 
 /** Natural-language search. Returns { interpreted: string[], count, results }. */
 export const aiSearch = (query) => call('/api/assistant/search', { query });
+
+/** Draft summary for a report. Returns { draft, source: 'ai' | 'template', note?, facts }. */
+export const reportDraft = (inspection_id) => call('/api/assistant/report-draft', { inspection_id });

@@ -7,9 +7,10 @@
  */
 
 import { useState } from 'react';
-import { FileText, Download, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { FileText, Download, Loader2, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { useReports, generateReport } from '../../hooks/useApi';
 import { useToast } from '../../ui/contexts';
+import ReportDraftPanel from './ReportDraftPanel';
 import './SharedPages.css';
 
 export default function Reports() {
@@ -17,6 +18,7 @@ export default function Reports() {
   const toast = useToast();
   // Track per-report download state: { [reportId]: 'idle' | 'loading' | 'done' | 'error' }
   const [dlState, setDlState] = useState({});
+  const [drafting, setDrafting] = useState(null); // the report whose summary is being written
 
   async function handleDownload(report, format) {
     const key = `${report.id}-${format}`;
@@ -151,6 +153,9 @@ export default function Reports() {
                 >
                   {r.status}
                 </span>
+                <button type="button" className="sp-dl-btn" onClick={() => setDrafting(r)} aria-label={`Write a summary and download the PDF for ${r.id}`}>
+                  <Sparkles size={14} /> Summary + PDF
+                </button>
                 <DownloadBtn report={r} format="pdf" label="PDF" />
                 <DownloadBtn report={r} format="csv" label="CSV" />
               </div>
@@ -158,6 +163,7 @@ export default function Reports() {
           ))}
         </div>
       )}
+      {drafting && <ReportDraftPanel inspectionId={drafting.inspectionId} title={drafting.title} onClose={() => setDrafting(null)} />}
     </div>
   );
 }

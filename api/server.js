@@ -356,7 +356,7 @@ app.get('/api/inspections', ...auth.guard(PERMISSIONS.INSPECTIONS_READ), async (
             ? `Live Webcam Session — ${inspId}`
             : r.videoName
               ? `${r.videoName} (${inspId})`
-              : `ROV Subsea Survey — ${inspId}`,
+              : `Video inspection — ${inspId}`,
         date: r.startTime ? new Date(r.startTime).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
         rov: isPhoto
           ? 'Still Photo Batch · YOLOv8n-seg'
@@ -484,7 +484,14 @@ function extractImageBuffer(dataUri) {
  * Generates an official binary PDF report containing KPIs, spatial summary,
  * and defect cards with embedded crack photos and annotations.
  */
-function generateInspectionPdf({ inspectionId, detections = [], now = new Date() }) {
+/** Text safe for PDFKit's built-in Helvetica (Latin-1): common typographic characters are mapped, anything else becomes '?'. */
+function pdfSafe(text) {
+  return String(text || '')
+    .replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...')
+    .replace(/[^\n\x20-\x7E\xA0-\xFF]/g, '?');
+}
+
+function generateInspectionPdf({ inspectionId, detections = [], now = new Date(), narrative = '', narrativeMeta = {} }) {
   return new Promise((resolve, reject) => {
     if (!PDFDocument) {
       return reject(new Error('PDFKit library is not installed or available'));
@@ -541,7 +548,7 @@ function generateInspectionPdf({ inspectionId, detections = [], now = new Date()
       ? 'Still Photo Batch Upload (YOLOv8n-seg)'
       : isWebcam
         ? 'Live Optical Camera Stream (YOLOv8n-seg)'
-        : 'Subsea ROV Autonomous Scanner (YOLOv8n-seg)';
+        : 'Inspection video (YOLOv8n-seg)';
 
     const minZ = detections.reduce((min, d) => Math.min(min, Number(d.z || d.coord_z || d.chainage_z || 0)), Infinity);
     const maxZ = detections.reduce((max, d) => Math.max(max, Number(d.z || d.coord_z || d.chainage_z || 0)), -Infinity);
@@ -565,13 +572,29 @@ function generateInspectionPdf({ inspectionId, detections = [], now = new Date()
     // Column 2
     doc.font('Helvetica').fillColor(mutedInk).text('Date / Timestamp:', 330, metaY + 8).font('Helvetica-Bold').fillColor(darkInk).text(new Date(now).toISOString().slice(0, 10), 415, metaY + 8);
     doc.font('Helvetica').fillColor(mutedInk).text('Chainage Range:', 330, metaY + 22).font('Helvetica-Bold').fillColor(darkInk).text(chainageSpan, 415, metaY + 22);
-    doc.font('Helvetica').fillColor(mutedInk).text('Audit Status:', 330, metaY + 36).font('Helvetica-Bold').fillColor(secondaryColor).text('COMPLETED & VERIFIED', 415, metaY + 36);
+    doc.font('Helvetica').fillColor(mutedInk).text('Audit Status:', 330, metaY + 36).font('Helvetica-Bold').fillColor(secondaryColor).text('Pending engineer review', 415, metaY + 36, { width: 140 });
 
     doc.y = metaY + 62;
 
+    // ── Summary (drafted from the findings, edited by an engineer) ──
+    const summaryText = pdfSafe(narrative).trim();
+    if (summaryText) {
+      doc.fillColor(darkInk).fontSize(12).font('Helvetica-Bold').text('Summary', 40, doc.y);
+      doc.moveTo(40, doc.y + 2).lineTo(555, doc.y + 2).strokeColor(borderStroke).lineWidth(1).stroke();
+      doc.y += 8;
+      doc.fillColor(darkInk).fontSize(9).font('Helvetica').text(summaryText, 40, doc.y, { width: contentWidth, lineGap: 2 });
+      doc.moveDown(0.4);
+      const by = pdfSafe(narrativeMeta.by || '');
+      doc.fillColor(mutedInk).fontSize(7.5).font('Helvetica-Oblique')
+        .text(`${narrativeMeta.ai ? 'Drafted with AI assistance from the findings in this report and' : 'Written and'} reviewed by ${by || 'the report author'}.`, 40, doc.y, { width: contentWidth });
+      doc.y += 12;
+    }
+
     // ── Inspection KPIs Quad ──
-    const critCount = detections.filter(d => (d.severity || '').toLowerCase() === 'critical' || Number(d.confidence || 0) >= 0.85).length;
-    const majCount = detections.filter(d => (d.severity || '').toLowerCase() === 'major' || (Number(d.confidence || 0) >= 0.70 && Number(d.confidence || 0) < 0.85)).length;
+    // severity as stored; the confidence rule applies only to records that have none (same rule as the map and bars below)
+    const sevOf = (d) => String(d.severity || (Number(d.confidence || 0) >= 0.85 ? 'Critical' : 'Major')).toLowerCase();
+    const critCount = detections.filter(d => sevOf(d) === 'critical').length;
+    const majCount = detections.filter(d => sevOf(d) === 'major').length;
     const totalAreaMm2 = detections.reduce((sum, d) => sum + (Number(d.crack_area_mm2) || (Number(d.crack_width_mm || 0) * Number(d.crack_length_mm || 0)) || Number(d.area_mm2) || 0), 0);
 
     doc.fillColor(darkInk).fontSize(12).font('Helvetica-Bold').text('2. Defect Severity & Quantitative KPIs', 40, doc.y);
@@ -582,8 +605,8 @@ function generateInspectionPdf({ inspectionId, detections = [], now = new Date()
     const kpiW = (contentWidth - 24) / 4;
     const kpis = [
       { label: 'TOTAL DEFECTS', val: String(detections.length), color: primaryColor, sub: 'Confirmed findings' },
-      { label: 'CRITICAL SEVERITY', val: String(critCount), color: criticalColor, sub: 'Immediate grouting' },
-      { label: 'MAJOR ANOMALIES', val: String(majCount), color: majorColor, sub: 'Scheduled repair' },
+      { label: 'CRITICAL SEVERITY', val: String(critCount), color: criticalColor, sub: 'Highest severity class' },
+      { label: 'MAJOR ANOMALIES', val: String(majCount), color: majorColor, sub: 'Second severity class' },
       { label: 'TOTAL CRACK AREA', val: totalAreaMm2 > 0 ? `${Math.round(totalAreaMm2)} mm²` : '0 mm²', color: secondaryColor, sub: `${(totalAreaMm2 / 1e6).toFixed(4)} m² surface` }
     ];
 
@@ -596,6 +619,65 @@ function generateInspectionPdf({ inspectionId, detections = [], now = new Date()
     });
 
     doc.y = kpiY + 56;
+
+    // ── Defect map (the lining unrolled) and severity bars, drawn as vector graphics ──
+    {
+      if (doc.y + 250 > 780) { doc.addPage(); doc.y = 45; }
+      doc.fillColor(darkInk).fontSize(12).font('Helvetica-Bold').text('Defect Map and Severity Mix', 40, doc.y);
+      doc.moveTo(40, doc.y + 2).lineTo(555, doc.y + 2).strokeColor(borderStroke).lineWidth(1).stroke();
+      doc.y += 10;
+      const px = 78; const pw = 460; const ph = 120; const py = doc.y;
+      doc.rect(px, py, pw, ph).fillAndStroke('#ffffff', borderStroke);
+      // grid and axis labels: chainage across, clock position down (12 o'clock crown at the top)
+      doc.fontSize(6.5).font('Helvetica').fillColor(mutedInk);
+      for (let m = 0; m <= 250; m += 50) {
+        const gx = px + (m / 250) * pw;
+        doc.moveTo(gx, py).lineTo(gx, py + ph).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+        doc.fillColor(mutedInk).text(`${m} m`, gx - 10, py + ph + 3, { width: 20, align: 'center' });
+      }
+      [['12', 0], ['3', 90], ['6', 180], ['9', 270], ['12', 360]].forEach(([label, deg]) => {
+        const gy = py + (deg / 360) * ph;
+        doc.moveTo(px, gy).lineTo(px + pw, gy).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+        doc.fillColor(mutedInk).text(label, px - 14, gy - 3, { width: 10, align: 'right' });
+      });
+      const sevColor = (d) => {
+        const sev = String(d.severity || (Number(d.confidence || 0) >= 0.85 ? 'Critical' : 'Major')).toLowerCase();
+        return sev === 'critical' ? criticalColor : sev === 'major' ? majorColor : sev === 'minor' ? minorColor : '#0369a1';
+      };
+      let drawn = 0;
+      detections.forEach((d) => {
+        const z = Number(d.z || d.coord_z || d.chainage_z || 0);
+        if (!(z > 0.05)) return; // a chainage of 0 is how a missing position is stored
+        const x = Number(d.x) || 0; const y = Number(d.y) || 0;
+        const angle = (x || y) ? ((Math.atan2(x, y) * 180) / Math.PI + 360) % 360 : 0;
+        const area = Number(d.crack_area_mm2 || d.area_mm2 || 0);
+        const r = 2 + Math.min(2.5, Math.sqrt(area || 400) / 25);
+        doc.circle(px + Math.min(1, z / 250) * pw, py + (angle / 360) * ph, r).fillOpacity(0.85).fill(sevColor(d));
+        drawn += 1;
+      });
+      doc.fillOpacity(1);
+      doc.fillColor(mutedInk).fontSize(7).font('Helvetica-Oblique')
+        .text(`Chainage from the intake across, clock position down. ${drawn} of ${detections.length} defects shown${detections.length - drawn > 0 ? `; ${detections.length - drawn} without a recorded position are left out` : ''}. Chainage of video inspections is estimated from the video time.`, px, py + ph + 14, { width: pw });
+      doc.y = py + ph + 36;
+
+      // severity bars
+      const tally = { Critical: 0, Major: 0, Minor: 0, Info: 0 };
+      detections.forEach((d) => {
+        const sev = String(d.severity || (Number(d.confidence || 0) >= 0.85 ? 'Critical' : 'Major')).toLowerCase();
+        const key = sev === 'critical' ? 'Critical' : sev === 'major' ? 'Major' : sev === 'minor' ? 'Minor' : 'Info';
+        tally[key] += 1;
+      });
+      const peak = Math.max(1, ...Object.values(tally));
+      const colors = { Critical: criticalColor, Major: majorColor, Minor: minorColor, Info: '#0369a1' };
+      const barsTop = doc.y;
+      Object.entries(tally).forEach(([name, n], i) => {
+        const by = barsTop + i * 14;
+        doc.fillColor(darkInk).fontSize(8).font('Helvetica').text(name, 48, by + 2, { width: 60 });
+        doc.rect(110, by, Math.max(1, (n / peak) * 360), 10).fill(colors[name]);
+        doc.fillColor(darkInk).fontSize(8).font('Helvetica-Bold').text(String(n), 116 + (n / peak) * 360, by + 2);
+      });
+      doc.y = barsTop + 4 * 14 + 10;
+    }
 
     // ── Chainage Spatial Risk Analytics (25m Intervals) ──
     doc.fillColor(darkInk).fontSize(12).font('Helvetica-Bold').text('3. Chainage Spatial Risk Distribution (25m Bins)', 40, doc.y);
@@ -828,10 +910,13 @@ app.post('/api/reports/generate', ...auth.guard(PERMISSIONS.REPORTS_GENERATE), a
     }
 
     // Binary PDF Generation via PDFKit
+    const narrative = typeof req.body?.narrative === 'string' ? req.body.narrative.slice(0, 4000) : '';
     const pdfBuffer = await generateInspectionPdf({
       inspectionId: inspection_id,
       detections,
-      now
+      now,
+      narrative,
+      narrativeMeta: { by: req.user?.name || req.user?.email || '', ai: req.body?.narrative_ai === true },
     });
 
     res.setHeader('Content-Type', 'application/pdf');
