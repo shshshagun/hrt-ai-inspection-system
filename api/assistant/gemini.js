@@ -50,7 +50,7 @@ function usableModels(list, { allowPaid = false } = {}) {
   return rows.sort((a, b) => rank(a) - rank(b) || version(b) - version(a) || (/preview|exp/.test(a) ? 1 : 0) - (/preview|exp/.test(b) ? 1 : 0));
 }
 
-function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeoutMs = 25000, retryDelayMs = 1200, allowPaid = false }) {
+function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeoutMs = 45000, retryDelayMs = 1200, allowPaid = false }) {
   let active = model;
   let discovered = false;
   const candidates = () => [active, ...[model, ...fallbacks].filter((m) => m !== active)].filter((m, i, a) => a.indexOf(m) === i);
