@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const { PERMISSIONS } = require('../auth/roles');
-const { createGemini } = require('./gemini');
+const { createGemini, FREE_MODELS, isFree } = require('./gemini');
 const { runAgent, runSearch, toolExecutor, AssistantError } = require('./service');
 
 const MAX_MESSAGES = 12;
@@ -27,11 +27,19 @@ function createAssistantRouter({ auth, getDb, env = process.env, fetchImpl }) {
   const router = express.Router();
   const apiKey = (env.GEMINI_API_KEY || '').trim();
   const enabled = apiKey.length > 0;
+  // Only free-tier models are used unless GEMINI_ALLOW_PAID=true, so a key can never be charged by accident.
+  const allowPaid = env.GEMINI_ALLOW_PAID === 'true';
+  const wanted = [env.GEMINI_MODEL, ...(env.GEMINI_FALLBACK_MODELS || '').split(',')].map((s) => (s || '').trim()).filter(Boolean);
+  const skipped = allowPaid ? [] : wanted.filter((m) => !isFree(m));
+  if (enabled && skipped.length) console.warn(`Ignoring non-free Gemini model(s) ${skipped.join(', ')}; using free-tier models. Set GEMINI_ALLOW_PAID=true to allow others.`);
+  const chosen = [...(allowPaid ? wanted : wanted.filter(isFree)), ...FREE_MODELS].filter((m, i, all) => all.indexOf(m) === i);
   const generate = enabled ? createGemini({
     apiKey,
-    model: env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
-    fallbacks: (env.GEMINI_FALLBACK_MODELS || 'gemini-2.5-flash').split(',').map((s) => s.trim()).filter(Boolean),
+    model: chosen[0],
+    fallbacks: chosen.slice(1),
     fetchImpl,
+    allowPaid,
+    retryDelayMs: env.ASSISTANT_RETRY_MS !== undefined ? Number(env.ASSISTANT_RETRY_MS) : 1200,
   }) : null;
 
   const perUser = windowLimiter(Number(env.ASSISTANT_RPM_USER) || 8);
