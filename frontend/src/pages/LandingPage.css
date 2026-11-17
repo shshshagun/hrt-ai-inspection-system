@@ -85,9 +85,9 @@
 
 /* ending */
 .lp-end { min-height: 90svh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; text-align: center; padding: 14vh 20px; }
-.lp-giant { display: inline-flex; align-items: center; gap: 3vw; padding: 2vw 5vw; border: 1px solid var(--line); border-radius: 999px; background: rgba(5, 7, 10, .5); color: var(--text); font-size: clamp(44px, 9.5vw, 170px); line-height: 1; transition: background .35s, color .35s, border-color .35s, gap .35s; }
+.lp-giant { display: inline-flex; align-items: center; gap: 1.5vw; padding: 1vw 2.5vw; border: 1px solid var(--line); border-radius: 999px; background: rgba(5, 7, 10, .5); color: var(--text); font-size: clamp(24px, 4.75vw, 85px); line-height: 1; transition: background .35s, color .35s, border-color .35s, gap .35s; }
 .lp-giant i { font-style: normal; color: var(--sky); transition: color .35s; }
-.lp-giant:hover { background: var(--sky); color: var(--ink); border-color: var(--sky); gap: 4.5vw; }
+.lp-giant:hover { background: var(--sky); color: var(--ink); border-color: var(--sky); gap: 2.2vw; }
 .lp-giant:hover i { color: var(--ink); }
 .lp-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 28px clamp(20px, 4vw, 56px); border-top: 1px solid var(--line); background: var(--ink); font-size: 11px; }
 
@@ -120,7 +120,7 @@
 .lp-pill.lp-pill--solid:hover { background: linear-gradient(180deg, #d4efff, #8fd3ff); --base: #3e86b3; }
 .lp-pill { --base: #0c1219; --depth: 4px; background: linear-gradient(180deg, #131b24, #0b1118); box-shadow: 0 var(--depth) 0 var(--base), 0 calc(var(--depth) + 6px) 14px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .1); }
 .lp-pill.lp-pill--solid { color: #05070a; }
-.lp-giant { --base: #0c1219; --depth: 10px; background: linear-gradient(180deg, #121a23, #0a1017); box-shadow: 0 var(--depth) 0 var(--base), 0 calc(var(--depth) + 12px) 30px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .12); }
+.lp-giant { --base: #0c1219; --depth: 7px; background: linear-gradient(180deg, #121a23, #0a1017); box-shadow: 0 var(--depth) 0 var(--base), 0 calc(var(--depth) + 12px) 30px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .12); }
 .lp-giant:hover { --base: #3e86b3; background: linear-gradient(180deg, #b6e4ff, #8fd3ff); }
 .lp-chapter__num, .lp-chapter__body, .lp-hero h1 { will-change: transform; }
 
