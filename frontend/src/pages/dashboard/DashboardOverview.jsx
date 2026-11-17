@@ -10,7 +10,7 @@ import ChainageStrip from '../../components/insight/ChainageStrip';
 import ChainageScrubber from '../../components/insight/ChainageScrubber';
 import WhatChanged from '../../components/insight/WhatChanged';
 import Skeleton from '../../ui/Skeleton';
-import { buildBrief, chainageOf, TUNNEL_LENGTH_M } from '../../utils/defectHistory';
+import { buildBrief, chainageOf, isLocated, TUNNEL_LENGTH_M } from '../../utils/defectHistory';
 import '../../components/insight/insight.css';
 import '../../components/insight/console.css';
 import './DashboardOverview.css';
@@ -31,6 +31,8 @@ export default function DashboardOverview() {
   const [chainage, setChainage] = useState(TUNNEL_LENGTH_M / 2);
 
   const total = detData.length;
+  const located = useMemo(() => detData.filter(isLocated), [detData]); // the rest has no recorded position
+  const unlocatedCount = total - located.length;
   const critical = detData.filter((d) => d.severity === 'Critical').length;
   const maxChainage = total ? Math.max(...detData.map(chainageOf)) : 0;
   const coverage = Math.min(100, Math.round((maxChainage / TUNNEL_LENGTH_M) * 100));
@@ -39,10 +41,10 @@ export default function DashboardOverview() {
   const firstName = (user?.name || '').split(' ')[0];
   const brief = useMemo(() => buildBrief(detData), [detData]);
 
-  const near = useMemo(() => detData
+  const near = useMemo(() => located
     .map((d) => ({ d, gap: Math.abs(chainageOf(d) - chainage) }))
     .filter((x) => x.gap <= WINDOW_M)
-    .sort((a, b) => a.gap - b.gap), [detData, chainage]);
+    .sort((a, b) => a.gap - b.gap), [located, chainage]);
 
   const kpis = [
     { label: 'Inspections', value: <CountUp value={inspections.length} />, sub: 'sessions on record' },
@@ -68,7 +70,7 @@ export default function DashboardOverview() {
         </div>
       </header>
 
-      <ChainageScrubber defects={detData} value={chainage} onChange={setChainage} kpis={kpis} />
+      <ChainageScrubber defects={located} value={chainage} onChange={setChainage} kpis={kpis} />
 
       <WhatChanged detections={detData} onJump={setChainage} />
 
@@ -79,8 +81,9 @@ export default function DashboardOverview() {
             <Skeleton height={320} style={{ borderRadius: '50%', maxWidth: 320 }} />
           ) : (
             <>
-              <TunnelRadar defects={detData} focus={chainage} window={WINDOW_M} />
-              <ChainageStrip defects={detData} />
+              <TunnelRadar defects={located} focus={chainage} window={WINDOW_M} />
+              <ChainageStrip defects={located} />
+              {unlocatedCount > 0 && <p className="near__empty">{unlocatedCount} detection{unlocatedCount === 1 ? ' has' : 's have'} no recorded position, so {unlocatedCount === 1 ? 'it is' : 'they are'} not drawn here.</p>}
             </>
           )}
         </section>
@@ -88,7 +91,7 @@ export default function DashboardOverview() {
         <section className="console-panel" aria-label={`Inside the tunnel at ${chainage} metres`}>
           <h2>Inside, at {chainage} m</h2>
           <Suspense fallback={<Skeleton height={260} />}>
-            <MiniTwin chainage={chainage} defects={detData} height={260} />
+            <MiniTwin chainage={chainage} defects={located} height={260} />
           </Suspense>
           {near.length ? (
             <ul className="near" aria-label="Defects near the marker">

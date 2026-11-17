@@ -109,7 +109,7 @@ function numbersMatch(text, facts) {
 const SYSTEM = [
   'You write the summary section of a hydropower tunnel inspection report for engineers.',
   'Use only the facts in the JSON the user sends. Never invent numbers, locations, causes or dates.',
-  'Do not recommend repairs, schedules or priorities. State that every finding is an AI prediction awaiting engineer review.',
+  'Do not recommend repairs, schedules or priorities. Say once, in the final sentence only, that every finding is an AI prediction awaiting engineer review; never repeat that sentence.',
   'Mention that "not seen again" does not prove a repair, if a comparison is present.',
   'Write 3 short plain-text paragraphs, at most 200 words in total, with no markdown, bullet points or headings.',
 ].join(' ');

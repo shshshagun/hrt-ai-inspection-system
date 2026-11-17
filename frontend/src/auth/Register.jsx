@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './useAuth';
 import { useDive } from '../ui/contexts';
 import { WakeNotice } from '../ui/Sonar';
+import { usePageTitle } from '../ui/usePageTitle';
 import './Auth.css';
 
 const TunnelScene = lazy(() => import('./TunnelScene'));
@@ -10,6 +11,7 @@ const TunnelScene = lazy(() => import('./TunnelScene'));
 export default function Register() {
   const { user, register, loading } = useAuth();
   const { dive } = useDive();
+  usePageTitle('Create an account');
   const location = useLocation();
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState('');

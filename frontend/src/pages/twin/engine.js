@@ -137,8 +137,8 @@ export function createTwinEngine(container, callbacks = {}) {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHeatUv = uv;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform sampler2D uHeat;\nuniform float uHeatAmt;\nvarying vec2 vHeatUv;')
-        .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 heatSample = texture2D(uHeat, vHeatUv);\ndiffuseColor.rgb = mix(diffuseColor.rgb, heatSample.rgb, heatSample.a * 0.3 * uHeatAmt);')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += heatSample.rgb * heatSample.a * 0.22 * uHeatAmt;');
+        .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 heatSample = texture2D(uHeat, vHeatUv);\nfloat heatA = min(heatSample.a, 0.45);\ndiffuseColor.rgb = mix(diffuseColor.rgb, heatSample.rgb, heatA * 0.3 * uHeatAmt);')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += heatSample.rgb * heatA * 0.18 * uHeatAmt;');
     };
     tunnelMesh = new THREE.Mesh(geometry, tunnelMat);
     world.add(tunnelMesh);

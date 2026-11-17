@@ -80,8 +80,8 @@ export function paintHeat(canvas, defects, length) {
       ctx.translate(cx, cy);
       ctx.scale(1, ry / rx);
       const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
-      grad.addColorStop(0, `rgba(${r},${g},${b},0.8)`);
-      grad.addColorStop(0.55, `rgba(${r},${g},${b},0.28)`);
+      grad.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
+      grad.addColorStop(0.55, `rgba(${r},${g},${b},0.16)`);
       grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
       ctx.fillStyle = grad;
       ctx.fillRect(-rx, -rx, rx * 2, rx * 2);
