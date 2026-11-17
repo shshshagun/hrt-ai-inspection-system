@@ -3,13 +3,14 @@ import { Outlet, NavLink, useLocation, useNavigate, Link } from 'react-router-do
 import {
   LayoutDashboard, Box, ClipboardList, Video, Zap,
   MapPin, FileText, HardDrive, Settings, Menu, X, ChevronRight, Compass,
-  PlusCircle, Users as UsersIcon, LogOut, Sun, Moon, Search
+  PlusCircle, Users as UsersIcon, LogOut, Sun, Moon, Search, Sparkles
 } from 'lucide-react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useAuth } from '../auth/useAuth';
 import CommandPalette from '../ui/CommandPalette';
 import { PERMISSIONS } from '../auth/permissions';
 import { useTheme } from '../ui/theme';
+import AssistantDrawer from '../assistant/AssistantDrawer';
 import './DashboardLayout.css';
 import '../auth/Auth.css';
 
@@ -66,6 +67,7 @@ function getBreadcrumbs(pathname) {
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const { user, can, logout, authEnabled } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -76,6 +78,7 @@ export default function DashboardLayout() {
   return (
     <div className="db-layout">
       <CommandPalette />
+      <AssistantDrawer open={aiOpen} onClose={() => setAiOpen(false)} />
       <span key={`sweep-${location.pathname}`} className="route-sweep" aria-hidden="true" />
       {/* ── Sidebar ── */}
       <aside className={`db-sidebar ${sidebarOpen ? 'db-sidebar--open' : ''}`}>
@@ -169,6 +172,9 @@ export default function DashboardLayout() {
           <div className="db-topbar__right">
             <button type="button" className="db-tool" onClick={() => window.dispatchEvent(new Event('hrt:palette'))} aria-label="Search pages and defects (Ctrl+K)" title="Search (Ctrl+K)">
               <Search size={15} /><span>Search</span><kbd>Ctrl K</kbd>
+            </button>
+            <button type="button" className="db-tool" onClick={() => setAiOpen((o) => !o)} aria-expanded={aiOpen} aria-label="Ask the assistant" title="Ask HRT about the defects">
+              <Sparkles size={15} /><span>Ask HRT</span>
             </button>
             <button type="button" className="db-tool db-tool--icon" onClick={toggle} aria-label={theme === 'light' ? 'Switch to the dark theme' : 'Switch to the light theme'} title={theme === 'light' ? 'Dark theme' : 'Light theme (good for printing)'}>
               {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
