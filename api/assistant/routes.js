@@ -30,7 +30,7 @@ function createAssistantRouter({ auth, getDb, env = process.env, fetchImpl }) {
   const generate = enabled ? createGemini({
     apiKey,
     model: env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
-    fallbacks: (env.GEMINI_FALLBACK_MODELS || 'gemini-2.5-flash').split(',').map((s) => s.trim()).filter(Boolean),
+    fallbacks: (env.GEMINI_FALLBACK_MODELS || 'gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-flash-latest').split(',').map((s) => s.trim()).filter(Boolean),
     fetchImpl,
     retryDelayMs: env.ASSISTANT_RETRY_MS !== undefined ? Number(env.ASSISTANT_RETRY_MS) : 1200,
   }) : null;

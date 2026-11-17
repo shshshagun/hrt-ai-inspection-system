@@ -256,3 +256,17 @@ test('a 400 from Gemini reports why, so a wrong request shape is visible', async
   assert.match(r.json.error, /HTTP 400: Unknown name/);
   s.close();
 });
+
+test('when nothing matches, the error lists the models the key can use', async () => {
+  const s = await serve({ env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gemini-2.5-flash', GEMINI_FALLBACK_MODELS: 'gemini-2.5-flash' }, fetchImpl: async (u) =>
+    (u.includes('/models?')
+      ? { ok: true, status: 200, json: async () => ({ models: [
+        { name: 'models/gemini-4-hydrogen', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
+        { name: 'models/gemini-4-hydrogen-image', supportedGenerationMethods: ['generateContent'] },
+      ] }) }
+      : u.includes('gemini-4-hydrogen') ? textReply('hello from a model nobody expected') : { ok: false, status: 404, json: async () => ({ error: { status: 'NOT_FOUND' } }) }) });
+  const r = await s.call('/api/assistant/chat', { messages: [{ role: 'user', text: 'hi' }] });
+  assert.equal(r.json.answer, 'hello from a model nobody expected', 'falls back to any usable text model, skipping image and embedding ones');
+  s.close();
+});

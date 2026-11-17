@@ -31,18 +31,17 @@ function classify(status, body) {
   return new GeminiError('network', `The AI service answered unexpectedly (HTTP ${status}${detail(body)}).`, 502);
 }
 
-/** Picks the newest plain Flash / Flash-Lite model that supports generateContent, preferring Flash-Lite on a tie. */
-function pickModel(list) {
-  const scored = (list || [])
+const SKIP = /image|tts|embed|live|audio|robot|veo|imagen|computer|vision|aqa|learnlm|gemma|native/i;
+
+/** Names of the models that can generate text for this key, best choice first: Flash-Lite, then Flash, then anything else; newest first. */
+function usableModels(list) {
+  const rows = (list || [])
     .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
-    .map((m) => {
-      const name = String(m.name || '').replace(/^models\//, '');
-      const hit = name.match(/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$/);
-      return hit ? { name, version: parseFloat(hit[1]), lite: Boolean(hit[2]) } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.version - a.version || Number(b.lite) - Number(a.lite));
-  return scored[0]?.name || null;
+    .map((m) => String(m.name || '').replace(/^models\//, ''))
+    .filter((name) => /^gemini-/.test(name) && !SKIP.test(name));
+  const rank = (n) => (/-flash-lite/.test(n) ? 0 : /-flash/.test(n) ? 1 : 2);
+  const version = (n) => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1]) || 0;
+  return rows.sort((a, b) => rank(a) - rank(b) || version(b) - version(a) || (/preview|exp/.test(a) ? 1 : 0) - (/preview|exp/.test(b) ? 1 : 0));
 }
 
 function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeoutMs = 25000, retryDelayMs = 1200 }) {
@@ -50,13 +49,16 @@ function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeou
   let discovered = false;
   const candidates = () => [active, ...[model, ...fallbacks].filter((m) => m !== active)].filter((m, i, a) => a.indexOf(m) === i);
 
+  let available = [];
   async function discover() {
     discovered = true; // ask Google at most once per server start
     try {
       const res = await fetchImpl(`${BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': apiKey } });
-      if (!res.ok) return null;
-      return pickModel((await res.json().catch(() => ({}))).models);
-    } catch { return null; }
+      if (!res.ok) { console.error(`Gemini model list answered HTTP ${res.status}`); return null; }
+      available = usableModels((await res.json().catch(() => ({}))).models);
+      console.warn(`Gemini models this key can use: ${available.slice(0, 15).join(', ') || 'none'}`);
+      return available[0] || null;
+    } catch (err) { console.error('Gemini model list failed:', err?.message); return null; }
   }
 
   async function once(m, body) {
@@ -117,9 +119,10 @@ function createGemini({ apiKey, model, fallbacks = [], fetchImpl = fetch, timeou
         return json;
       }
     }
-    last.publicMessage = `The configured AI model was not found (tried: ${tried.join(', ')}). An administrator should set GEMINI_MODEL to a model listed in Google AI Studio.`;
+    const usable = available.slice(0, 8);
+    last.publicMessage = `The configured AI model was not found (tried: ${tried.join(', ')}). ${usable.length ? `Models this key can use: ${usable.join(', ')}. Set GEMINI_MODEL to one of them.` : 'Google did not list any usable model for this key, so check the key in Google AI Studio.'}`;
     throw last;
   };
 }
 
-module.exports = { createGemini, GeminiError, pickModel };
+module.exports = { createGemini, GeminiError, usableModels };
