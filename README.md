@@ -17,18 +17,23 @@
 2. [The Problem](#-the-problem)
 3. [Our Solution](#-our-solution)
 4. [How It Works — Full Workflow](#-how-it-works--full-workflow)
-5. [Tech Stack](#-tech-stack)
-6. [Project Structure](#-project-structure)
-7. [Quick Start](#-quick-start)
-8. [Testing a New Video](#-testing-a-new-video)
-9. [AI Model Details](#-ai-model-details)
-10. [API Reference](#-api-reference)
-11. [Performance Results](#-performance-results)
-12. [Real-World Limitations](#-real-world-limitations)
-13. [Challenges Faced](#-challenges-faced)
-14. [What This Project Lacks](#-what-this-project-lacks)
-15. [Future Scope](#-future-scope)
-16. [References](#-references)
+5. [Feature Overview](#-feature-overview)
+6. [Tech Stack](#-tech-stack)
+7. [Project Structure](#-project-structure)
+8. [Quick Start](#-quick-start)
+9. [Testing](#-testing)
+10. [Live Deployment and Demo Mode](#-live-deployment)
+11. [Authentication and Roles](#-authentication-and-roles)
+12. [Ask HRT — AI Assistant](#-ask-hrt--ai-assistant)
+13. [Testing a New Video](#-testing-a-new-video)
+14. [AI Model Details](#-ai-model-details)
+15. [API Reference](#-api-reference)
+16. [Performance Results](#-performance-results)
+17. [Real-World Limitations](#-real-world-limitations)
+18. [Challenges Faced](#-challenges-faced)
+19. [What This Project Lacks](#-what-this-project-lacks)
+20. [Future Scope](#-future-scope)
+21. [References](#-references)
 
 ---
 
@@ -84,7 +89,7 @@ We replace both traditional methods with an **autonomous underwater ROV equipped
 The ROV drives through the flooded tunnel (plant stays running, no divers), and our system:
 
 1. Processes the live or recorded video feed.
-2. Detects every crack and structural defect frame by frame using a custom-trained YOLOv8 model.
+2. Detects every crack frame by frame with a YOLOv8n-seg crack-segmentation model (see [AI Model Details](#-ai-model-details) for its provenance).
 3. Calculates the physical size of each defect using calibrated camera optics.
 4. Translates each detection into a precise 3D position inside the tunnel.
 5. Sends all data to a database and renders it live on a 3D digital twin visible in any browser.
@@ -113,8 +118,8 @@ Here is the complete journey of data from the ROV camera to the 3D twin:
 
 The ROV records HD video of the tunnel wall as it moves along the tunnel axis.
 
-- Each video frame is passed through our **YOLOv8s** model.
-- The model draws a bounding box around every detected crack.
+- Each video frame is passed through the **YOLOv8n-seg** crack model (in the browser through ONNX Runtime Web, or from Python with `predict.py`).
+- The model returns a box and a mask for every detected crack; the browser pipeline scans five overlapping 640 × 640 tiles per frame, merges overlaps and tracks each crack across frames so it is counted once.
 - **Optical math** converts pixel coordinates to real-world millimeters:
   - `crack_width_mm = (bbox_width_pixels × pixel_pitch_mm × distance_mm) / focal_length_mm`
   - This uses the camera's known focal length (f), working distance (D), and sensor pixel pitch.
@@ -148,7 +153,7 @@ The tunnel is circular with an internal radius R ≈ 2.95 m. The camera looks at
 Formula: `X = R × sin(θ)`, `Y = R × cos(θ)`
 
 ### Layer 3: REST API, Storage & Offline Spooling
-**Files:** `api/server.js` (port 5000), `backend/src/` (port 3000)
+**Files:** `api/server.js` (port 5000, the production gateway), `backend/src/` (port 3000, core analytics API)
 
 Each detection is packaged as a JSON object and sent via HTTP POST to the ingestion API:
 
@@ -172,16 +177,31 @@ Each detection is packaged as a JSON object and sent via HTTP POST to the ingest
 The Core API (port 3000) also handles spatial analytics queries, severity scoring, and PostgreSQL persistence.
 
 ### Layer 4: 3D Digital Twin & Dashboard
-**Files:** `frontend/src/pages/twin/TunnelTwin.jsx`, `frontend/src/`
+**Files:** `frontend/src/pages/twin/` (`TunnelTwin.jsx`, `engine.js`, `geometry.js`, `textures.js`), `frontend/src/`
 
 The React frontend renders a fully interactive 3D tunnel in the browser using **Three.js WebGL**:
 
-- The tunnel is **procedurally generated** (no pre-built 3D model files needed) — a `CylinderGeometry` with inverted normals creates the illusion of being inside the tunnel.
-- When the frontend loads, it fetches all detections from the API (`GET /api/defects`).
-- Each defect is projected as a **pulsing 3D marker** at its exact `(X, Y, Z)` coordinate on the tunnel wall.
-- Engineers can **fly through** the tunnel, click on any marker for details, and toggle heatmaps to visualise risk clusters.
-- Defects are classified into **Minor / Moderate / Critical** severity tiers.
-- One-click **PDF inspection reports** are generated for regulatory submission.
+- The tunnel is **procedurally generated** (no pre-built 3D model files needed). The page is split into engine, geometry and texture modules; geometry and data rules are covered by Node tests.
+- The frontend fetches the stored detections (`GET /api/detections`, up to 1,000 by default) and projects each one as a marker at its `(X, Y, Z)` position on the tunnel wall. Detections with no recorded chainage are not drawn, and the dashboard says how many are left out.
+- Cameras: fly-through and orbit. Defects are classified **Minor / Moderate / Critical**.
+- Inspection viewer tools: severity glow on the lining, a cross-section cut, a measure tool, a defect replay with captions, an inspection filter with a time-lapse, a clock-face minimap, wall snapshots of the selected defect, a view-only horseshoe section with CSV radius profile, screenshot and share link, and an experimental VR button.
+- PDF inspection reports are generated for regulatory submission (see [Feature Overview](#-feature-overview)).
+
+---
+
+## ✨ Feature Overview
+
+| Area | What it does |
+|---|---|
+| **Landing page and console** | Survey-console landing page (jet black and sky blue), descent intro and dive transition between pages, light and dark theme, a 404 page, per-page tab titles |
+| **Dashboard** | Tunnel radar, chainage strip, auto-written brief, counting KPIs, severity charts; `Ctrl+K` command palette, toasts, loading skeletons and a notice while the free-tier server wakes up |
+| **Inspection console** | Video, webcam and photo modes; sonar sweep, defect ping, chainage tape and keyboard shortcuts in the viewport; a repeat-inspection helper |
+| **Defect detail** | Before/after slider and growth table for a defect seen in several inspections; *Flag for Urgent Repair* and *Add Observation*; a snapshot and history link in the twin inspector |
+| **3D twin** | See Layer 4 above |
+| **Reports** | *Summary + PDF* dialog: a summary is drafted from the database (AI prose when a key is set, otherwise a standard template), the engineer edits it, and the PDF gains the summary, an unrolled-lining defect map and a severity bar chart. Every number in an AI draft is checked against the facts. CSV export is also available |
+| **Ask HRT** | Chat and natural-language search over the defect data (see [Ask HRT](#-ask-hrt--ai-assistant)) |
+| **Accounts** | Sign-up, sign-in, role-based access, forgot-password by e-mailed code (see [Authentication](#-authentication-and-roles)) |
+| **Demo mode** | Read-only demo with bundled sample data, no account needed |
 
 ---
 
@@ -200,8 +220,13 @@ The React frontend renders a fully interactive 3D tunnel in the browser using **
 | **3D Rendering** | Three.js (WebGL) | Browser-native GPU-accelerated 3D — no Unity, no Unreal, no plugin needed |
 | **Frontend Framework** | React.js + Vite | Fast, component-based UI with hot reload for development |
 | **Styling** | CSS Modules | Scoped, maintainable component styles |
-| **Security** | Helmet.js, CORS, Rate Limiting | Defense-in-depth HTTP headers and sliding-window IP throttling |
-| **Dataset** | Roboflow Universe | 12,012 labeled underwater crack images, YOLOv8 format |
+| **Browser inference** | ONNX Runtime Web (WebAssembly) | Runs the exported model client-side, so no server GPU is needed |
+| **Security** | Helmet.js, CORS, Rate Limiting, bcrypt, JWT | Defense-in-depth HTTP headers, throttling, hashed passwords and signed sessions |
+| **AI assistant** | Google Gemini (free tier), Groq (free tier, backup) | Ask HRT chat, search and report drafting, with automatic failover between providers |
+| **E-mail** | nodemailer (any SMTP service) | One-time codes for password reset |
+| **Reports** | pdfkit | PDF inspection reports with defect map and severity chart |
+| **Hosting** | Vercel (front end), Render (gateway), MongoDB Atlas | Free-tier deployment |
+| **Dataset (evaluation)** | Roboflow Universe | 12,012 labeled underwater crack images, YOLOv8 format |
 | **Model Export** | ONNX / TorchScript | Edge deployment compatibility for onboard ROV inference |
 
 ---
@@ -229,16 +254,20 @@ hrt-ai-inspection-system/
 │       ├── db/                     # PostgreSQL connection & queries
 │       └── api.test.js             # API unit tests
 │
-├── api/                            # MongoDB Ingestion Gateway (port 5000)
-│   └── server.js                   # Express server for detection ingestion
+├── api/                            # MongoDB Gateway (port 5000), the production API
+│   ├── server.js                   # Detections, inspections, reports, PDF export
+│   ├── auth/                       # Login, sign-up, roles, password reset, mailer
+│   └── assistant/                  # Ask HRT: Gemini and Groq providers, tools, report drafting
 │
 ├── frontend/                       # React.js + Three.js Web Dashboard
 │   └── src/
 │       ├── pages/
-│       │   ├── twin/               # 3D Digital Twin (TunnelTwin.jsx)
-│       │   ├── dashboard/          # Defect tables, charts, analytics
-│       │   ├── reports/            # PDF report generation
-│       │   └── inspection/         # Video scrubber & live inspection
+│       │   ├── twin/               # 3D twin: TunnelTwin.jsx, engine.js, geometry.js, textures.js
+│       │   ├── dashboard/          # Overview, defect detail, inspections, reports, users
+│       │   └── inspection/         # New inspection console (video, webcam, photos)
+│       ├── auth/                   # Login, sign-up, forgot password
+│       ├── ui/                     # Command palette, toasts, theme, dive transition
+│       ├── utils/                  # defectHistory, keywordSearch, reportDraft
 │       ├── hooks/                  # useApi.js — data fetching with fallbacks
 │       └── App.jsx                 # Route definitions
 │
@@ -253,10 +282,10 @@ hrt-ai-inspection-system/
 │   └── predict/                    # Annotated output videos and CSVs
 │
 ├── scripts/
-│   ├── verify_all.js               # 49-check master test harness
+│   ├── verify_all.js               # Master test harness (four tiers)
 │   └── verify_browser_runtime.js   # Headless browser E2E tests
 │
-├── tests/                          # Unified test infrastructure (Tiers 1–4)
+├── tests/                          # Unit and tier tests (Tiers 1–4)
 ├── download_dataset.py             # Roboflow dataset downloader
 ├── start.ps1                       # One-click launcher for all services
 └── run.ps1                         # AI pipeline quickstart runner
@@ -307,11 +336,15 @@ PGPASSWORD=yourpassword
 PGDATABASE=hrt_inspection
 ```
 
-**`api/.env`**
+**`api/.env`** (copy `api/.env.example`, which documents every variable)
 ```env
-MONGO_URI=mongodb://127.0.0.1:27017/hrt_inspection
+MONGODB_URI=mongodb://127.0.0.1:27017/hrt_inspection
 PORT=5000
+JWT_SECRET=at-least-16-random-characters
+ADMIN_EMAIL=you@example.com
+ADMIN_PASSWORD=a-long-password
 ```
+The optional assistant and e-mail settings are listed under [Ask HRT](#-ask-hrt--ai-assistant) and [Authentication](#-authentication-and-roles).
 
 **`frontend/.env`**
 ```env
@@ -336,7 +369,7 @@ Navigate to `http://localhost:5173` in your browser.
 ## ✅ Testing
 
 ```powershell
-npm test                              # API contract, spatial analytics, authentication, sign-up, defect tracker
+npm test                              # API contract, spatial analytics, authentication, sign-up, password reset, assistant, defect tracker and history, keyword search, twin geometry, report draft
 node scripts/verify_all.js            # all four test tiers (Tier 3 needs a local MongoDB, Tier 1 needs the Python packages)
 npx --prefix frontend oxlint frontend/src
 npm --prefix frontend run build
@@ -354,13 +387,14 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the unit tests, the Tier 2 and 
 ## 🌐 Live Deployment
 
 - **Front end:** https://hrt-ai-inspection-system.vercel.app/ (Vercel; `frontend/vercel.json` rewrites every path to the single-page app, so dashboard links and refreshes work)
-- **Gateway API:** https://hrt-mongo-gateway.onrender.com (Render; the free tier can take about 30 s to wake up)
+- **Gateway API:** https://hrt-mongo-gateway.onrender.com (Render; the free tier can take about 30 s to wake up, and the app shows a notice while it does)
+- **Demo mode:** a visitor can open the dashboard, 3D twin and reports without an account. API calls are answered in the browser from bundled sample data (3 inspections, 15 defects) and every write is refused.
 
 ## 🔐 Authentication and Roles
 
 The gateway (`api/`) requires a login. Passwords are stored as bcrypt hashes and sessions are signed JWTs (8 h by default).
 
-**Accounts.** Anyone can sign up at `/register`; a new account is a read-only **Viewer**. An Administrator raises the role on the Users page. **Administrator accounts can only be added in the server configuration (Render environment variables)**: the API and the sign-up form can never create or grant one.
+**Accounts.** Anyone can sign up at `/register` (sign in at `/login`, reset a forgotten password from the sign-in page); a new account is a read-only **Viewer**. An Administrator raises the role on the Users page. **Administrator accounts can only be added in the server configuration (Render environment variables)**: the API and the sign-up form can never create or grant one.
 
 | Role | Can do |
 |---|---|
@@ -380,8 +414,27 @@ The gateway (`api/`) requires a login. Passwords are stored as bcrypt hashes and
 | `ALLOW_REGISTRATION` | `false` closes public sign-up (default `true`). Sign-up is limited to 5 per hour per client. |
 | `ALLOWED_ORIGINS` | Browser origins allowed in production, e.g. `https://hrt-ai-inspection-system.vercel.app`. |
 | `AUTH_ENABLED=false` | Local development only: skips all checks. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Any SMTP service (for Gmail use an app password). Without them forgot-password is off and the sign-in link leads to a clear message. `MAIL_TRANSPORT=console` prints the e-mail locally instead of sending it (ignored in production). |
+
+**Forgot password.** `POST /api/auth/forgot-password` e-mails a 6-digit one-time code; `POST /api/auth/reset-password` checks it and sets the new password. The code is stored only as an HMAC hash, works once, expires after 10 minutes and locks after 5 wrong tries; requests are limited to one a minute and five an hour per address. The answer never reveals whether an address has an account. Disabled accounts and Administrators (whose passwords come from the server configuration) are refused silently. A reset, or an Administrator password change, ends sessions issued before it.
 
 The front end follows the same rules (hidden menu entries, access-denied pages), but the server is the authority: it answers 401 without a valid token and 403 when the role lacks the permission. Run `node api/auth/devServer.js` to try the flow locally with demo accounts and no database. Set `VITE_AUTH_ENABLED=false` in `frontend/.env` to run the front end against the core API on port 3000 without a login.
+
+## 🤖 Ask HRT — AI Assistant
+
+Ask HRT answers questions about the stored inspection data, runs natural-language defect searches and drafts the report summary. It only receives defect data (no names, e-mails, images or notes) and uses **free-tier models only**.
+
+| Variable | Purpose |
+|---|---|
+| `GEMINI_API_KEY` | Free key from Google AI Studio. The assistant stays switched off while no provider key is set. |
+| `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | Free-tier model names (default `gemini-3.5-flash-lite`); non-free names are ignored unless `GEMINI_ALLOW_PAID=true` |
+| `GROQ_API_KEY`, `GROQ_MODEL` | Backup provider on Groq's free plan (default `openai/gpt-oss-20b`) |
+| `ASSISTANT_PROVIDERS` | Order providers are tried in (default `gemini,groq`); the next one answers when the first is at its limit, down or misconfigured |
+| `ASSISTANT_RPM_USER`, `ASSISTANT_RPM_GLOBAL` | Questions allowed per minute (defaults 8 and 12) |
+
+Endpoints: `GET /api/assistant/status` (lists the active providers), `POST /api/assistant/chat`, `POST /api/assistant/search` and `POST /api/assistant/report-draft`. Keys live only in the host's environment settings, never in the repository.
+
+---
 
 ## 🎥 Testing a New Video
 
@@ -455,10 +508,27 @@ Default calibration values (adjustable via CLI flags):
 
 ## 📡 API Reference
 
-### POST `/api/detections`
-Ingest a new defect detection from the AI pipeline.
+All gateway routes (port 5000) except `/health`, `/api/auth/login`, `/api/auth/register`, `/api/auth/config` and the password-reset routes require a session token (`Authorization: Bearer <jwt>`). The server answers `401` without a valid token and `403` when the role lacks the permission.
 
-**Request body:**
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `POST /api/detections` | create | Ingest a detection from the AI pipeline |
+| `GET /api/detections` | read | List detections (default 1,000, at most 2,000; `?limit=`, `?severity=`, `?inspection_id=`) |
+| `GET /api/detections/:id` | read | One detection |
+| `PATCH /api/detections/:id` | review | Review, flag or annotate a detection |
+| `DELETE /api/detections/:id` | delete | Remove a detection |
+| `GET /api/inspections` | read | Inspection sessions |
+| `DELETE /api/inspections/:id` | delete | Remove a session |
+| `GET /api/spatial-summary` | read | Counts per chainage bin |
+| `POST /api/reports/generate` | reports | Build a report |
+| `GET /api/inspections/:id/export/pdf` | reports | PDF with summary, defect map and severity chart |
+| `POST /api/auth/login`, `/register`, `/forgot-password`, `/reset-password` | public | Sign-in, sign-up and password reset |
+| `GET /api/auth/me`, `/api/roles` | signed in | Current user and roles |
+| `GET/POST/PATCH /api/users` | user management | Administrator user management |
+| `GET /api/assistant/status`, `POST /api/assistant/chat`, `/search`, `/report-draft` | signed in (report-draft: reports) | Ask HRT |
+| `GET /health` | public | Service health |
+
+**Example: `POST /api/detections`**
 ```json
 {
   "class_label": "crack",
@@ -473,19 +543,9 @@ Ingest a new defect detection from the AI pipeline.
   "z": 45.30
 }
 ```
-**Response:** `201 Created`
+Response: `201 Created`.
 
----
-
-### GET `/api/detections`
-Retrieve all stored defect detections.
-
-**Response:** Array of detection objects.
-
----
-
-### GET `/api/defects?severity=critical`
-Filter defects by severity tier (`minor`, `moderate`, `critical`).
+The core API (port 3000) serves the spatial analytics routes in `backend/src/routes/`.
 
 ---
 
@@ -554,8 +614,8 @@ Being honest about the gaps is important for anyone looking to extend or deploy 
 - **No multi-class defect taxonomy** — spalling, delamination, and seepage are not distinguished from cracks.
 - **No predictive modelling** — the system logs what it finds today but cannot predict how fast a crack will grow.
 - **No mobile app** — there is no native iOS/Android interface for field use on-site at the dam.
-- **No automated alert system** — the system does not send SMS/email alerts when a Critical defect is detected.
-- **Single-tenant accounts** — login and role-based access are implemented on the gateway (see below), but there is no self-service sign-up, password reset or multi-factor login.
+- **No automated alert system** — e-mail is used only for password-reset codes; nothing is sent when a Critical defect is detected.
+- **No multi-factor login or single sign-on** — sign-up, role-based access and forgot-password by e-mailed code exist (see [Authentication](#-authentication-and-roles)), but not MFA or SSO.
 - **Limited real-world validation** — the deployed model was trained on a public crack-segmentation dataset and tested only on public underwater crack images, not on footage from actual hydroelectric tunnels. The team does not operate an ROV and did not record any video.
 
 ---
@@ -566,7 +626,8 @@ Being honest about the gaps is important for anyone looking to extend or deploy 
 - [ ] Multi-class defect detection: `crack`, `spalling`, `seepage`, `void`
 - [ ] DVL/IMU telemetry CSV ingestion for accurate Z odometry
 - [ ] Email/webhook alerts when Critical severity defects are logged
-- [ ] Authentication (JWT / OAuth2) and role-based access control
+- [x] Authentication (JWT) with role-based access control, sign-up and forgot-password *(done)*
+- [ ] Multi-factor login or single sign-on
 
 ### Medium-Term (6–18 Months)
 - [ ] Acoustic DIDSON/multibeam sonar image support for zero-visibility conditions
