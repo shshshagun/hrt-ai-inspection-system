@@ -66,7 +66,7 @@ function MetaRow({ label, value }) {
 }
 
 const REASON_LABEL = { shadow: 'Shadow', stain: 'Stain or water streak', ring_joint: 'Ring joint or seam', debris: 'Debris', texture: 'Concrete texture', other: 'Something else' };
-const VERDICT_WHY = { texture_heuristic: 'texture check, not a trained model', low_confidence: 'low confidence', blob_shape: 'blob-shaped, not thin', too_small: 'very small', compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'the crack checker says no', classifier_unsure: 'the crack checker is not sure', classifier_unavailable: 'the crack checker could not load' };
+const VERDICT_WHY = { texture_heuristic: 'texture check, not a trained model', low_confidence: 'low confidence', blob_shape: 'blob-shaped, not thin', too_small: 'very small', compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'the crack checker says no', classifier_unsure: 'the crack checker is not sure', classifier_unavailable: 'the crack checker could not load', low_score: 'the checks together fall just short' };
 
 export default function DefectDetail() {
   const { id } = useParams();

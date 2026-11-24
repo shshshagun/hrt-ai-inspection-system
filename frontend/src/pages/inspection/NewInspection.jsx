@@ -117,6 +117,8 @@ export default function NewInspection() {
   const webcamRunningRef = useRef(false);
   const webcamStreamRef = useRef(null);
   const trackerRef = useRef(null);
+  const [scanLog, setScanLog] = useState([]); // the automatic verdict of every stored detection this scan, for the summary
+  const webcamIntervalRef = useRef(1); // seconds between live frames, measured while the webcam runs
 
   /* ── Revoke a tracked photo object URL ── */
   const revokePhotoUrl = useCallback((url) => {
@@ -184,14 +186,29 @@ export default function NewInspection() {
   }, [sourceMode, webcamStream]);
 
   /* ── Persist verified detection directly to MongoDB Gateway (with Render cold-start retry) ── */
-  const persistToGateway = useCallback(async (det, inspId, sourceLabel) => {
-    // Automatic verdict: only a long, thin, confident mask seen in several frames counts as a crack straight away.
-    // Everything else is stored as a candidate and waits for an engineer (see utils/crackVerdict.js).
+  const persistToGateway = useCallback(async (det, inspId, sourceLabel, { frameIntervalSec } = {}) => {
+    // Automatic verdict: detector confidence, mask shape, sightings and the crack classifier are combined into one score; a
+    // detection that scores high enough counts as a crack straight away, the rest wait for an engineer (see utils/crackVerdict.js).
+    // frameIntervalSec is how far apart frames were taken, so "seen in several frames" asks only for what the sampling allows.
     const mode = String(inspId).startsWith('PHOTO-') ? 'photo' : String(inspId).startsWith('CAM-') ? 'webcam' : 'video';
-    const verdict = autoVerdict({ cls: det.class || 'crack', confidence: det.confidence, observations: det.observations, shape: det.shape || undefined, boxAspect: det.box_aspect, classifier: det.classifier }, { mode });
+    const verdict = autoVerdict({ cls: det.class || 'crack', confidence: det.confidence, observations: det.observations, shape: det.shape || undefined, boxAspect: det.box_aspect, classifier: det.classifier }, { mode, frameIntervalSec });
+    setScanLog((prev) => [...prev, {
+      id: det.localId || null,
+      class: det.class || 'crack',
+      video_time: det.video_time ?? null,
+      confidence: det.confidence,
+      elongation: det.shape ? Number(det.shape.elongation.toFixed(2)) : null,
+      observations: det.observations ?? 1,
+      classifier: det.classifier?.state === 'ok' ? Number(det.classifier.score.toFixed(3)) : det.classifier?.state || null,
+      frame_interval_s: frameIntervalSec ? Number(frameIntervalSec.toFixed(2)) : null,
+      score: verdict.score,
+      verdict: verdict.verdict,
+      reasons: verdict.reasons,
+    }]);
     const payload = {
       auto_verdict: verdict.verdict,
       verdict_reason: verdict.reasons,
+      verdict_score: verdict.score,
       detector: det.class === 'spalling' ? 'texture-check' : 'yolov8n-seg',
       crop_url: det.crop_url || null,
       classifier_score: det.classifier?.state === 'ok' ? Number(det.classifier.score.toFixed(4)) : null,
@@ -262,6 +279,7 @@ export default function NewInspection() {
       setDetections([]);
       setActiveOverlays([]);
       setSyncedToDb(0);
+    setScanLog([]);
       setDbError(null);
       setWebcamError(null);
       setProcessingIndex(-1);
@@ -350,6 +368,7 @@ export default function NewInspection() {
     setDetections([]);
     setActiveOverlays([]);
     setSyncedToDb(0);
+    setScanLog([]);
     setDbError(null);
     setCurrentFrame(0);
     setCurrentTime(0);
@@ -396,7 +415,8 @@ export default function NewInspection() {
           // Automatically flush defects after leaving webcam view > 1.5s
           const exited = tracker.popExitedTracks(elapsedSec);
           for (const readyDet of exited) {
-            persistToGateway(readyDet, sessionId, `Live Camera (${sessionId})`).then(() => {
+            webcamIntervalRef.current = elapsedSec / frameSeq;
+            persistToGateway(readyDet, sessionId, `Live Camera (${sessionId})`, { frameIntervalSec: webcamIntervalRef.current }).then(() => {
               if (trackerRef.current === tracker) {
                 setDetections(tracker.getManifest());
               }
@@ -432,7 +452,7 @@ export default function NewInspection() {
       const remaining = tracker.flushAll();
       setDetections(tracker.getManifest());
       await Promise.allSettled(
-        remaining.map((det) => persistToGateway(det, sessionId, `Live Camera (${sessionId})`))
+        remaining.map((det) => persistToGateway(det, sessionId, `Live Camera (${sessionId})`, { frameIntervalSec: webcamIntervalRef.current }))
       );
       setDetections(tracker.getManifest());
       setStatus('complete');
@@ -486,7 +506,7 @@ export default function NewInspection() {
 
       if (pendingBatch.length > 0) {
         await Promise.allSettled(
-          pendingBatch.map((det) => persistToGateway(det, sessionId, `Live Camera (${sessionId})`))
+          pendingBatch.map((det) => persistToGateway(det, sessionId, `Live Camera (${sessionId})`, { frameIntervalSec: 99 })) // a single held frame
         );
         setDetections(trackerRef.current.getManifest());
         setStatus((prev) => (prev === 'analyzing' ? 'analyzing' : 'complete'));
@@ -514,6 +534,7 @@ export default function NewInspection() {
       setDetections([]);
       setActiveOverlays([]);
       setSyncedToDb(0);
+    setScanLog([]);
       setDbError(null);
       setEngineMsg('Video loaded — ready to run real YOLOv8n-seg inspection');
       setJobId(makeSessionId('INSP'));
@@ -642,6 +663,7 @@ export default function NewInspection() {
     setDetections([]);
     setActiveOverlays([]);
     setSyncedToDb(0);
+    setScanLog([]);
     setJobId(makeSessionId('PHOTO'));
     setEngineMsg('Photo queue cleared — upload JPG, PNG, or WebP crack photos to begin');
   }, [photoQueue, revokePhotoUrl]);
@@ -881,6 +903,7 @@ export default function NewInspection() {
     setDetections([]);
     setActiveOverlays([]);
     setSyncedToDb(0);
+    setScanLog([]);
     setDbError(null);
 
     if (syncedToDb > 0) {
@@ -949,7 +972,9 @@ export default function NewInspection() {
       if (abortRef.current) return;
 
       const duration = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 8;
-      const steps = Math.min(24, Math.max(12, Math.round(duration * 2)));
+      // About three frames a second (at least 12, at most 150), so a crack in view for a second is seen about three times
+      const steps = Math.min(150, Math.max(12, Math.round(duration * 3)));
+      const frameIntervalSec = steps > 1 ? Math.max(0.1, duration - 0.15) / (steps - 1) : 99;
       setTotalFrames(steps);
 
       const tracker = createDefectTracker({
@@ -986,7 +1011,7 @@ export default function NewInspection() {
         setDetections(uniqueManifest);
 
         for (const readyDet of tracker.popExitedTracks(targetTime)) {
-          pendingSaves.push(persistToGateway(readyDet, inspId, file.name));
+          pendingSaves.push(persistToGateway(readyDet, inspId, file.name, { frameIntervalSec }));
         }
 
         setProgress(Math.round(((step + 1) / steps) * 100));
@@ -994,7 +1019,7 @@ export default function NewInspection() {
       }
 
       for (const finalDet of tracker.flushAll()) {
-        pendingSaves.push(persistToGateway(finalDet, inspId, file.name));
+        pendingSaves.push(persistToGateway(finalDet, inspId, file.name, { frameIntervalSec }));
       }
 
       setEngineMsg('Finalizing MongoDB Atlas persistence…');
@@ -1378,6 +1403,7 @@ export default function NewInspection() {
                         setDetections([]);
                         setActiveOverlays([]);
                         setSyncedToDb(0);
+    setScanLog([]);
                         setDbError(null);
                       }}
                     >
@@ -1757,6 +1783,9 @@ export default function NewInspection() {
               </div>
             </div>
 
+            {/* What the automatic verdict decided this scan, and why the rest was held back */}
+            {scanLog.length > 0 && <ScanVerdicts log={scanLog} />}
+
             {/* Scrollable Defect Cards Stream */}
             <div className="insp-feed-stream">
               {detections.length === 0 ? (
@@ -1876,6 +1905,43 @@ export default function NewInspection() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const WHY_LABEL = {
+  texture_heuristic: 'texture check, not the model', too_small: 'very small', low_confidence: 'low detector confidence',
+  blob_shape: 'blob-shaped, not thin', compact_box: 'compact box', few_frames: 'seen in few frames',
+  classifier_not_crack: 'crack checker says no', classifier_unsure: 'crack checker not sure',
+  classifier_unavailable: 'crack checker could not load', low_score: 'checks together fall just short',
+};
+
+/** After a scan: how many detections count as cracks, why the others were held back, and the full log as a file. */
+function ScanVerdicts({ log }) {
+  const counted = log.filter((e) => e.verdict === 'crack').length;
+  const why = {};
+  for (const e of log) if (e.verdict !== 'crack') for (const r of e.reasons) why[r] = (why[r] || 0) + 1;
+  const rows = Object.entries(why).sort((a, b) => b[1] - a[1]);
+  const download = () => {
+    const blob = new Blob([JSON.stringify(log, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `scan-verdicts-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return (
+    <div className="insp-verdicts">
+      <div className="insp-verdicts__head">
+        <span><strong>{counted}</strong> of {log.length} stored count as cracks</span>
+        <button type="button" className="insp-verdicts__dl" onClick={download}>Download log</button>
+      </div>
+      {rows.length > 0 && (
+        <ul className="insp-verdicts__why">
+          {rows.map(([r, n]) => <li key={r}><span>{WHY_LABEL[r] || r}</span><span>{n}</span></li>)}
+        </ul>
+      )}
     </div>
   );
 }

@@ -51,19 +51,38 @@ test('the browser rule, the server function and the MongoDB query agree on every
   assert.deepEqual(rules.withView({ a: 1 }, 'all'), { a: 1 });
 });
 
-test('automatic verdict: only a long, thin, confident, repeatedly seen mask is a crack', async () => {
-  const { autoVerdict } = await loadVerdict();
+test('automatic verdict: the checks are combined into one score instead of each having a veto', async () => {
+  const { autoVerdict, RULES } = await loadVerdict();
   const good = { cls: 'crack', confidence: 0.8, observations: 4, shape: { areaPx: 400, elongation: 6 } };
-  assert.deepEqual(autoVerdict(good), { verdict: 'crack', reasons: [] });
-  const reasonsOf = (over, opts) => autoVerdict({ ...good, ...over }, opts).reasons;
-  assert.deepEqual(reasonsOf({ cls: 'spalling' }), ['texture_heuristic']);
-  assert.deepEqual(reasonsOf({ confidence: 0.45 }), ['low_confidence']);
-  assert.deepEqual(reasonsOf({ shape: { areaPx: 400, elongation: 1.4 } }), ['blob_shape']);
-  assert.deepEqual(reasonsOf({ shape: { areaPx: 12, elongation: 6 } }), ['too_small']);
-  assert.deepEqual(reasonsOf({ observations: 1 }), ['few_frames']);
-  assert.deepEqual(reasonsOf({ observations: 1 }, { mode: 'photo' }), [], 'one photo is one frame by nature');
-  assert.deepEqual(reasonsOf({ shape: undefined, boxAspect: 1.3 }), ['compact_box']);
+  const g = autoVerdict(good);
+  assert.equal(g.verdict, 'crack');
+  assert.deepEqual(g.reasons, []);
+  assert.ok(g.score >= RULES.passScore);
+  // hard limits
+  assert.deepEqual(autoVerdict({ ...good, cls: 'spalling' }).reasons, ['texture_heuristic']);
+  assert.deepEqual(autoVerdict({ ...good, shape: { areaPx: 12, elongation: 6 } }).reasons, ['too_small']);
+  // one weak check no longer blocks a detection that is otherwise clearly a crack
+  assert.equal(autoVerdict({ ...good, confidence: 0.45, classifier: { state: 'ok', score: 0.95 } }).verdict, 'crack');
+  assert.equal(autoVerdict({ ...good, observations: 2, classifier: { state: 'ok', score: 0.9 } }, { frameIntervalSec: 0.33 }).verdict, 'crack');
+  // but several weak checks together hold it back, and say why
+  const weak = autoVerdict({ ...good, confidence: 0.45, shape: { areaPx: 400, elongation: 1.4 }, classifier: { state: 'ok', score: 0.5 } });
+  assert.equal(weak.verdict, 'candidate');
+  assert.deepEqual(weak.reasons, ['low_confidence', 'blob_shape', 'classifier_unsure']);
   assert.equal(autoVerdict({ cls: 'crack', confidence: 0.9, observations: 5, boxAspect: 4 }).verdict, 'crack');
+  assert.ok(autoVerdict({ ...good, shape: undefined, boxAspect: 1.3, confidence: 0.5 }).reasons.includes('compact_box'));
+});
+
+test('sightings: only as many frames are asked for as the sampling allows', async () => {
+  const { autoVerdict, framesExpected } = await loadVerdict();
+  assert.equal(framesExpected(1 / 3), 3);
+  assert.equal(framesExpected(0.5), 2);
+  assert.equal(framesExpected(1), 1);
+  assert.equal(framesExpected(2), 1);
+  assert.equal(framesExpected(undefined), 3);
+  const once = { cls: 'crack', confidence: 0.8, observations: 1, shape: { areaPx: 400, elongation: 6 } };
+  assert.ok(!autoVerdict(once, { frameIntervalSec: 2 }).reasons.includes('few_frames'), 'frames 2 s apart can only see a crack once');
+  assert.ok(autoVerdict({ ...once, confidence: 0.4 }, { frameIntervalSec: 0.33 }).reasons.includes('few_frames'));
+  assert.equal(autoVerdict({ ...once, confidence: 0.5 }, { mode: 'photo' }).reasons.includes('few_frames'), false, 'one photo is one frame by nature');
 });
 
 test('mask shape: a line is elongated, a disc is not', async () => {
@@ -77,13 +96,16 @@ test('mask shape: a line is elongated, a disc is not', async () => {
   assert.deepEqual(shapeMetrics(new Uint8Array(w * h), w, h), { areaPx: 0, elongation: 0, fill: 0 });
 });
 
-test('the second-stage classifier: absent changes nothing, failed makes a candidate, and its score is applied', async () => {
+test('the second-stage classifier: absent changes nothing, failed holds back, a clear "no" outweighs the rest', async () => {
   const { autoVerdict } = await loadVerdict();
   const good = { cls: 'crack', confidence: 0.8, observations: 4, shape: { areaPx: 400, elongation: 6 } };
   assert.equal(autoVerdict({ ...good, classifier: { state: 'absent', score: null } }).verdict, 'crack');
-  assert.deepEqual(autoVerdict({ ...good, classifier: { state: 'failed', score: null } }).reasons, ['classifier_unavailable']);
-  assert.deepEqual(autoVerdict({ ...good, classifier: { state: 'ok', score: 0.1 } }).reasons, ['classifier_not_crack']);
-  assert.deepEqual(autoVerdict({ ...good, classifier: { state: 'ok', score: 0.5 } }).reasons, ['classifier_unsure']);
+  const failed = autoVerdict({ ...good, classifier: { state: 'failed', score: null } });
+  assert.equal(failed.verdict, 'candidate');
+  assert.deepEqual(failed.reasons, ['classifier_unavailable']);
+  const no = autoVerdict({ ...good, classifier: { state: 'ok', score: 0.1 } });
+  assert.equal(no.verdict, 'candidate');
+  assert.deepEqual(no.reasons, ['classifier_not_crack']);
   assert.equal(autoVerdict({ ...good, classifier: { state: 'ok', score: 0.93 } }).verdict, 'crack');
 });
 

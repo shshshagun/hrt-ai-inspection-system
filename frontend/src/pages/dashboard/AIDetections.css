@@ -105,3 +105,7 @@
 .det-bulk__btn:disabled { opacity: .5; }
 .det-link { color: var(--cyan); text-decoration: underline; font-size: var(--text-xs); }
 .det-why { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11px; }
+
+/* Opens the one-at-a-time review deck */
+.det-quick { margin: 0 0 14px; padding: 10px 16px; background: #8fd3ff; color: #05070a; border: 0; font: inherit; font-weight: 600; cursor: pointer; }
+.det-quick:hover { filter: brightness(1.08); }

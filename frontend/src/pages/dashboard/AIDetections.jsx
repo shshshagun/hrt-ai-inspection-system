@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/useAuth';
 import { PERMISSIONS } from '../../auth/permissions';
 import { REJECT_REASONS, countsAsCrack, reviewState } from '../../utils/crackVerdict';
 import { useToast } from '../../ui/contexts';
+import QuickReview from './QuickReview';
 import './AIDetections.css';
 
 const DEFECT_CATEGORIES = ['Crack', 'Spalling', 'Leakage', 'Corrosion', 'Erosion', 'Joint Displacement'];
@@ -33,7 +34,7 @@ const TABS = [
   { id: 'all', label: 'All', hint: 'Everything stored' },
 ];
 const REASON_LABEL = { shadow: 'Shadow', stain: 'Stain or water streak', ring_joint: 'Ring joint or seam', debris: 'Debris', texture: 'Concrete texture', other: 'Something else' };
-const VERDICT_WHY = { texture_heuristic: 'texture check, not a trained model', low_confidence: 'low confidence', blob_shape: 'blob-shaped, not thin', too_small: 'very small', compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'the crack checker says no', classifier_unsure: 'the crack checker is not sure', classifier_unavailable: 'the crack checker could not load' };
+const VERDICT_WHY = { texture_heuristic: 'texture check, not a trained model', low_confidence: 'low confidence', blob_shape: 'blob-shaped, not thin', too_small: 'very small', compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'the crack checker says no', classifier_unsure: 'the crack checker is not sure', classifier_unavailable: 'the crack checker could not load', low_score: 'the checks together fall just short' };
 
 export default function AIDetections() {
   const navigate = useNavigate();
@@ -47,6 +48,7 @@ export default function AIDetections() {
   const [picked, setPicked]         = useState(() => new Set());
   const [rejectReason, setRejectReason] = useState('shadow');
   const [reviewing, setReviewing]    = useState(false);
+  const [quick, setQuick]            = useState(false);
   const { can } = useAuth();
   const canReview = can(PERMISSIONS.DETECTIONS_REVIEW);
   const PER_PAGE = 10;
@@ -195,6 +197,10 @@ export default function AIDetections() {
         ))}
       </div>
       {tab === 'pending' && <p className="det-note">The system could not tell whether these are cracks. Confirm the real ones and reject the rest; a rejected detection never counts and teaches the checker what a crack is not.</p>}
+      {tab === 'pending' && canReview && filtered.length > 0 && (
+        <button type="button" className="det-quick" onClick={() => setQuick(true)}>Quick review ({filtered.length}): swipe or use the arrow keys</button>
+      )}
+      {quick && <QuickReview items={filtered} onClose={() => { setQuick(false); refetch?.(); }} />}
 
       {/* ── Filters ── */}
       <div className="det-filters" role="search">
