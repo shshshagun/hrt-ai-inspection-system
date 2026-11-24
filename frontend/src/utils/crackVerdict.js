@@ -13,13 +13,14 @@ export const REJECT_REASONS = ['shadow', 'stain', 'ring_joint', 'debris', 'textu
 
 // Tunable limits, kept in one place so they can be tuned against labelled footage.
 export const RULES = {
-  minConfidence: 0.5,   // the detector fires from 0.42; a verdict of "crack" needs a little more
-  minElongation: 2.5,   // cracks are long and thin: sqrt(major axis / minor axis) of the mask
-  minMaskPixels: 30,    // a smaller mask is noise
+  minMaskPixels: 30,    // a smaller mask is noise (hard limit)
+  minElongation: 2.5,   // cracks are long and thin: sqrt(major axis / minor axis) of the mask. Also the cut-off for dropping
+                        // large, compact detections (ring joints) before they are stored
   minBoxAspect: 2.2,    // when there is no mask: long side over short side of the box
-  minFrames: 3,         // seen in at least this many frames of a video or live feed
+  minFrames: 3,         // the most sightings ever asked for; fewer when frames are sampled far apart (see framesExpected)
   classifierNot: 0.3,   // the second-stage classifier: below this it says "not a crack"
   classifierCrack: 0.7, // at or above this it says "crack"; in between it is not sure
+  passScore: 0.6,       // a detection whose combined score reaches this counts as a crack
 };
 
 /** Elongation and fill of a binary mask (1 = crack pixel) of size w x h, from its second moments. */
@@ -44,30 +45,71 @@ export function shapeMetrics(grid, w, h) {
   return { areaPx: n, elongation: Math.sqrt(l1 / l2), fill: n / ((x1 - x0 + 1) * (y1 - y0 + 1)) };
 }
 
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+/**
+ * How many sightings a real crack should get, given how far apart the frames were taken. A crack stays in view for roughly a
+ * second, so frames 0.33 s apart should see it about three times and frames 2 s apart only once.
+ */
+export function framesExpected(frameIntervalSec) {
+  if (!(frameIntervalSec > 0)) return RULES.minFrames;
+  return Math.max(1, Math.min(RULES.minFrames, Math.round(1.0 / frameIntervalSec)));
+}
+
 /**
  * Automatic verdict for one detection.
+ *
+ * Instead of letting every check veto, the checks are combined into one score from 0 to 1. The second-stage classifier, which
+ * looks at the crop itself, carries the most weight; detector confidence, mask shape and the number of sightings add to it. Only
+ * two things are hard limits: the texture-based "spalling" estimate is never a crack, and a mask smaller than minMaskPixels is noise.
+ * `reasons` lists the parts that pulled the score down, so a reviewer can see why something was held back.
+ *
  * @param {{cls:string, confidence:number, observations?:number, shape?:{areaPx:number, elongation:number}, boxAspect?:number, classifier?:{state:'ok'|'absent'|'failed', score:number|null}}} d
- * @param {{mode?: 'video'|'webcam'|'photo'}} opts frames only matter when there is more than one
- * @returns {{verdict:'crack'|'candidate', reasons:string[]}}
+ * @param {{mode?: 'video'|'webcam'|'photo', frameIntervalSec?: number}} opts
+ * @returns {{verdict:'crack'|'candidate', reasons:string[], score:number}}
  */
-export function autoVerdict(d, { mode = 'video' } = {}) {
+export function autoVerdict(d, { mode = 'video', frameIntervalSec } = {}) {
   const reasons = [];
-  if (d.cls !== 'crack') reasons.push('texture_heuristic'); // "spalling" comes from a texture check, not a trained model
-  if (!(d.confidence >= RULES.minConfidence)) reasons.push('low_confidence');
+  if (d.cls !== 'crack') return { verdict: 'candidate', reasons: ['texture_heuristic'], score: 0 }; // from a texture check, not a model
+  if (d.shape && d.shape.areaPx > 0 && d.shape.areaPx < RULES.minMaskPixels) return { verdict: 'candidate', reasons: ['too_small'], score: 0 };
+
+  // Each part is 0 (looks nothing like a crack) to 1 (clearly a crack)
+  const sConf = clamp01(((d.confidence ?? 0) - 0.35) / (0.75 - 0.35));
+  if (sConf < 0.5) reasons.push('low_confidence');
+
+  let sShape = 0.5; // unknown shape: neutral
   if (d.shape && d.shape.areaPx > 0) {
-    if (d.shape.areaPx < RULES.minMaskPixels) reasons.push('too_small');
+    sShape = clamp01((d.shape.elongation - 1.5) / (4 - 1.5));
     if (d.shape.elongation < RULES.minElongation) reasons.push('blob_shape');
-  } else if (typeof d.boxAspect === 'number' && d.boxAspect < RULES.minBoxAspect) {
-    reasons.push('compact_box');
+  } else if (typeof d.boxAspect === 'number') {
+    sShape = clamp01((d.boxAspect - 1.2) / (3.5 - 1.2));
+    if (d.boxAspect < RULES.minBoxAspect) reasons.push('compact_box');
   }
-  if (mode !== 'photo' && (d.observations ?? 1) < RULES.minFrames) reasons.push('few_frames');
-  // second-stage classifier: absent means it is not part of this build; failed means it should have run but could not
-  if (d.classifier?.state === 'failed') reasons.push('classifier_unavailable');
-  else if (d.classifier?.state === 'ok') {
-    if (d.classifier.score < RULES.classifierNot) reasons.push('classifier_not_crack');
-    else if (d.classifier.score < RULES.classifierCrack) reasons.push('classifier_unsure');
+
+  let sFrames = 1;
+  if (mode !== 'photo') {
+    const need = framesExpected(frameIntervalSec);
+    sFrames = clamp01((d.observations ?? 1) / need);
+    if (sFrames < 1) reasons.push('few_frames');
   }
-  return { verdict: reasons.length ? 'candidate' : 'crack', reasons };
+
+  let score;
+  const cls = d.classifier;
+  if (cls?.state === 'ok' && typeof cls.score === 'number') {
+    if (cls.score < RULES.classifierNot) reasons.push('classifier_not_crack');
+    else if (cls.score < RULES.classifierCrack) reasons.push('classifier_unsure');
+    score = 0.5 * cls.score + 0.2 * sConf + 0.2 * sShape + 0.1 * sFrames;
+  } else {
+    // no classifier in this build: the other parts share its weight. If it should have run but failed, nothing is trusted blindly.
+    score = 0.4 * sConf + 0.4 * sShape + 0.2 * sFrames;
+    if (cls?.state === 'failed') {
+      reasons.push('classifier_unavailable');
+      score = Math.min(score, RULES.passScore - 0.01);
+    }
+  }
+  score = Number(score.toFixed(3));
+  if (score >= RULES.passScore) return { verdict: 'crack', reasons: [], score };
+  return { verdict: 'candidate', reasons: reasons.length ? reasons : ['low_score'], score };
 }
 
 export function reviewState(d) {

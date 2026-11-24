@@ -993,3 +993,13 @@
   color: #ef4444;
   background: rgba(239, 68, 68, 0.15);
 }
+
+/* Scan verdict summary */
+.insp-verdicts { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid rgba(143, 211, 255, 0.18); background: rgba(143, 211, 255, 0.04); font-size: 0.75rem; }
+.insp-verdicts__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.insp-verdicts__head strong { color: #8fd3ff; font-size: 0.9rem; }
+.insp-verdicts__dl { background: none; border: 1px solid rgba(143, 211, 255, 0.35); color: #8fd3ff; font: inherit; font-size: 0.7rem; padding: 3px 8px; cursor: pointer; }
+.insp-verdicts__dl:hover { background: rgba(143, 211, 255, 0.1); }
+.insp-verdicts__why { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; }
+.insp-verdicts__why li { display: flex; justify-content: space-between; color: #8fa8bb; }
+.insp-verdicts__why li span:last-child { color: #e6eef5; font-variant-numeric: tabular-nums; }

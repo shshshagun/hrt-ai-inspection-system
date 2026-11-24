@@ -162,7 +162,8 @@ app.post('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_CREATE), async 
     verdict_reason,
     detector,
     crop_url,
-    classifier_score
+    classifier_score,
+    verdict_score
   } = req.body || {};
   
   if (!class_label || typeof class_label !== 'string' || confidence === undefined || isNaN(confidence)) {
@@ -195,6 +196,7 @@ app.post('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_CREATE), async 
       verdict_reason: Array.isArray(verdict_reason) ? verdict_reason.filter((r) => typeof r === 'string').map((r) => r.slice(0, 40)).slice(0, 6) : [],
       detector: typeof detector === 'string' ? detector.slice(0, 40) : null,
       classifier_score: typeof classifier_score === 'number' && classifier_score >= 0 && classifier_score <= 1 ? classifier_score : null,
+      verdict_score: typeof verdict_score === 'number' && verdict_score >= 0 && verdict_score <= 1 ? verdict_score : null,
       crop_url: typeof crop_url === 'string' && crop_url.startsWith('data:image/') && crop_url.length <= 80000 ? crop_url : null,
       video_name: video_name || null,
       video_time: video_time !== undefined ? Number(video_time) : 0,
