@@ -470,17 +470,25 @@
 /* Reticle Box over Defect (coordinates dynamically supplied via inline style) */
 .insp-reticle-box {
   position: absolute;
-  border: 2px solid #ef4444;
-  background: rgba(239, 68, 68, 0.08);
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
+  border: 1px solid #ef4444;
+  background: transparent; /* the crack outline below shows through; a tint would hide it */
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.3);
   pointer-events: none;
   z-index: 6;
 }
 
+/* The crack's own outline (from the model's mask), laid exactly over the box */
+.insp-mask-part {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  image-rendering: auto;
+}
+
 .insp-reticle-box--major {
   border-color: #ff9500;
-  background: rgba(255, 149, 0, 0.08);
-  box-shadow: 0 0 12px rgba(255, 149, 0, 0.35);
+  background: transparent;
+  box-shadow: 0 0 6px rgba(255, 149, 0, 0.3);
 }
 
 .insp-reticle-box--major .insp-reticle-tag {
@@ -490,8 +498,8 @@
 
 .insp-reticle-box--minor {
   border-color: #eab308;
-  background: rgba(234, 179, 8, 0.08);
-  box-shadow: 0 0 10px rgba(234, 179, 8, 0.3);
+  background: transparent;
+  box-shadow: 0 0 6px rgba(234, 179, 8, 0.3);
 }
 
 .insp-reticle-box--minor .insp-reticle-tag {

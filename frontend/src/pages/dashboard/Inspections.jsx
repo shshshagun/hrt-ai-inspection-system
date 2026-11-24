@@ -182,7 +182,10 @@ export default function Inspections() {
                   <td className="sp-td">{insp.date}</td>
                   <td className="sp-td">{insp.rov}</td>
                   <td className="sp-td">{insp.coverageKm} km</td>
-                  <td className="sp-td sp-td--num">{insp.totalDetections}</td>
+                  <td className="sp-td sp-td--num">
+                    {insp.totalDetections}
+                    {insp.pendingCount > 0 && <small style={{ display: 'block', opacity: 0.7, fontWeight: 400 }}>+{insp.pendingCount} to review</small>}
+                  </td>
                   <td className="sp-td">
                     <span
                       className="sp-badge"

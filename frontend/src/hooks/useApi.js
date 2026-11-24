@@ -449,6 +449,7 @@ export function useReports() {
                 || new Date().toISOString().slice(0, 10),
           status: (insp.end_time || insp.status === 'completed') ? 'complete' : 'draft',
           defectCount: totalDet,
+          pendingCount: insp.pendingCount ?? 0,
           criticalCount: insp.critical_count ?? insp.criticalCount ?? Math.round(totalDet * 0.2),
         };
       });

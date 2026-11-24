@@ -8,7 +8,7 @@
  */
 
 import * as ort from 'onnxruntime-web/wasm';
-import { shapeMetrics } from './crackVerdict';
+import { RULES, keepMainComponents, shapeMetrics } from './crackVerdict';
 import { classifyCrop } from './crackClassifier';
 import { boxIoU, consolidateBoxes } from './defectTracker.js';
 
@@ -204,10 +204,28 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
       const minR = Math.min(...group.map((g) => g.r));
       const maxR = Math.max(...group.map((g) => g.r)) + 1;
 
-      const x1 = (minC / COLS) * W;
-      const y1 = (minR / ROWS) * H;
-      const x2 = (maxC / COLS) * W;
-      const y2 = (maxR / ROWS) * H;
+      // The cells give a rough rectangle; shrink it to where the dark or rough pixels actually are (middle 90% of them)
+      const rx1 = minC * cw; const rx2 = Math.min(sw - 1, maxC * cw);
+      const ry1 = minR * ch; const ry2 = Math.min(sh - 1, maxR * ch);
+      const xs = []; const ys = [];
+      for (let y = Math.max(1, ry1); y < ry2; y++) {
+        for (let x = Math.max(1, rx1); x < rx2; x++) {
+          const idx = y * sw + x;
+          const lap = luma[idx - 1] + luma[idx + 1] + luma[idx - sw] + luma[idx + sw] - 4 * luma[idx];
+          if (luma[idx] < 65 || Math.abs(lap) > 28) { xs.push(x); ys.push(y); }
+        }
+      }
+      let fx1 = rx1; let fx2 = rx2; let fy1 = ry1; let fy2 = ry2;
+      if (xs.length >= 40) {
+        xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+        const at = (arr, q) => arr[Math.min(arr.length - 1, Math.max(0, Math.floor(arr.length * q)))];
+        fx1 = Math.max(rx1, at(xs, 0.05) - 1); fx2 = Math.min(rx2, at(xs, 0.95) + 2);
+        fy1 = Math.max(ry1, at(ys, 0.05) - 1); fy2 = Math.min(ry2, at(ys, 0.95) + 2);
+      }
+      const x1 = (fx1 / sw) * W;
+      const y1 = (fy1 / sh) * H;
+      const x2 = (fx2 / sw) * W;
+      const y2 = (fy2 / sh) * H;
       const avgVar = group.reduce((s, g) => s + g.lapVar, 0) / group.length;
       const conf = Number(Math.min(0.92, 0.60 + (avgVar - 240) / 450).toFixed(2));
 
@@ -295,13 +313,34 @@ export function decodeInstanceMask(protoData, maskCoeffs, { px1, py1, px2, py2, 
     return { maskUrl: null, maskCanvas: null, activePixels: 0 };
   }
 
+  // Drop stray specks: keep the connected pieces that are a real part of the crack, so one far-off dot cannot stretch the box
+  activePixels = keepMainComponents(maskGrid, pw, ph);
+  if (activePixels === 0) {
+    return { maskUrl: null, maskCanvas: null, activePixels: 0 };
+  }
+
   const shape = shapeMetrics(maskGrid, pw, ph); // long and thin (a crack) or compact (a blob)?
 
+  // Tight bounds of what is left: the box is drawn around the crack itself, not around the model's loose box
+  let bx1 = pw; let by1 = ph; let bx2 = 0; let by2 = 0;
+  for (let ly = 0; ly < ph; ly++) {
+    for (let lx = 0; lx < pw; lx++) {
+      if (maskGrid[ly * pw + lx] === 0) continue;
+      if (lx < bx1) bx1 = lx;
+      if (lx + 1 > bx2) bx2 = lx + 1;
+      if (ly < by1) by1 = ly;
+      if (ly + 1 > by2) by2 = ly + 1;
+    }
+  }
+  const tw = bx2 - bx1;
+  const th = by2 - by1;
+
+  // The mask picture covers exactly the tight region, so it lines up with the box drawn from `bounds`
   const maskCanvas = document.createElement('canvas');
-  maskCanvas.width = pw;
-  maskCanvas.height = ph;
+  maskCanvas.width = tw;
+  maskCanvas.height = th;
   const maskCtx = maskCanvas.getContext('2d');
-  const imgData = maskCtx.createImageData(pw, ph);
+  const imgData = maskCtx.createImageData(tw, th);
   const rgba = imgData.data;
 
   // Styling Palette:
@@ -313,9 +352,9 @@ export function decodeInstanceMask(protoData, maskCoeffs, { px1, py1, px2, py2, 
   const fillAlpha = isCritical ? 115 : 102; // ~0.45 or ~0.40
   const strokeAlpha = 242;                 // 0.95
 
-  for (let ly = 0; ly < ph; ly++) {
+  for (let ly = by1; ly < by2; ly++) {
     const row = ly * pw;
-    for (let lx = 0; lx < pw; lx++) {
+    for (let lx = bx1; lx < bx2; lx++) {
       const pIdx = row + lx;
       if (maskGrid[pIdx] === 0) continue;
 
@@ -330,7 +369,7 @@ export function decodeInstanceMask(protoData, maskCoeffs, { px1, py1, px2, py2, 
         maskGrid[pIdx - pw] === 0 ||
         maskGrid[pIdx + pw] === 0;
 
-      const offset = pIdx * 4;
+      const offset = ((ly - by1) * tw + (lx - bx1)) * 4;
       rgba[offset] = r;
       rgba[offset + 1] = g;
       rgba[offset + 2] = b;
@@ -341,7 +380,8 @@ export function decodeInstanceMask(protoData, maskCoeffs, { px1, py1, px2, py2, 
   maskCtx.putImageData(imgData, 0, 0);
   const maskUrl = maskCanvas.toDataURL('image/png');
 
-  return { maskCanvas, maskUrl, activePixels, shape };
+  // bounds: the tight region in prototype cells, relative to (px1, py1)
+  return { maskCanvas, maskUrl, activePixels, shape, bounds: { x1: bx1, y1: by1, x2: bx2, y2: by2 } };
 }
 
 /**
@@ -437,6 +477,7 @@ export async function detectVideoFrame(
       let area_mm2 = 0;
       let destBox = null;
       let shape = null;
+      let tx1 = x1; let ty1 = y1; let tx2 = x2; let ty2 = y2;
 
       if (protoData) {
         const maskCoeffs = new Float32Array(32);
@@ -469,21 +510,33 @@ export async function detectVideoFrame(
         activePixels = maskResult.activePixels;
         shape = maskResult.shape || null;
 
-        if (activePixels > 0) {
+        if (activePixels > 0 && maskResult.bounds) {
           area_mm2 = calculateCrackAreaMm2(activePixels, scale);
-          const destX = Math.max(0, ((px1 * 4 - dw) / scale) + tile.x0);
-          const destY = Math.max(0, ((py1 * 4 - dh) / scale) + tile.y0);
-          const destW = (pw * 4) / scale;
-          const destH = (ph * 4) / scale;
-          destBox = { destX, destY, destW, destH };
+          // Tight box: exactly the cells the mask covers, in frame pixels
+          const bd = maskResult.bounds;
+          const toX = (gx) => (((px1 + gx) * 4 - dw) / scale) + tile.x0;
+          const toY = (gy) => (((py1 + gy) * 4 - dh) / scale) + tile.y0;
+          tx1 = Math.max(0, toX(bd.x1));
+          ty1 = Math.max(0, toY(bd.y1));
+          tx2 = Math.min(W, toX(bd.x2));
+          ty2 = Math.min(H, toY(bd.y2));
+          destBox = { destX: toX(bd.x1), destY: toY(bd.y1), destW: ((bd.x2 - bd.x1) * 4) / scale, destH: ((bd.y2 - bd.y1) * 4) / scale };
         }
       }
 
+      // The detector's own box is loose; when there is a mask the box follows the mask instead
+      if (tx2 - tx1 < 3 || ty2 - ty1 < 3) continue;
+      const boxFrac = ((tx2 - tx1) * (ty2 - ty1)) / (W * H);
+      // One crack does not fill a third of the picture. A ring joint, a wall seam or the whole wall is not a crack either:
+      // large and not long-and-thin is dropped here, before it can be drawn or stored.
+      if (boxFrac > 0.45) continue;
+      if (boxFrac > 0.2 && shape && shape.elongation < RULES.minElongation) continue;
+
       rawBoxes.push({
-        x1,
-        y1,
-        x2,
-        y2,
+        x1: tx1,
+        y1: ty1,
+        x2: tx2,
+        y2: ty2,
         confidence: conf,
         class: 'crack',
         maskCanvas,
@@ -513,14 +566,11 @@ export async function detectVideoFrame(
 
   // Paint mask overlays for winning detections directly onto srcCanvas before snapshot capture
   for (const cand of combined) {
-    if (cand.maskCanvas && cand.destBox && cand.destBox.destW > 0 && cand.destBox.destH > 0) {
-      srcCtx.drawImage(
-        cand.maskCanvas,
-        cand.destBox.destX,
-        cand.destBox.destY,
-        cand.destBox.destW,
-        cand.destBox.destH
-      );
+    const pieces = cand.parts && cand.parts.length ? cand.parts : [{ maskCanvas: cand.maskCanvas, destBox: cand.destBox }];
+    for (const piece of pieces) {
+      if (piece.maskCanvas && piece.destBox && piece.destBox.destW > 0 && piece.destBox.destH > 0) {
+        srcCtx.drawImage(piece.maskCanvas, piece.destBox.destX, piece.destBox.destY, piece.destBox.destW, piece.destBox.destH);
+      }
     }
   }
 
@@ -584,6 +634,15 @@ export async function detectVideoFrame(
       height_mm: spatial.height_mm,
       area_mm2,
       maskUrl: box.maskUrl || null,
+      // The crack outline(s) as pictures placed in percent of the frame, for the live overlay (not stored)
+      mask_parts: (box.parts && box.parts.length ? box.parts : (box.maskUrl && box.destBox ? [{ maskUrl: box.maskUrl, destBox: box.destBox }] : []))
+          .map((p) => ({
+          url: p.maskUrl,
+          left_pct: Number(((p.destBox.destX / W) * 100).toFixed(2)),
+          top_pct: Number(((p.destBox.destY / H) * 100).toFixed(2)),
+          width_pct: Number(((p.destBox.destW / W) * 100).toFixed(2)),
+          height_pct: Number(((p.destBox.destH / H) * 100).toFixed(2)),
+        })),
       image_url: snapshotUrl,
       crop_url: box.cropUrl || null,
       classifier: box.classifier || { state: 'absent', score: null },

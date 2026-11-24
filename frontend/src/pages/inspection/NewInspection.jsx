@@ -1,5 +1,5 @@
 import { autoVerdict } from '../../utils/crackVerdict';
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload,
@@ -1125,8 +1125,17 @@ export default function NewInspection() {
             ? 'insp-reticle-box--minor'
             : '';
       return (
+        <Fragment key={det.localId || `${det.frame_index}-${idx}`}>
+        {(det.mask_parts || []).map((p, i) => (
+          <img
+            key={i}
+            className="insp-mask-part"
+            alt=""
+            src={p.url}
+            style={{ left: `${p.left_pct}%`, top: `${p.top_pct}%`, width: `${p.width_pct}%`, height: `${p.height_pct}%` }}
+          />
+        ))}
         <div
-          key={det.localId || `${det.frame_index}-${idx}`}
           className={`insp-reticle-box ${sevClass}`}
           style={{
             left: `${det.bbox.left_pct}%`,
@@ -1147,6 +1156,7 @@ export default function NewInspection() {
             {det.clock_pos ? ` · ${det.clock_pos.split(' ')[0]} ${det.clock_pos.split(' ')[1] || ''}` : ''}
           </span>
         </div>
+        </Fragment>
       );
     });
 
