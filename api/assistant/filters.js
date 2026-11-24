@@ -5,6 +5,8 @@
  * plain strings are accepted, and no model-supplied text is ever used as a regular expression or an operator.
  */
 
+const { withView, reviewState } = require('../detectionRules');
+
 const TUNNEL_M = 250;
 const SEVERITIES = ['Critical', 'Major', 'Minor', 'Info'];
 const SORTS = ['chainage', 'severity', 'confidence', 'newest', 'largest'];
@@ -42,6 +44,7 @@ const FILTER_PROPERTIES = {
   flagged_urgent: { type: 'boolean', description: 'true to list only defects an engineer flagged for urgent repair.' },
   since: { type: 'string', description: 'Only defects detected on or after this date (YYYY-MM-DD).' },
   until: { type: 'string', description: 'Only defects detected on or before this date (YYYY-MM-DD).' },
+  include_unreviewed: { type: 'boolean', description: 'true to also include detections that are still waiting for an engineer and that the system did not judge to be cracks. Leave unset for confirmed cracks only.' },
   sort: { type: 'string', enum: SORTS, description: 'Order of the results.' },
   limit: { type: 'integer', description: 'How many results to return, 1 to 25.' },
 };
@@ -98,12 +101,16 @@ function buildFilter(args = {}) {
   const sort = args.sort === undefined || args.sort === null || args.sort === '' ? 'severity' : args.sort;
   if (!SORTS.includes(sort)) throw new FilterError(`sort must be one of ${SORTS.join(', ')}`);
   const limit = Math.round(bounded(args.limit, 1, 25, 'limit') ?? 10);
-  return { query, sort, limit, description };
+  // by default only detections that count as cracks (confirmed, or unreviewed and judged a crack by the system)
+  const includeUnreviewed = args.include_unreviewed === true;
+  if (includeUnreviewed) description.push('including detections awaiting review');
+  return { query: withView(query, includeUnreviewed ? 'not_rejected' : 'counted'), sort, limit, description };
 }
 
 const PROJECTION = {
   class_label: 1, subtype: 1, severity: 1, confidence: 1, z: 1, x: 1, y: 1, clock_pos: 1, inspection_id: 1,
   timestamp: 1, crack_area_mm2: 1, crack_width_mm: 1, crack_length_mm: 1, flagged_urgent: 1,
+  review_status: 1, auto_verdict: 1,
 };
 
 const cap = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
@@ -124,6 +131,7 @@ function toRecord(d) {
     width_mm: typeof d.crack_width_mm === 'number' ? Math.round(d.crack_width_mm * 10) / 10 : null,
     length_mm: typeof d.crack_length_mm === 'number' ? Math.round(d.crack_length_mm) : null,
     flagged_urgent: d.flagged_urgent === true,
+    review: reviewState(d),
   };
 }
 

@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, ChevronUp, ChevronDown, ArrowRight, Loader2, Trash2 } from 'lucide-react';
-import { useDetections, deleteDetectionLog } from '../../hooks/useApi';
+import { useDetections, deleteDetectionLog, bulkReviewDetections } from '../../hooks/useApi';
+import { useAuth } from '../../auth/useAuth';
+import { PERMISSIONS } from '../../auth/permissions';
+import { REJECT_REASONS, countsAsCrack, reviewState } from '../../utils/crackVerdict';
 import { useToast } from '../../ui/contexts';
 import './AIDetections.css';
 
@@ -18,8 +21,19 @@ const SEV_COLOR = {
 const STATUS_COLOR = {
   pending:   'var(--minor)',
   confirmed: 'var(--info)',
+  rejected:  'var(--ink-3)',
   flagged:   'var(--critical)',
 };
+
+// the review queue: what each tab asks the server for
+const TABS = [
+  { id: 'counted', label: 'Cracks', hint: 'Confirmed, or judged a crack by the system and not yet reviewed' },
+  { id: 'pending', label: 'Awaiting review', hint: 'Not judged a crack by the system and nobody has reviewed them' },
+  { id: 'rejected', label: 'Rejected', hint: 'Marked as not a crack' },
+  { id: 'all', label: 'All', hint: 'Everything stored' },
+];
+const REASON_LABEL = { shadow: 'Shadow', stain: 'Stain or water streak', ring_joint: 'Ring joint or seam', debris: 'Debris', texture: 'Concrete texture', other: 'Something else' };
+const VERDICT_WHY = { texture_heuristic: 'texture check, not a trained model', low_confidence: 'low confidence', blob_shape: 'blob-shaped, not thin', too_small: 'very small', compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'the crack checker says no', classifier_unsure: 'the crack checker is not sure', classifier_unavailable: 'the crack checker could not load' };
 
 export default function AIDetections() {
   const navigate = useNavigate();
@@ -29,6 +43,12 @@ export default function AIDetections() {
   const [sortKey, setSortKey]       = useState('detectedAt');
   const [sortDir, setSortDir]       = useState('desc');
   const [page, setPage]             = useState(1);
+  const [tab, setTab]               = useState('counted');
+  const [picked, setPicked]         = useState(() => new Set());
+  const [rejectReason, setRejectReason] = useState('shadow');
+  const [reviewing, setReviewing]    = useState(false);
+  const { can } = useAuth();
+  const canReview = can(PERMISSIONS.DETECTIONS_REVIEW);
   const PER_PAGE = 10;
 
   const [deletingId, setDeletingId]       = useState(null);
@@ -40,6 +60,7 @@ export default function AIDetections() {
     category: filterCat || undefined,
     severity: filterSev || undefined,
     search:   search    || undefined,
+    view:     tab,
   });
 
   const toast = useToast();
@@ -76,6 +97,23 @@ export default function AIDetections() {
       setClearingAll(false);
     }
   }
+
+  async function review(status) {
+    if (!picked.size) return;
+    setReviewing(true);
+    try {
+      const out = await bulkReviewDetections([...picked], status, status === 'rejected' ? rejectReason : undefined);
+      toast.success(`${out.modified} detection${out.modified === 1 ? '' : 's'} ${status === 'confirmed' ? 'confirmed as cracks' : status === 'rejected' ? 'rejected' : 'sent back to review'}.`);
+      setPicked(new Set());
+      refetch?.();
+    } catch (err) {
+      toast.error(err.message || 'The review could not be saved.');
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  const togglePick = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   function toggleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -149,6 +187,15 @@ export default function AIDetections() {
         )}
       </div>
 
+      {/* ── Review queue tabs ── */}
+      <div className="det-tabs" role="tablist" aria-label="Which detections to list">
+        {TABS.map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} title={t.hint} className={`det-tab${tab === t.id ? ' det-tab--on' : ''}`}
+            onClick={() => { setTab(t.id); setPage(1); setPicked(new Set()); }}>{t.label}</button>
+        ))}
+      </div>
+      {tab === 'pending' && <p className="det-note">The system could not tell whether these are cracks. Confirm the real ones and reject the rest; a rejected detection never counts and teaches the checker what a crack is not.</p>}
+
       {/* ── Filters ── */}
       <div className="det-filters" role="search">
         <div className="det-search">
@@ -192,11 +239,32 @@ export default function AIDetections() {
         </p>
       </div>
 
+      {canReview && picked.size > 0 && (
+        <div className="det-bulk" role="region" aria-label="Review the selected detections">
+          <b>{picked.size} selected</b>
+          <button type="button" className="det-bulk__btn det-bulk__btn--ok" disabled={reviewing} onClick={() => review('confirmed')}>Confirm as cracks</button>
+          <label>Reject as
+            <select value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}>
+              {REJECT_REASONS.map((r) => <option key={r} value={r}>{REASON_LABEL[r]}</option>)}
+            </select>
+          </label>
+          <button type="button" className="det-bulk__btn" disabled={reviewing} onClick={() => review('rejected')}>Reject</button>
+          {tab !== 'pending' && <button type="button" className="det-bulk__btn" disabled={reviewing} onClick={() => review('pending')}>Back to review</button>}
+          <button type="button" className="det-link" onClick={() => setPicked(new Set())}>Clear</button>
+        </div>
+      )}
+
       {/* ── Table ── */}
       <div className="det-table-wrap">
         <table className="det-table" aria-label="AI detection records">
           <thead>
             <tr>
+              {canReview && (
+                <th className="det-th" style={{ width: 32 }}>
+                  <input type="checkbox" aria-label="Select this page" checked={pageData.length > 0 && pageData.every((d) => picked.has(d.id))}
+                    onChange={(e) => setPicked((s) => { const n = new Set(s); pageData.forEach((d) => (e.target.checked ? n.add(d.id) : n.delete(d.id))); return n; })} />
+                </th>
+              )}
               {[
                 { key: 'id',          label: 'Detection ID' },
                 { key: 'category',    label: 'Category' },
@@ -226,8 +294,8 @@ export default function AIDetections() {
           <tbody>
             {pageData.length === 0 ? (
               <tr>
-                <td colSpan={8} className="det-empty" style={{ padding: '48px 16px', textAlign: 'center' }}>
-                  No inspection defects found. Upload an ROV video in <strong>New Inspection</strong> to run AI detection.
+                <td colSpan={9} className="det-empty" style={{ padding: '48px 16px', textAlign: 'center' }}>
+                  {tab === 'counted' ? <>No detections count as cracks yet. Check <strong>Awaiting review</strong>, or run <strong>New Inspection</strong>.</> : 'Nothing here.'}
                 </td>
               </tr>
             ) : pageData.map(d => (
@@ -239,6 +307,11 @@ export default function AIDetections() {
                 onKeyDown={e => e.key === 'Enter' && navigate(`/dashboard/detections/${d.id}`)}
                 aria-label={`View defect ${d.id}`}
               >
+                {canReview && (
+                  <td className="det-td" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" aria-label={`Select ${d.id}`} checked={picked.has(d.id)} onChange={() => togglePick(d.id)} />
+                  </td>
+                )}
                 <td className="det-td det-td--id">{d.id}</td>
                 <td className="det-td">{d.subtype}</td>
                 <td className="det-td">
@@ -259,8 +332,11 @@ export default function AIDetections() {
                     className="det-badge det-badge--status"
                     style={{ color: STATUS_COLOR[d.reviewStatus] || 'var(--db-ink-3)' }}
                   >
-                    {d.reviewStatus}
+                    {reviewState(d) === 'rejected' ? `rejected${d.reject_reason ? `: ${REASON_LABEL[d.reject_reason] || d.reject_reason}` : ''}` : countsAsCrack(d) ? (reviewState(d) === 'confirmed' ? 'confirmed crack' : 'crack (unreviewed)') : 'awaiting review'}
                   </span>
+                  {!countsAsCrack(d) && reviewState(d) === 'pending' && d.verdict_reason?.length > 0 && (
+                    <small className="det-why">{d.verdict_reason.map((r) => VERDICT_WHY[r] || r).join(', ')}</small>
+                  )}
                 </td>
                 <td className="det-td det-td--action" style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'flex-end' }}>
                   <button

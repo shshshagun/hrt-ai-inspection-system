@@ -11,6 +11,7 @@ const { PasswordResetService, MongoResetStore } = require('./auth/passwordReset'
 const { createMailer } = require('./auth/mailer');
 const { PERMISSIONS } = require('./auth/roles');
 const { createAssistantRouter } = require('./assistant/routes');
+const { REJECT_REASONS, REVIEW_STATUSES, VIEWS, withView } = require('./detectionRules');
 
 const app = express();
 // Render puts one proxy in front of the gateway: trust it, so req.ip is the real client address (used by the rate limits).
@@ -156,7 +157,12 @@ app.post('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_CREATE), async 
     crack_area_mm2,
     area_mm2,
     clock_pos,
-    inspection_id
+    inspection_id,
+    auto_verdict,
+    verdict_reason,
+    detector,
+    crop_url,
+    classifier_score
   } = req.body || {};
   
   if (!class_label || typeof class_label !== 'string' || confidence === undefined || isNaN(confidence)) {
@@ -183,6 +189,13 @@ app.post('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_CREATE), async 
         : (area_mm2 !== undefined && area_mm2 !== null ? Number(area_mm2) : null),
       clock_pos: clock_pos || "12 o'clock (Crown)",
       inspection_id: inspection_id || 'LIVE-ROV',
+      // new detections wait for review; the automatic verdict decides whether they count as cracks until someone reviews them
+      review_status: 'pending',
+      auto_verdict: auto_verdict === 'crack' ? 'crack' : 'candidate',
+      verdict_reason: Array.isArray(verdict_reason) ? verdict_reason.filter((r) => typeof r === 'string').map((r) => r.slice(0, 40)).slice(0, 6) : [],
+      detector: typeof detector === 'string' ? detector.slice(0, 40) : null,
+      classifier_score: typeof classifier_score === 'number' && classifier_score >= 0 && classifier_score <= 1 ? classifier_score : null,
+      crop_url: typeof crop_url === 'string' && crop_url.startsWith('data:image/') && crop_url.length <= 80000 ? crop_url : null,
       video_name: video_name || null,
       video_time: video_time !== undefined ? Number(video_time) : 0,
       image_url: typeof image_url === 'string' ? image_url : null,
@@ -212,13 +225,16 @@ app.get('/api/detections', ...auth.guard(PERMISSIONS.DETECTIONS_READ), async (re
   }
 
   try {
-    const { inspection_id, severity, limit = 1000 } = req.query;
-    const filter = {};
+    const { inspection_id, severity, limit = 1000, view = 'all' } = req.query;
+    if (!VIEWS.includes(String(view))) return res.status(400).json({ error: `view must be one of: ${VIEWS.join(', ')}` });
+    let filter = {};
     if (inspection_id) filter.inspection_id = inspection_id;
     if (severity && severity !== 'All') filter.severity = severity;
 
+    filter = withView(filter, String(view));
+    // the stored crop is only for the classifier and the review screen, so lists do not carry it
     const detections = await db.collection('detections')
-      .find(filter)
+      .find(filter, { projection: { crop_url: 0 } })
       .sort({ timestamp: -1 })
       .limit(Math.min(Math.max(parseInt(limit, 10) || 1000, 1), 2000))
       .toArray();
@@ -264,7 +280,13 @@ app.patch('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_REVIEW), a
   if (!db) {
     return res.status(503).json({ error: 'Database not initialized or unreachable' });
   }
-  const { flagged, observation } = req.body || {};
+  const { flagged, observation, review_status, reject_reason } = req.body || {};
+  if (review_status !== undefined && !REVIEW_STATUSES.includes(review_status)) {
+    return res.status(400).json({ error: `review_status must be one of: ${REVIEW_STATUSES.join(', ')}` });
+  }
+  if (reject_reason !== undefined && reject_reason !== null && !REJECT_REASONS.includes(reject_reason)) {
+    return res.status(400).json({ error: `reject_reason must be one of: ${REJECT_REASONS.join(', ')}` });
+  }
   if (flagged !== undefined && typeof flagged !== 'boolean') {
     return res.status(400).json({ error: '"flagged" must be true or false' });
   }
@@ -272,8 +294,8 @@ app.patch('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_REVIEW), a
   if (observation !== undefined && (typeof observation !== 'string' || !note || note.length > 1000)) {
     return res.status(400).json({ error: 'An observation must be 1 to 1000 characters' });
   }
-  if (flagged === undefined && observation === undefined) {
-    return res.status(400).json({ error: 'Nothing to update: send "flagged" or "observation"' });
+  if (flagged === undefined && observation === undefined && review_status === undefined) {
+    return res.status(400).json({ error: 'Nothing to update: send "flagged", "observation" or "review_status"' });
   }
 
   const by = req.user.name || req.user.email || 'unknown';
@@ -283,6 +305,15 @@ app.patch('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_REVIEW), a
     update.$set = flagged
       ? { flagged_urgent: true, flagged_by: by, flagged_at: at }
       : { flagged_urgent: false, flagged_by: null, flagged_at: null };
+  }
+  if (review_status !== undefined) {
+    update.$set = {
+      ...(update.$set || {}),
+      review_status,
+      reject_reason: review_status === 'rejected' ? (reject_reason || 'other') : null,
+      reviewed_by: review_status === 'pending' ? null : by,
+      reviewed_at: review_status === 'pending' ? null : at,
+    };
   }
   if (observation !== undefined) update.$push = { observations: { text: note, by, at } };
 
@@ -294,6 +325,36 @@ app.patch('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_REVIEW), a
     res.json(doc);
   } catch (error) {
     console.error('Error updating detection:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// ── POST /api/detections/bulk-review ──
+// Confirms or rejects many detections at once (the review queue). At most 200 ids per call.
+app.post('/api/detections/bulk-review', ...auth.guard(PERMISSIONS.DETECTIONS_REVIEW), async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database not initialized or unreachable' });
+  const { ids, review_status, reject_reason } = req.body || {};
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 200 || !ids.every((i) => typeof i === 'string' && /^[\w.-]{1,64}$/.test(i))) {
+    return res.status(400).json({ error: 'Send between 1 and 200 detection ids' });
+  }
+  if (!REVIEW_STATUSES.includes(review_status)) return res.status(400).json({ error: `review_status must be one of: ${REVIEW_STATUSES.join(', ')}` });
+  if (reject_reason !== undefined && reject_reason !== null && !REJECT_REASONS.includes(reject_reason)) {
+    return res.status(400).json({ error: `reject_reason must be one of: ${REJECT_REASONS.join(', ')}` });
+  }
+  try {
+    const { ObjectId } = require('mongodb');
+    const objectIds = ids.filter((i) => /^[a-f0-9]{24}$/i.test(i)).map((i) => new ObjectId(i));
+    const by = req.user.name || req.user.email || 'unknown';
+    const set = {
+      review_status,
+      reject_reason: review_status === 'rejected' ? (reject_reason || 'other') : null,
+      reviewed_by: review_status === 'pending' ? null : by,
+      reviewed_at: review_status === 'pending' ? null : new Date().toISOString(),
+    };
+    const result = await db.collection('detections').updateMany({ _id: { $in: objectIds } }, { $set: set });
+    res.json({ matched: result.matchedCount, modified: result.modifiedCount });
+  } catch (error) {
+    console.error('Error reviewing detections:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -322,6 +383,10 @@ app.delete('/api/detections/:id', ...auth.guard(PERMISSIONS.DETECTIONS_DELETE), 
   }
 });
 
+// aggregation expressions for the same rule as detectionRules.js: unreviewed, and counts as a crack
+const UNREVIEWED_EXPR = { $not: [{ $in: ['$review_status', ['confirmed', 'rejected']] }] };
+const COUNTED_EXPR = { $or: [{ $eq: ['$review_status', 'confirmed'] }, { $and: [UNREVIEWED_EXPR, { $eq: ['$auto_verdict', 'crack'] }] }] };
+
 // ── GET /api/inspections ──
 // Aggregates distinct inspections from live MongoDB detections
 app.get('/api/inspections', ...auth.guard(PERMISSIONS.INSPECTIONS_READ), async (req, res) => {
@@ -334,16 +399,11 @@ app.get('/api/inspections', ...auth.guard(PERMISSIONS.INSPECTIONS_READ), async (
       {
         $group: {
           _id: "$inspection_id",
-          totalDetections: { $sum: 1 },
-          criticalCount: {
-            $sum: {
-              $cond: [
-                { $or: [{ $eq: ["$severity", "Critical"] }, { $gte: ["$confidence", 0.85] }] },
-                1,
-                0
-              ]
-            }
-          },
+          rawTotal: { $sum: 1 },
+          totalDetections: { $sum: { $cond: [COUNTED_EXPR, 1, 0] } },
+          pendingCount: { $sum: { $cond: [{ $and: [UNREVIEWED_EXPR, { $ne: ['$auto_verdict', 'crack'] }] }, 1, 0] } },
+          rejectedCount: { $sum: { $cond: [{ $eq: ['$review_status', 'rejected'] }, 1, 0] } },
+          criticalCount: { $sum: { $cond: [{ $and: [COUNTED_EXPR, { $eq: ['$severity', 'Critical'] }] }, 1, 0] } },
           videoName: { $first: "$video_name" },
           startTime: { $min: "$timestamp" },
           endTime: { $max: "$timestamp" },
@@ -380,6 +440,9 @@ app.get('/api/inspections', ...auth.guard(PERMISSIONS.INSPECTIONS_READ), async (
         coverageKm: coverage,
         totalDetections: r.totalDetections,
         criticalCount: r.criticalCount,
+        pendingCount: r.pendingCount,
+        rejectedCount: r.rejectedCount,
+        rawTotal: r.rawTotal,
         status: 'completed'
       };
     });
@@ -896,8 +959,9 @@ app.post('/api/reports/generate', ...auth.guard(PERMISSIONS.REPORTS_GENERATE), a
         }
       }
 
+      const view = VIEWS.includes(req.body?.view) ? req.body.view : 'counted';
       detections = db
-        ? await db.collection('detections').find(query).sort({ z: 1, timestamp: 1 }).limit(500).toArray()
+        ? await db.collection('detections').find(withView(query, view)).sort({ z: 1, timestamp: 1 }).limit(500).toArray()
         : [];
     }
 
@@ -960,7 +1024,7 @@ app.get('/api/inspections/:id/export/pdf', ...auth.guard(PERMISSIONS.REPORTS_GEN
       }
     }
     const detections = db
-      ? await db.collection('detections').find(query).sort({ z: 1, timestamp: 1 }).limit(500).toArray()
+      ? await db.collection('detections').find(withView(query, 'counted')).sort({ z: 1, timestamp: 1 }).limit(500).toArray()
       : [];
 
     const pdfBuffer = await generateInspectionPdf({

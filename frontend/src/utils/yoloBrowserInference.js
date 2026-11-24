@@ -8,6 +8,8 @@
  */
 
 import * as ort from 'onnxruntime-web/wasm';
+import { shapeMetrics } from './crackVerdict';
+import { classifyCrop } from './crackClassifier';
 import { boxIoU, consolidateBoxes } from './defectTracker.js';
 
 let sessionPromise = null;
@@ -221,6 +223,22 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
 /**
  * Capture a lightweight 480px-wide JPEG data URL from the current frame canvas.
  */
+/** A square 224 x 224 canvas around a detection (with some context), with nothing drawn on it. */
+export function cropCanvas(srcCanvas, box, W, H) {
+  try {
+    const cx = (box.x1 + box.x2) / 2; const cy = (box.y1 + box.y2) / 2;
+    const side = Math.min(Math.min(W, H), Math.max(64, Math.max(box.x2 - box.x1, box.y2 - box.y1) * 1.5));
+    const x0 = Math.max(0, Math.min(W - side, cx - side / 2));
+    const y0 = Math.max(0, Math.min(H - side, cy - side / 2));
+    const c = document.createElement('canvas');
+    c.width = 224; c.height = 224;
+    c.getContext('2d', { willReadFrequently: true }).drawImage(srcCanvas, x0, y0, side, side, 0, 0, 224, 224);
+    return c;
+  } catch {
+    return null;
+  }
+}
+
 export function captureSnapshot(srcCanvas) {
   const targetW = 480;
   const ratio = srcCanvas.height / Math.max(1, srcCanvas.width);
@@ -277,6 +295,8 @@ export function decodeInstanceMask(protoData, maskCoeffs, { px1, py1, px2, py2, 
     return { maskUrl: null, maskCanvas: null, activePixels: 0 };
   }
 
+  const shape = shapeMetrics(maskGrid, pw, ph); // long and thin (a crack) or compact (a blob)?
+
   const maskCanvas = document.createElement('canvas');
   maskCanvas.width = pw;
   maskCanvas.height = ph;
@@ -321,7 +341,7 @@ export function decodeInstanceMask(protoData, maskCoeffs, { px1, py1, px2, py2, 
   maskCtx.putImageData(imgData, 0, 0);
   const maskUrl = maskCanvas.toDataURL('image/png');
 
-  return { maskCanvas, maskUrl, activePixels };
+  return { maskCanvas, maskUrl, activePixels, shape };
 }
 
 /**
@@ -416,6 +436,7 @@ export async function detectVideoFrame(
       let activePixels = 0;
       let area_mm2 = 0;
       let destBox = null;
+      let shape = null;
 
       if (protoData) {
         const maskCoeffs = new Float32Array(32);
@@ -446,6 +467,7 @@ export async function detectVideoFrame(
         maskCanvas = maskResult.maskCanvas;
         maskUrl = maskResult.maskUrl;
         activePixels = maskResult.activePixels;
+        shape = maskResult.shape || null;
 
         if (activePixels > 0) {
           area_mm2 = calculateCrackAreaMm2(activePixels, scale);
@@ -469,6 +491,7 @@ export async function detectVideoFrame(
         activePixels,
         area_mm2,
         destBox,
+        shape,
       });
     }
   }
@@ -479,6 +502,13 @@ export async function detectVideoFrame(
 
   if (combined.length === 0) {
     return { detections: [], snapshotUrl: null };
+  }
+
+  // Clean crops for the review screen and the crack classifier: taken before anything is painted on the frame
+  for (const cand of combined) {
+    const crop = cropCanvas(srcCanvas, cand, W, H);
+    cand.cropUrl = crop ? crop.toDataURL('image/jpeg', 0.8) : null;
+    cand.classifier = crop ? await classifyCrop(crop) : { state: 'absent', score: null };
   }
 
   // Paint mask overlays for winning detections directly onto srcCanvas before snapshot capture
@@ -555,6 +585,10 @@ export async function detectVideoFrame(
       area_mm2,
       maskUrl: box.maskUrl || null,
       image_url: snapshotUrl,
+      crop_url: box.cropUrl || null,
+      classifier: box.classifier || { state: 'absent', score: null },
+      shape: box.shape || null,
+      box_aspect: Number((Math.max(bwNorm * W, bhNorm * H) / Math.max(1, Math.min(bwNorm * W, bhNorm * H))).toFixed(2)),
       bbox: {
         x1: Math.round((box.x1 / W) * 640),
         y1: Math.round((box.y1 / H) * 480),

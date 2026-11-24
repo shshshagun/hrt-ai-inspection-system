@@ -91,3 +91,17 @@
 .det-page-btn:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
 .det-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .det-page-btn--active { background: var(--teal); border-color: var(--teal); color: #fff; }
+
+.det-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
+.det-tab { padding: 7px 14px; border-radius: 10px; border: 1px solid var(--db-border); background: var(--db-surface-2); color: var(--ink-2); font-size: var(--text-sm); box-shadow: 0 3px 0 rgba(0, 0, 0, .3); transform: translateY(-3px); transition: transform .12s, box-shadow .12s, color .2s, border-color .2s; }
+.det-tab:hover { color: var(--cyan); border-color: var(--cyan); }
+.det-tab--on { background: var(--cyan); color: var(--on-accent); border-color: var(--cyan); font-weight: 600; }
+.det-note { font-size: var(--text-xs); color: var(--ink-2); margin-bottom: 10px; max-width: 70ch; }
+.det-bulk { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 14px; margin-bottom: 10px; border: 1px solid var(--cyan); border-radius: 12px; background: var(--db-surface); font-size: var(--text-sm); }
+.det-bulk label { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.det-bulk select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--db-border); background: var(--db-surface-2); color: var(--ink); }
+.det-bulk__btn { padding: 7px 14px; border-radius: 10px; border: 1px solid var(--db-border); background: var(--db-surface-2); color: var(--ink); font-weight: 600; font-size: var(--text-xs); }
+.det-bulk__btn--ok { background: var(--cyan); color: var(--on-accent); border-color: var(--cyan); }
+.det-bulk__btn:disabled { opacity: .5; }
+.det-link { color: var(--cyan); text-decoration: underline; font-size: var(--text-xs); }
+.det-why { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11px; }

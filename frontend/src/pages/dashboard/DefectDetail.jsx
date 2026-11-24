@@ -5,6 +5,7 @@ import { generateReport, useDetection, useDetections, deleteDetectionLog, review
 import { useAuth } from '../../auth/useAuth';
 import { PERMISSIONS } from '../../auth/permissions';
 import { useToast } from '../../ui/contexts';
+import { REJECT_REASONS, countsAsCrack, reviewState } from '../../utils/crackVerdict';
 import DefectHistory from '../../components/insight/DefectHistory';
 import Skeleton from '../../ui/Skeleton';
 
@@ -64,6 +65,9 @@ function MetaRow({ label, value }) {
   );
 }
 
+const REASON_LABEL = { shadow: 'Shadow', stain: 'Stain or water streak', ring_joint: 'Ring joint or seam', debris: 'Debris', texture: 'Concrete texture', other: 'Something else' };
+const VERDICT_WHY = { texture_heuristic: 'texture check, not a trained model', low_confidence: 'low confidence', blob_shape: 'blob-shaped, not thin', too_small: 'very small', compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'the crack checker says no', classifier_unsure: 'the crack checker is not sure', classifier_unavailable: 'the crack checker could not load' };
+
 export default function DefectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -76,6 +80,7 @@ export default function DefectDetail() {
   const [review, setReview] = useState(null);       // latest server copy after a flag / note
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
+  const [rejectReason, setRejectReason] = useState('shadow');
   const [saving, setSaving] = useState(false);
   const [natural, setNatural] = useState(null); // real pixel size of the snapshot, for pixel-based boxes
 
@@ -424,6 +429,27 @@ export default function DefectDetail() {
               ))}
             </ul>
           )}
+
+          {/* ── Is it a crack? (the review decision behind every count) ── */}
+          <section className="dd-verdict" aria-label="Is this a crack?">
+            <h2 className="dd-historical__title">Is this a crack?</h2>
+            <p className="dd-verdict__state">
+              {reviewState(source) === 'confirmed' ? 'An engineer confirmed it as a crack.'
+                : reviewState(source) === 'rejected' ? `An engineer rejected it${source.reject_reason ? ` (${REASON_LABEL[source.reject_reason] || source.reject_reason})` : ''}. It does not count.`
+                  : countsAsCrack(source) ? 'The system judged this to be a crack. It counts until an engineer reviews it.'
+                    : `The system is not sure this is a crack, so it does not count yet${source.verdict_reason?.length ? ` (${source.verdict_reason.map((r) => VERDICT_WHY[r] || r).join(', ')})` : ''}.`}
+            </p>
+            {canReview ? (
+              <div className="dd-verdict__row">
+                <button type="button" className="dd-action-btn dd-action-btn--observe" disabled={saving} onClick={() => send({ review_status: 'confirmed' }, 'Confirmed as a crack.')}>Confirm: it is a crack</button>
+                <select value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} aria-label="Why it is not a crack">
+                  {REJECT_REASONS.map((r) => <option key={r} value={r}>{REASON_LABEL[r]}</option>)}
+                </select>
+                <button type="button" className="dd-action-btn dd-action-btn--flag" disabled={saving} onClick={() => send({ review_status: 'rejected', reject_reason: rejectReason }, 'Rejected: not a crack.')}>Not a crack</button>
+                {reviewState(source) !== 'pending' && <button type="button" className="dd-verdict__undo" disabled={saving} onClick={() => send({ review_status: 'pending' }, 'Sent back to review.')}>Undo</button>}
+              </div>
+            ) : <p className="dd-readonly-note">Engineers and administrators can review this detection.</p>}
+          </section>
 
           {/* ── Historical notes ── */}
           {notes && (

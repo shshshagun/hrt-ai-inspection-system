@@ -89,7 +89,7 @@ We replace both traditional methods with an **autonomous underwater ROV equipped
 The ROV drives through the flooded tunnel (plant stays running, no divers), and our system:
 
 1. Processes the live or recorded video feed.
-2. Detects every crack frame by frame with a YOLOv8n-seg crack-segmentation model (see [AI Model Details](#-ai-model-details) for its provenance).
+2. Detects cracks frame by frame with a YOLOv8n-seg crack-segmentation model (see [AI Model Details](#-ai-model-details) for its provenance), then checks each detection with shape rules, a small crack / not-crack classifier and engineer review, so only real cracks are counted.
 3. Calculates the physical size of each defect using calibrated camera optics.
 4. Translates each detection into a precise 3D position inside the tunnel.
 5. Sends all data to a database and renders it live on a 3D digital twin visible in any browser.
@@ -123,7 +123,7 @@ The ROV records HD video of the tunnel wall as it moves along the tunnel axis.
 - **Optical math** converts pixel coordinates to real-world millimeters:
   - `crack_width_mm = (bbox_width_pixels × pixel_pitch_mm × distance_mm) / focal_length_mm`
   - This uses the camera's known focal length (f), working distance (D), and sensor pixel pitch.
-- Each detection is tagged with its **frame number** and **timestamp**.
+- Each detection is tagged with its **frame number** and **timestamp**, and is stored with an automatic crack / candidate verdict and a review status (see [Only Real Cracks Are Counted](#only-real-cracks-are-counted)).
 
 ### Layer 2: Spatial Coordinate Translation
 **File:** `ai_pipeline/utils/spatial.py`
@@ -491,6 +491,22 @@ python ai_pipeline/predict.py `
 | Our contribution | The browser inference pipeline (tiled scan, mask decoding, box consolidation, multi-frame tracker), spatial mapping, services, 3D twin and the evaluation below |
 | Training code | `ai_pipeline/train.py` trains YOLOv8s on the Roboflow dataset; the log of that run is `runs/detect/hrt_crack_det/results.csv` (best validation mAP@0.5 0.68, epoch 103). Those weights are not kept in the repository. |
 
+### Only Real Cracks Are Counted
+
+The detector has one class and fires on stains, ring joints and shadows as well as cracks. Every detection therefore goes through three checks before it counts, and the dashboard, 3D twin, reports, PDF and Ask HRT all use the same rule.
+
+1. **Automatic verdict (in the browser, `frontend/src/utils/crackVerdict.js`).** A detection is a `crack` only if its mask is long and thin (elongation of at least 2.5, at least 30 mask pixels, box aspect of at least 2.2), the confidence is at least 0.5, it was seen in at least 3 frames (not applied to single photos) and it is not the texture-based "spalling" estimate. Anything else is stored as a `candidate` with the reasons (`low_confidence`, `blob_shape`, `too_small`, `compact_box`, `few_frames`, `texture_heuristic`).
+2. **Second-stage classifier (`frontend/public/models/hrt_crack_cls.onnx`, 6 MB).** A MobileNetV3-small looks at a 224 × 224 crop of each detection and answers crack / not a crack. A score below 0.3 makes the detection a candidate, a score between 0.3 and 0.7 is "unsure" (also a candidate), and 0.7 or more lets it stay a crack. If the file is missing nothing changes; if it is present but fails to run, detections become candidates rather than being trusted blindly.
+3. **Engineer review.** Every stored detection starts as `pending`. An Engineer or Administrator confirms it or rejects it (with a reason: shadow, stain, ring joint, debris, texture, other); the Detections page has tabs for Cracks, Awaiting review, Rejected and All, and bulk confirm / reject. A detection **counts as a crack** when it is confirmed, or when it is unreviewed and the automatic verdict is `crack`. A rejected detection never counts. Records stored before this feature have no verdict and show as awaiting review.
+
+The scope picker in the top bar switches the whole app between *Cracks only*, *Cracks + awaiting review* and *Everything*. The API takes the same choice as `?view=counted|not_rejected|pending|rejected|all`. A test (`tests/detectionRules.test.js`) checks that the browser rule, the server function and the MongoDB query agree on every combination.
+
+**Classifier accuracy.** Trained on the public Özgenel and Sorguc concrete-crack dataset (Mendeley Data, CC BY 4.0) plus crack and crack-free crops cut from the Roboflow underwater set, and tested on held-out blocks of both (1,862 crops): precision 0.996, recall 0.996, F1 0.996 at 0.5. **This is not the accuracy of the whole system.** Those datasets are easy (close-up, well lit) and neighbouring patches of one wall can appear in both train and test. The honest number needs footage from the tunnel, sorted by hand: `ai_pipeline/extract_frames.py` pulls frames out of a video and `ai_pipeline/evaluate_own_frames.py` scores them (recall on frames with a crack, false-alarm rate on frames without).
+
+**Retrained detector (not deployed).** `ai_pipeline/train_v2.py` fine-tunes YOLOv8n on the Roboflow data plus 1,300 crack-free negatives (`build_negative_set.py`), and `ai_pipeline/compare_detectors.py` scores it against the deployed model on the same images. On the 184-image crack test split at confidence 0.5, the retrained model reached precision 0.956 and recall 0.709 (mAP@0.5 0.831), against 0.830, 0.519 and 0.578 for the deployed model. It draws boxes only (no masks), so the mask-shape rule would have to be adapted before it replaces the segmentation model, and it has not been tested on tunnel footage. It is kept as a candidate.
+
+**Why it is not self-correcting yet.** Reviews are stored, but nothing retrains the models from them. Closing that loop (export confirmed and rejected crops, retrain, accept a new model only if it beats the current one on a frozen test set) is future work.
+
 ### Optical Metric Formula
 
 To convert a pixel bounding box to a real-world measurement:
@@ -513,9 +529,10 @@ All gateway routes (port 5000) except `/health`, `/api/auth/login`, `/api/auth/r
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `POST /api/detections` | create | Ingest a detection from the AI pipeline |
-| `GET /api/detections` | read | List detections (default 1,000, at most 2,000; `?limit=`, `?severity=`, `?inspection_id=`) |
+| `GET /api/detections` | read | List detections (default 1,000, at most 2,000; `?limit=`, `?severity=`, `?inspection_id=`, `?view=counted\|not_rejected\|pending\|rejected\|all`) |
 | `GET /api/detections/:id` | read | One detection |
-| `PATCH /api/detections/:id` | review | Review, flag or annotate a detection |
+| `PATCH /api/detections/:id` | review | Confirm or reject (`review_status`, `reject_reason`), flag or annotate a detection |
+| `POST /api/detections/bulk-review` | review | Confirm or reject up to 200 detections at once |
 | `DELETE /api/detections/:id` | delete | Remove a detection |
 | `GET /api/inspections` | read | Inspection sessions |
 | `DELETE /api/inspections/:id` | delete | Remove a session |
@@ -616,6 +633,7 @@ Being honest about the gaps is important for anyone looking to extend or deploy 
 - **No mobile app** — there is no native iOS/Android interface for field use on-site at the dam.
 - **No automated alert system** — e-mail is used only for password-reset codes; nothing is sent when a Critical defect is detected.
 - **No multi-factor login or single sign-on** — sign-up, role-based access and forgot-password by e-mailed code exist (see [Authentication](#-authentication-and-roles)), but not MFA or SSO.
+- **Crack filtering is not yet measured on tunnel footage** — the shape rules and classifier are tested on public datasets only, and the models do not retrain themselves from engineer reviews.
 - **Limited real-world validation** — the deployed model was trained on a public crack-segmentation dataset and tested only on public underwater crack images, not on footage from actual hydroelectric tunnels. The team does not operate an ROV and did not record any video.
 
 ---
