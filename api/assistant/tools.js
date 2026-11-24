@@ -5,6 +5,7 @@
  */
 const { FILTER_PROPERTIES, FilterError, buildFilter, runFilter, toRecord, PROJECTION, TUNNEL_M } = require('./filters');
 const { normalize, groupSites, siteGrowth, diffInspections } = require('./sites');
+const { countsAsCrack, reviewState } = require('../detectionRules');
 
 const MAX_SCAN = 3000; // upper bound on documents read for aggregate tools
 
@@ -88,7 +89,7 @@ async function executeTool(name, args, { db, sink }) {
     if (!['severity', 'class', 'inspection', 'chainage_band'].includes(a.group_by)) throw new FilterError('group_by must be severity, class, inspection or chainage_band');
     const filter = buildFilter(a);
     const docs = await scan(db, filter.query);
-    return { applied_filters: filter.description, total: docs.length, groups: bucket(docs, a.group_by) };
+    return { applied_filters: filter.description, total: docs.length, groups: bucket(docs, a.group_by), note: 'Counts cover detections that count as cracks unless include_unreviewed was set.' };
   }
 
   if (name === 'list_inspections') {
@@ -96,9 +97,10 @@ async function executeTool(name, args, { db, sink }) {
     const map = new Map();
     for (const d of docs) {
       const id = d.inspection_id || 'unknown';
-      const row = map.get(id) || { inspection_id: String(id).slice(0, 64), defects: 0, critical: 0, last_detected: 0 };
-      row.defects += 1;
-      if (d.severity === 'Critical') row.critical += 1;
+      const row = map.get(id) || { inspection_id: String(id).slice(0, 64), cracks: 0, critical: 0, awaiting_review: 0, rejected: 0, last_detected: 0 };
+      if (reviewState(d) === 'rejected') row.rejected += 1;
+      else if (countsAsCrack(d)) { row.cracks += 1; if (d.severity === 'Critical') row.critical += 1; }
+      else row.awaiting_review += 1;
       row.last_detected = Math.max(row.last_detected, d.timestamp instanceof Date ? d.timestamp.getTime() : 0);
       map.set(id, row);
     }
@@ -108,7 +110,7 @@ async function executeTool(name, args, { db, sink }) {
   }
 
   if (name === 'compare_inspections') {
-    const docs = await scan(db, {});
+    const docs = (await scan(db, {})).filter(countsAsCrack);
     const diff = diffInspections(docs.map(normalize));
     if (!diff) return { note: 'Fewer than two inspections exist, so there is nothing to compare.' };
     const take = (items, fn) => items.slice(0, 6).map(fn);

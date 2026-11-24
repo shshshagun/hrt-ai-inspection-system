@@ -320,3 +320,7 @@
 .db-topbar__left { flex: 1 1 auto; overflow: hidden; }
 .db-topbar__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
 @media (max-width: 600px) { .db-topbar__title { font-size: var(--text-base); } .db-topbar__user-info { display: none; } }
+
+.db-scope select { padding: 6px 10px; border-radius: 10px; border: 1px solid var(--db-border); background: var(--db-surface-2); color: var(--ink-2); font-size: var(--text-xs); cursor: pointer; }
+.db-scope select:hover { border-color: var(--cyan); color: var(--cyan); }
+@media (max-width: 700px) { .db-scope { display: none; } }

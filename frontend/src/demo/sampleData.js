@@ -83,6 +83,9 @@ function build() {
         y: Number((R * Math.cos(rad)).toFixed(2)),
         z: site.z,
         verified_status: severity === 'Critical' && si === 2 ? 'pending' : 'confirmed',
+        // the sample cracks were reviewed, except the newest critical ones, which the system judged to be cracks but nobody has confirmed yet
+        review_status: severity === 'Critical' && si === 2 ? 'pending' : 'confirmed',
+        auto_verdict: 'crack',
         demo: true,
       });
     });

@@ -1,16 +1,18 @@
 import { getToken, clearToken, AUTH_EXPIRED_EVENT } from './tokenStore';
 import { isDemo } from '../demo/demoMode';
 import { DEMO_DETECTIONS, DEMO_INSPECTIONS } from '../demo/sampleData';
+import { matchesView } from '../utils/crackVerdict';
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 /** Answers API calls from the bundled sample data while the read-only demo is running. */
 function demoResponse(url, options) {
   const method = (options.method || 'GET').toUpperCase();
-  const path = new URL(url, window.location.origin).pathname;
+  const parsed = new URL(url, window.location.origin);
+  const path = parsed.pathname;
   if (method !== 'GET') return json({ error: 'The demo is read-only. Sign in to change data.' }, 403);
   if (path === '/health') return new Response('OK');
-  if (path === '/api/detections') return json(DEMO_DETECTIONS);
+  if (path === '/api/detections') return json(DEMO_DETECTIONS.filter((d) => matchesView(d, parsed.searchParams.get('view') || 'all')));
   if (path.startsWith('/api/detections/')) {
     const id = decodeURIComponent(path.split('/').pop());
     const hit = DEMO_DETECTIONS.find((d) => d._id === id);

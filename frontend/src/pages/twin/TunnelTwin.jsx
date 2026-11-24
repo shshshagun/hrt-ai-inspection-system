@@ -8,6 +8,7 @@ import { API_BASE } from '../../config/api';
 import { authFetch } from '../../auth/authFetch';
 import { useToast } from '../../ui/contexts';
 import { usePageTitle } from '../../ui/usePageTitle';
+import { getScope } from '../../ui/detectionScope';
 import ChainageScrubber from '../../components/insight/ChainageScrubber';
 import { createTwinEngine, SEVERITY_COLOR, SLAB_M } from './engine';
 import { toTwinDefect, parseProfileCsv, formatClock, describeDefect } from './geometry';
@@ -94,7 +95,7 @@ export default function TunnelTwin() {
   // ───────────── data ─────────────
   useEffect(() => {
     let active = true;
-    authFetch(`${API_BASE}/api/detections?limit=1000`)
+    authFetch(`${API_BASE}/api/detections?limit=1000&view=${getScope()}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`The server answered ${r.status}`))))
       .then((rows) => { if (active) { setDefects((Array.isArray(rows) ? rows : []).map(toTwinDefect)); setLoading(false); } })
       .catch((err) => { if (active) { setDataError(err.message || 'Could not load detections'); setLoading(false); } });
