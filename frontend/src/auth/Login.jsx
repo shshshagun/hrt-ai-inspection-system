@@ -4,6 +4,7 @@ import { useAuth } from './useAuth';
 import { useDive } from '../ui/contexts';
 import { WakeNotice } from '../ui/Sonar';
 import { usePageTitle } from '../ui/usePageTitle';
+import LegalLinks from '../ui/LegalLinks';
 import './Auth.css';
 
 const TunnelScene = lazy(() => import('./TunnelScene'));
@@ -64,6 +65,7 @@ export default function Login() {
         <button type="button" className="auth-btn auth-btn--ghost" onClick={() => { startDemo(); dive('/dashboard', 'Loading the demo…'); }}>Try the read-only demo</button>
         <p className="auth-hint">New here? <Link to="/register" state={{ from }}>Create an account</Link></p>
         <p className="auth-hint">The first sign-in after a quiet period can take up to 30 seconds while the server wakes up.</p>
+        <LegalLinks className="auth-legal" />
       </form>
     </main>
   );

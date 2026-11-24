@@ -26,6 +26,10 @@ import { DiveProvider } from './ui/DiveProvider';
 import { ToastProvider } from './ui/ToastProvider';
 import { SonarRings } from './ui/Sonar';
 import { PERMISSIONS } from './auth/permissions';
+import CookieBanner from './ui/CookieBanner';
+import PrivacyPolicy from './pages/legal/PrivacyPolicy';
+import CookiePolicy from './pages/legal/CookiePolicy';
+import Terms from './pages/legal/Terms';
 
 function RouteFallback() {
   return (
@@ -52,6 +56,9 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/cookies" element={<CookiePolicy />} />
+        <Route path="/terms" element={<Terms />} />
         <Route path="/tunnel-twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
         <Route path="/twin" element={<ProtectedRoute><TunnelTwin /></ProtectedRoute>} />
 
@@ -88,6 +95,7 @@ export default function App() {
       </Routes>
         </Suspense>
     </ErrorBoundary>
+      <CookieBanner />
       </ToastProvider>
       </DiveProvider>
       </AuthProvider>

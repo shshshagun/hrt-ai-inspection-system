@@ -4,6 +4,7 @@
  * while a chainage ruler on the left tracks how far down the tunnel you are.
  * Palette: jet black with sky blue, nothing else.
  */
+import LegalLinks from '../ui/LegalLinks';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Lenis from 'lenis';
@@ -200,6 +201,7 @@ export default function LandingPage() {
 
       <footer className="lp-foot lp-mono">
         <span>HRT AI Inspection System</span>
+        <LegalLinks />
       </footer>
     </div>
   );

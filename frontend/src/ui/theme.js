@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { preferencesAllowed } from './consent';
 
 const KEY = 'hrt-theme';
 const listeners = new Set();
@@ -12,7 +13,8 @@ let current = typeof window === 'undefined' ? 'dark' : (document.documentElement
 function apply(theme) {
   current = theme;
   document.documentElement.dataset.theme = theme;
-  try { window.localStorage.setItem(KEY, theme); } catch { /* storage blocked: the choice lasts for this visit only */ }
+  // Saved only when the visitor agreed to remembering preferences (see the cookie notice)
+  if (preferencesAllowed()) { try { window.localStorage.setItem(KEY, theme); } catch { /* storage blocked: the choice lasts for this visit only */ } }
   listeners.forEach((l) => l());
 }
 

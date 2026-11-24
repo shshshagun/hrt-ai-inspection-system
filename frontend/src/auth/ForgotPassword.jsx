@@ -6,6 +6,7 @@ import { useToast } from '../ui/contexts';
 import { WakeNotice } from '../ui/Sonar';
 import { usePageTitle } from '../ui/usePageTitle';
 import { useAuth } from './useAuth';
+import LegalLinks from '../ui/LegalLinks';
 import './Auth.css';
 
 const TunnelScene = lazy(() => import('./TunnelScene'));
@@ -120,6 +121,7 @@ export default function ForgotPassword() {
           </>
         )}
         <p className="auth-hint"><Link to="/login">Back to sign in</Link></p>
+        <LegalLinks className="auth-legal" />
       </form>
     </main>
   );

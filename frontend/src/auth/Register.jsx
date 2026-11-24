@@ -4,6 +4,7 @@ import { useAuth } from './useAuth';
 import { useDive } from '../ui/contexts';
 import { WakeNotice } from '../ui/Sonar';
 import { usePageTitle } from '../ui/usePageTitle';
+import LegalLinks from '../ui/LegalLinks';
 import './Auth.css';
 
 const TunnelScene = lazy(() => import('./TunnelScene'));
@@ -68,7 +69,9 @@ export default function Register() {
         <label className="auth-field">Repeat password
           <input type="password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} required />
         </label>
+        <p className="auth-hint">By creating an account you agree to the <Link to="/terms">Terms of Use</Link> and the <Link to="/privacy">Privacy Policy</Link>.</p>
         <button className="auth-btn" type="submit" disabled={busy || !form.email || !form.password}>{busy ? 'Creating account…' : 'Create account'}</button>
+        <LegalLinks className="auth-legal" />
         <p className="auth-hint">Already have an account? <Link to="/login" state={{ from }}>Sign in</Link></p>
       </form>
     </main>

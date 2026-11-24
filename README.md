@@ -25,15 +25,16 @@
 10. [Live Deployment and Demo Mode](#-live-deployment)
 11. [Authentication and Roles](#-authentication-and-roles)
 12. [Ask HRT — AI Assistant](#-ask-hrt--ai-assistant)
-13. [Testing a New Video](#-testing-a-new-video)
-14. [AI Model Details](#-ai-model-details)
-15. [API Reference](#-api-reference)
-16. [Performance Results](#-performance-results)
-17. [Real-World Limitations](#-real-world-limitations)
-18. [Challenges Faced](#-challenges-faced)
-19. [What This Project Lacks](#-what-this-project-lacks)
-20. [Future Scope](#-future-scope)
-21. [References](#-references)
+13. [Privacy and Compliance](#-privacy-and-compliance)
+14. [Testing a New Video](#-testing-a-new-video)
+15. [AI Model Details](#-ai-model-details)
+16. [API Reference](#-api-reference)
+17. [Performance Results](#-performance-results)
+18. [Real-World Limitations](#-real-world-limitations)
+19. [Challenges Faced](#-challenges-faced)
+20. [What This Project Lacks](#-what-this-project-lacks)
+21. [Future Scope](#-future-scope)
+22. [References](#-references)
 
 ---
 
@@ -433,6 +434,12 @@ Ask HRT answers questions about the stored inspection data, runs natural-languag
 | `ASSISTANT_RPM_USER`, `ASSISTANT_RPM_GLOBAL` | Questions allowed per minute (defaults 8 and 12) |
 
 Endpoints: `GET /api/assistant/status` (lists the active providers), `POST /api/assistant/chat`, `POST /api/assistant/search` and `POST /api/assistant/report-draft`. Keys live only in the host's environment settings, never in the repository.
+
+---
+
+## 🔏 Privacy and Compliance
+
+The app sets **no cookies** and has no analytics. It ships a [Privacy Policy](frontend/src/pages/legal/PrivacyPolicy.jsx) (`/privacy`), [Terms of Use](frontend/src/pages/legal/Terms.jsx) (`/terms`) and a cookie/storage page with a consent choice (`/cookies`); fonts are self-hosted so visitors' browsers do not contact Google. Edit the operator and contact details in `frontend/src/config/legal.js`. The privacy-law map, known gaps, licence notes (including the Ultralytics AGPL question) and the IEEE standards that apply are in [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md). This is an engineering record, not legal advice.
 
 ---
 
