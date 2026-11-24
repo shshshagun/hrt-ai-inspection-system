@@ -21,6 +21,7 @@ export default function CookiePolicy() {
           <tr><td><code>hrt-intro-seen</code></td><td>Session storage</td><td>Skips the landing-page intro animation after the first view</td><td>Until you close the tab</td><td>No, a short-lived display setting</td></tr>
           <tr><td><code>hrt-consent</code></td><td>Local storage</td><td>Remembers your answer to the cookie notice</td><td>Until you reset it</td><td>No, it records your choice</td></tr>
           <tr><td><code>hrt-theme</code></td><td>Local storage</td><td>Remembers light or dark theme</td><td>Until you clear it or choose &quot;Essential only&quot;</td><td><strong>Yes</strong>, saved only if you agree</td></tr>
+          <tr><td><code>hrt-detection-scope</code></td><td>Local storage</td><td>Remembers which detections the dashboard shows (cracks only, plus awaiting review, or everything)</td><td>Until you clear it or choose &quot;Essential only&quot;</td><td><strong>Yes</strong>, saved only if you agree</td></tr>
         </tbody>
       </table>
       <p>Nothing in this table is shared with other websites, and nothing is used to follow you around the web.</p>

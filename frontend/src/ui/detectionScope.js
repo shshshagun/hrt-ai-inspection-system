@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { preferencesAllowed } from './consent';
 
 /**
  * Which detections the dashboard shows: only things that count as cracks (default), those plus detections still waiting for a
@@ -14,6 +15,7 @@ const listeners = new Set();
 const valid = (v) => SCOPES.some((s) => s.id === v);
 
 function read() {
+  if (!preferencesAllowed()) return 'counted';
   try { const v = window.localStorage.getItem(KEY); return valid(v) ? v : 'counted'; } catch { return 'counted'; }
 }
 let current = typeof window === 'undefined' ? 'counted' : read();
@@ -23,7 +25,8 @@ export const getScope = () => current;
 export function setScope(next) {
   if (!valid(next) || next === current) return;
   current = next;
-  try { window.localStorage.setItem(KEY, next); } catch { /* storage blocked: the choice lasts for this visit only */ }
+  // Saved only when the visitor agreed to remembering preferences (see the cookie notice)
+  if (preferencesAllowed()) { try { window.localStorage.setItem(KEY, next); } catch { /* storage blocked: the choice lasts for this visit only */ } }
   listeners.forEach((l) => l());
 }
 

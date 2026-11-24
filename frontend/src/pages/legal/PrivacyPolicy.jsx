@@ -21,7 +21,7 @@ export default function PrivacyPolicy() {
         <tbody>
           <tr><td><strong>Account data:</strong> name, e-mail address, role, a bcrypt hash of your password (never the password itself), account creation time and the time of the last password change</td><td>To sign you in and control what you may do</td><td>MongoDB Atlas</td></tr>
           <tr><td><strong>Password-reset data:</strong> a hash of the 6-digit code, its expiry and the count of wrong attempts</td><td>To let you reset a forgotten password</td><td>MongoDB Atlas; the code expires after 10 minutes</td></tr>
-          <tr><td><strong>Inspection data:</strong> detections (type, confidence, size, tunnel position, time, review status), inspection sessions and the defect snapshot images taken from video frames</td><td>To provide the inspection, 3D twin and reports</td><td>MongoDB Atlas</td></tr>
+          <tr><td><strong>Inspection data:</strong> detections (type, confidence, size, tunnel position, time, review status and, once an engineer has reviewed it, who reviewed it, when and why it was rejected), inspection sessions and the small defect snapshot images cut from video frames</td><td>To provide the inspection, 3D twin and reports</td><td>MongoDB Atlas</td></tr>
           <tr><td><strong>Technical data:</strong> IP address and request details</td><td>To deliver the site, limit abuse (sign-in and sign-up limits) and keep it secure</td><td>Server logs at our hosts (Vercel and Render); short-lived counters in server memory</td></tr>
           <tr><td><strong>Assistant questions:</strong> the text you type into Ask HRT, plus the defect data it needs to answer</td><td>To answer your question</td><td>Sent to the AI provider (see section 5); not stored by us</td></tr>
         </tbody>
@@ -36,11 +36,12 @@ export default function PrivacyPolicy() {
       <ul>
         <li><strong>Providing the service you asked for</strong> (account, sign-in, inspections, reports): contract (GDPR Art. 6(1)(b)); under the DPDP Act, your consent when you create the account.</li>
         <li><strong>Security and abuse prevention</strong> (rate limits, logs, failed-sign-in limits): legitimate interests (GDPR Art. 6(1)(f)); legitimate use under the DPDP Act.</li>
-        <li><strong>Remembering your colour theme</strong>: your consent, given in the cookie notice and withdrawable at any time (see <Link to="/cookies">Cookies</Link>).</li>
+        <li><strong>Remembering your colour theme and which detections you view</strong>: your consent, given in the cookie notice and withdrawable at any time (see <Link to="/cookies">Cookies</Link>).</li>
         <li><strong>Password reset e-mails</strong>: contract / your request.</li>
       </ul>
       <p>We do not sell personal data, do not use it for advertising, and do not make decisions about you by automated means. The AI
-        model flags defects in tunnel images; its results are reviewed by engineers.</p>
+        models flag defects in tunnel images (a detector, then a small crack / not-crack classifier that runs in your browser);
+        their results are reviewed by engineers.</p>
 
       <h2>4. Cookies and similar storage</h2>
       <p>We set no cookies and run no analytics or advertising trackers. Fonts are served from this site, so your browser does not

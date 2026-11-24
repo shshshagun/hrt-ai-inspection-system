@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react';
 // Until a choice is made the value is null and preferences are not saved.
 const KEY = 'hrt-consent';
 const THEME_KEY = 'hrt-theme';
+const SCOPE_KEY = 'hrt-detection-scope';
 const listeners = new Set();
 
 function read() {
@@ -24,7 +25,7 @@ export function setConsent(choice) {
   current = choice === 'all' ? 'all' : 'essential';
   try {
     window.localStorage.setItem(KEY, current);
-    if (current === 'essential') window.localStorage.removeItem(THEME_KEY);
+    if (current === 'essential') { window.localStorage.removeItem(THEME_KEY); window.localStorage.removeItem(SCOPE_KEY); }
   } catch { /* storage blocked: the choice lasts for this visit only */ }
   listeners.forEach((l) => l());
 }
@@ -35,6 +36,7 @@ export function resetConsent() {
   try {
     window.localStorage.removeItem(KEY);
     window.localStorage.removeItem(THEME_KEY);
+    window.localStorage.removeItem(SCOPE_KEY);
   } catch { /* nothing to clear */ }
   listeners.forEach((l) => l());
 }

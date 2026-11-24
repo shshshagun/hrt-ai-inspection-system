@@ -13,7 +13,7 @@ export default function CookieBanner() {
     <div className="cookie-bar" role="dialog" aria-label="Cookies and browser storage" aria-live="polite">
       <p>
         This site sets <strong>no cookies</strong> and has no tracking or advertising. It keeps your sign-in in this tab&apos;s
-        session storage, which it needs to work. May it also remember your light/dark choice on this device?{' '}
+        session storage, which it needs to work. May it also remember your light/dark and detection-view choices on this device?{' '}
         <Link to="/cookies">Details</Link> · <Link to="/privacy">Privacy Policy</Link>
       </p>
       <div className="cookie-bar__row">
