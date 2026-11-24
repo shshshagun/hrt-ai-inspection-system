@@ -106,6 +106,9 @@ export function consolidateBoxes(boxes, imgW, imgH, iouThresh = 0.35) {
           if (unionArea <= 0.42) {
             const combinedArea = Number(((cur.area_mm2 || 0) + (other.area_mm2 || 0)).toFixed(1));
             const primary = cur.confidence >= other.confidence ? cur : other;
+            // Keep every piece's outline, so the merged box still shows the crack's real shape
+            const partsOf = (b) => b.parts || (b.maskUrl && b.destBox ? [{ maskUrl: b.maskUrl, maskCanvas: b.maskCanvas, destBox: b.destBox }] : []);
+            const parts = [...partsOf(cur), ...partsOf(other)];
             cur = {
               ...primary,
               x1: unionX1,
@@ -118,6 +121,7 @@ export function consolidateBoxes(boxes, imgW, imgH, iouThresh = 0.35) {
               maskUrl: cur.maskUrl || other.maskUrl || null,
               maskCanvas: cur.maskCanvas || other.maskCanvas || null,
               destBox: primary.destBox || cur.destBox || other.destBox || null,
+              parts,
             };
             consumed.add(j);
             changed = true;

@@ -94,3 +94,41 @@ export function matchesView(d, view) {
     default: return true;
   }
 }
+
+/**
+ * Keeps the connected pieces of a mask that matter: the biggest one, and any other piece that is at least a fifth of it.
+ * Everything else (isolated specks the model scatters around a crack) is cleared. Edits the grid in place and returns the
+ * number of pixels left.
+ */
+export function keepMainComponents(grid, w, h) {
+  const label = new Int32Array(w * h).fill(-1);
+  const sizes = [];
+  const stack = [];
+  for (let i = 0; i < grid.length; i++) {
+    if (grid[i] === 0 || label[i] !== -1) continue;
+    const id = sizes.length;
+    let n = 0;
+    stack.push(i);
+    label[i] = id;
+    while (stack.length) {
+      const p = stack.pop();
+      n += 1;
+      const x = p % w;
+      const y = (p - x) / w;
+      if (x > 0 && grid[p - 1] && label[p - 1] === -1) { label[p - 1] = id; stack.push(p - 1); }
+      if (x < w - 1 && grid[p + 1] && label[p + 1] === -1) { label[p + 1] = id; stack.push(p + 1); }
+      if (y > 0 && grid[p - w] && label[p - w] === -1) { label[p - w] = id; stack.push(p - w); }
+      if (y < h - 1 && grid[p + w] && label[p + w] === -1) { label[p + w] = id; stack.push(p + w); }
+    }
+    sizes.push(n);
+  }
+  const biggest = sizes.length ? Math.max(...sizes) : 0;
+  const keep = sizes.map((n) => n === biggest || n >= Math.max(4, biggest * 0.2));
+  let left = 0;
+  for (let i = 0; i < grid.length; i++) {
+    if (grid[i] === 0) continue;
+    if (keep[label[i]]) left += 1;
+    else grid[i] = 0;
+  }
+  return left;
+}

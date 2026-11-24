@@ -46,7 +46,7 @@ export default function InspectionVideos() {
     [inspList, selectedInspectionId]
   );
 
-  const { data: allDetections, loading: detLoading, refetch: refetchDetections } = useDetections({ limit: 500 });
+  const { data: allDetections, loading: detLoading, refetch: refetchDetections } = useDetections({ limit: 500, view: 'not_rejected' }); // an archive of what was recorded: includes detections still awaiting review
 
   const [confirmDeleteVideo, setConfirmDeleteVideo] = useState(false);
   const [deletingVideo, setDeletingVideo] = useState(false);

@@ -135,7 +135,7 @@ export default function Reports() {
               <div className="sp-report-card__info">
                 <h2 className="sp-report-card__title">{r.title}</h2>
                 <p className="sp-report-card__meta">
-                  {r.id} · {r.date} · {r.defectCount} defects
+                  {r.id} · {r.date} · {r.defectCount} cracks{r.pendingCount > 0 ? ` (+${r.pendingCount} awaiting review)` : ''}
                   {r.criticalCount > 0 && (
                     <span style={{ color: 'var(--critical)', marginLeft: '0.4rem' }}>
                       · {r.criticalCount} critical
