@@ -1,3 +1,4 @@
+import { autoVerdict } from '../../utils/crackVerdict';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -184,7 +185,16 @@ export default function NewInspection() {
 
   /* ── Persist verified detection directly to MongoDB Gateway (with Render cold-start retry) ── */
   const persistToGateway = useCallback(async (det, inspId, sourceLabel) => {
+    // Automatic verdict: only a long, thin, confident mask seen in several frames counts as a crack straight away.
+    // Everything else is stored as a candidate and waits for an engineer (see utils/crackVerdict.js).
+    const mode = String(inspId).startsWith('PHOTO-') ? 'photo' : String(inspId).startsWith('CAM-') ? 'webcam' : 'video';
+    const verdict = autoVerdict({ cls: det.class || 'crack', confidence: det.confidence, observations: det.observations, shape: det.shape || undefined, boxAspect: det.box_aspect, classifier: det.classifier }, { mode });
     const payload = {
+      auto_verdict: verdict.verdict,
+      verdict_reason: verdict.reasons,
+      detector: det.class === 'spalling' ? 'texture-check' : 'yolov8n-seg',
+      crop_url: det.crop_url || null,
+      classifier_score: det.classifier?.state === 'ok' ? Number(det.classifier.score.toFixed(4)) : null,
       class_label: det.class || 'crack',
       subtype: det.subtype || undefined,
       confidence: det.confidence,

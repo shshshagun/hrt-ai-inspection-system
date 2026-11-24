@@ -6,6 +6,7 @@
  */
 const { PROJECTION } = require('./filters');
 const { normalize, diffInspections } = require('./sites');
+const { countsAsCrack, reviewState } = require('../detectionRules');
 
 const MAX_SCAN = 3000;
 const SEV = ['Critical', 'Major', 'Minor', 'Info'];
@@ -16,7 +17,8 @@ const clockOf = (angle) => Math.round(angle / 30) % 12 || 12;
 
 /** Facts about one inspection (and how it compares with the one before), from raw detection documents. */
 function buildFacts(allDocs, inspectionId) {
-  const docs = allDocs.filter((d) => (d.inspection_id || null) === inspectionId);
+  const ofInspection = allDocs.filter((d) => (d.inspection_id || null) === inspectionId);
+  const docs = ofInspection.filter(countsAsCrack); // only detections that count as cracks
   const located = docs.filter((d) => typeof d.z === 'number' && d.z > 0.05);
   const bySeverity = Object.fromEntries(SEV.map((s) => [s, docs.filter((d) => d.severity === s).length]));
   const classes = {};
@@ -39,7 +41,7 @@ function buildFacts(allDocs, inspectionId) {
     .filter((d) => d.crack_area_mm2 > 0)
     .map((d) => ({ class: String(d.class_label || '').slice(0, 30), severity: d.severity || null, chainage_m: round1(d.z), clock: clockOf(normalize(d).angle_deg), area_mm2: Math.round(d.crack_area_mm2) }));
 
-  const diff = diffInspections(allDocs.map(normalize));
+  const diff = diffInspections(allDocs.filter(countsAsCrack).map(normalize));
   const previous = diff && diff.latestId === inspectionId
     ? { inspection_id: String(diff.previousId).slice(0, 64), new: diff.fresh.length, grown_20_percent_or_more: diff.grown.length, steady: diff.steady.length, not_seen_again: diff.notSeen.length }
     : null;
@@ -55,6 +57,8 @@ function buildFacts(allDocs, inspectionId) {
     largest_defects: largest,
     flagged_urgent: docs.filter((d) => d.flagged_urgent === true).length,
     without_position: docs.length - located.length,
+    awaiting_review: ofInspection.filter((d) => reviewState(d) === 'pending' && !countsAsCrack(d)).length,
+    rejected: ofInspection.filter((d) => reviewState(d) === 'rejected').length,
     with_measured_size: measured.length,
     compared_with_previous: previous,
   };
@@ -64,7 +68,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Plain deterministic summary of the facts. Also the fallback when no AI is available or its text fails the number check. */
 function templateDraft(f) {
-  if (!f.total) return `Inspection ${f.inspection_id || 'records'} has no recorded defects.\n\nAll findings in this report are AI predictions and must be reviewed by an engineer.`;
+  if (!f.total) return `Inspection ${f.inspection_id || 'records'} has no detections that count as cracks${f.awaiting_review ? `; ${f.awaiting_review} are awaiting engineer review` : ''}.\n\nAll findings in this report are AI predictions and must be reviewed by an engineer.`;
   const sev = SEV.filter((s) => f.by_severity[s]).map((s) => `${f.by_severity[s]} ${s.toLowerCase()}`).join(', ');
   const p1 = [`Inspection ${f.inspection_id} recorded ${plural(f.total, 'defect')}: ${sev}.`];
   if (f.chainage_range_m) p1.push(`Located defects lie between ${f.chainage_range_m[0]} m and ${f.chainage_range_m[1]} m from the intake.`);
@@ -72,6 +76,7 @@ function templateDraft(f) {
   if (f.hotspots.length) p1.push(`The busiest stretch is ${f.hotspots[0].range}, with ${plural(f.hotspots[0].count, 'defect')}${f.hotspots[0].critical ? ` of which ${f.hotspots[0].critical} critical` : ''}.`);
   if (f.largest_defects.length) { const d = f.largest_defects[0]; p1.push(`The largest recorded area is a ${d.class} of ${d.area_mm2} mm2 at ${d.chainage_m} m, ${d.clock} o'clock.`); }
 
+  if (f.awaiting_review) p1.push(`${plural(f.awaiting_review, 'more detection')} ${f.awaiting_review === 1 ? 'is' : 'are'} awaiting engineer review and ${f.awaiting_review === 1 ? 'is' : 'are'} not counted.`);
   const parts = [p1.join(' ')];
   if (f.compared_with_previous) {
     const c = f.compared_with_previous;

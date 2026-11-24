@@ -18,6 +18,8 @@
  * ─────────────────────────────────────────────────────────────
  */
 
+import { reviewState } from '../utils/crackVerdict';
+import { getScope, useDetectionScope } from '../ui/detectionScope';
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config/api';
 import { authFetch } from '../auth/authFetch';
@@ -40,7 +42,7 @@ export function normalizeDetection(raw) {
   const chainage = Number(raw.z ?? raw.chainage_z ?? raw.chainage_m ?? raw.chainage ?? 0);
   const frameIndex = raw.frame_index ?? raw.frameIndex ?? 0;
   const inspectionId = raw.inspection_id || raw.inspectionId || 'INSP-LIVE-ROV';
-  const status = raw.verified_status || raw.reviewStatus || 'confirmed';
+  const status = reviewState(raw); // 'pending' unless an engineer confirmed or rejected it
   const conf = typeof raw.confidence === 'number' ? raw.confidence : 0.88;
 
   const severity = raw.severity || (conf >= 0.85 ? 'Critical' : conf >= 0.70 ? 'Major' : 'Minor');
@@ -241,6 +243,8 @@ export function useDetections(filters = {}) {
     sort_by,
     order,
   } = filters;
+  const scope = useDetectionScope();
+  const view = filters.view || scope; // the review queue asks for a specific view; everything else follows the scope picker
 
   return useApiData(
     async () => {
@@ -259,7 +263,7 @@ export function useDetections(filters = {}) {
       if (sort_by)      params.set('sort_by', sort_by);
       if (order)        params.set('order', order);
 
-      const json = await apiFetch('/api/detections?limit=1000');
+      const json = await apiFetch(`/api/detections?limit=1000&view=${view}`);
       let list = Array.isArray(json) ? json : (json.data ?? []);
       list = list.map(normalizeDetection).filter(Boolean);
       if (severity) {
@@ -277,7 +281,7 @@ export function useDetections(filters = {}) {
       return list;
     },
     () => [], // Return real empty array on failure — no fake mock data
-    [severity, category, page, limit, search, session_id, inspection_id, chainage_min, chainage_max, status, sort_by, order],
+    [severity, category, page, limit, search, session_id, inspection_id, chainage_min, chainage_max, status, sort_by, order, view],
   );
 }
 
@@ -384,7 +388,7 @@ export function useKpiSummary() {
     async () => {
       const [inspRes, detRes] = await Promise.allSettled([
         apiFetch('/api/inspections'),
-        apiFetch('/api/detections?limit=1000'),
+        apiFetch(`/api/detections?limit=1000&view=${getScope()}`),
       ]);
 
       const inspections = inspRes.status === 'fulfilled'
@@ -462,7 +466,7 @@ export function useReports() {
 export function useDefectDistributions() {
   return useApiData(
     async () => {
-      const json = await apiFetch('/api/detections?limit=1000');
+      const json = await apiFetch(`/api/detections?limit=1000&view=${getScope()}`);
       const list = Array.isArray(json) ? json : (json.data ?? []);
 
       const typeCounts = {};
@@ -677,4 +681,16 @@ export async function deleteInspectionSession(id) {
     throw new Error(body.error || `Failed to delete inspection (${res.status})`);
   }
   return res.json();
+}
+
+/** Confirms or rejects many detections at once. `reason` is one of REJECT_REASONS and only matters when rejecting. */
+export async function bulkReviewDetections(ids, review_status, reject_reason) {
+  const res = await authFetch(`${API_BASE}/api/detections/bulk-review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, review_status, ...(reject_reason ? { reject_reason } : {}) }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Review failed (${res.status})`);
+  return data;
 }

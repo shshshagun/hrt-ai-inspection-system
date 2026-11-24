@@ -11,6 +11,7 @@ import CommandPalette from '../ui/CommandPalette';
 import { PERMISSIONS } from '../auth/permissions';
 import { useTheme } from '../ui/theme';
 import { usePageTitle } from '../ui/usePageTitle';
+import { SCOPES, setScope, useDetectionScope } from '../ui/detectionScope';
 import AssistantDrawer from '../assistant/AssistantDrawer';
 import './DashboardLayout.css';
 import '../auth/Auth.css';
@@ -76,6 +77,7 @@ export default function DashboardLayout() {
   const breadcrumbs = getBreadcrumbs(location.pathname);
   usePageTitle(pageTitle);
   const { theme, toggle } = useTheme();
+  const scope = useDetectionScope();
 
   return (
     <div className="db-layout">
@@ -172,6 +174,12 @@ export default function DashboardLayout() {
           </div>
 
           <div className="db-topbar__right">
+            <label className="db-scope" title={SCOPES.find((s) => s.id === scope)?.hint}>
+              <span className="sr-only">Show</span>
+              <select value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Which detections to show">
+                {SCOPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+            </label>
             <button type="button" className="db-tool" onClick={() => window.dispatchEvent(new Event('hrt:palette'))} aria-label="Search pages and defects (Ctrl+K)" title="Search (Ctrl+K)">
               <Search size={15} /><span>Search</span><kbd>Ctrl K</kbd>
             </button>
