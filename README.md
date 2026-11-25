@@ -90,13 +90,13 @@ We replace both traditional methods with an **autonomous underwater ROV equipped
 The ROV drives through the flooded tunnel (plant stays running, no divers), and our system:
 
 1. Processes the live or recorded video feed.
-2. Detects cracks frame by frame with a YOLOv8n-seg crack-segmentation model (see [AI Model Details](#-ai-model-details) for its provenance), then checks each detection with shape rules, a small crack / not-crack classifier and engineer review, so only real cracks are counted.
+2. Detects cracks frame by frame with a YOLOv8n-seg crack-segmentation model (see [AI Model Details](#-ai-model-details) for its provenance), then checks each detection with shape rules, a small crack / not-crack classifier and engineer review, so only real cracks are counted. Spalling and exposed rebar are found by a separate texture check.
 3. Calculates the physical size of each defect using calibrated camera optics.
 4. Translates each detection into a precise 3D position inside the tunnel.
 5. Sends all data to a database and renders it live on a 3D digital twin visible in any browser.
 6. Generates a complete inspection report engineers can use to prioritize repairs.
 
-**Result:** Zero plant downtime. Zero diver risk. Millimeter-accurate defect mapping. Full spatial traceability.
+**Goal:** no plant downtime, no divers, and every defect sized and placed on the tunnel wall. How accurate the sizes and positions are depends on camera calibration and ROV speed (see [Limitations](#-real-world-limitations)).
 
 ---
 
@@ -124,7 +124,7 @@ The ROV records HD video of the tunnel wall as it moves along the tunnel axis.
 - **Optical math** converts pixel coordinates to real-world millimeters:
   - `crack_width_mm = (bbox_width_pixels × pixel_pitch_mm × distance_mm) / focal_length_mm`
   - This uses the camera's known focal length (f), working distance (D), and sensor pixel pitch.
-- Each detection is tagged with its **frame number** and **timestamp**, and is stored with an automatic crack / candidate verdict and a review status (see [Only Real Cracks Are Counted](#only-real-cracks-are-counted)).
+- Each detection is tagged with its **frame number** and **timestamp**, and is stored with an automatic crack / candidate verdict and a review status (see [What Counts as a Defect](#what-counts-as-a-defect)).
 
 ### Layer 2: Spatial Coordinate Translation
 **File:** `ai_pipeline/utils/spatial.py`
@@ -184,7 +184,7 @@ The React frontend renders a fully interactive 3D tunnel in the browser using **
 
 - The tunnel is **procedurally generated** (no pre-built 3D model files needed). The page is split into engine, geometry and texture modules; geometry and data rules are covered by Node tests.
 - The frontend fetches the stored detections (`GET /api/detections`, up to 1,000 by default) and projects each one as a marker at its `(X, Y, Z)` position on the tunnel wall. Detections with no recorded chainage are not drawn, and the dashboard says how many are left out.
-- Cameras: fly-through and orbit. Defects are classified **Minor / Moderate / Critical**.
+- Cameras: fly-through and orbit. Defects are classified **Minor / Major / Critical**.
 - Inspection viewer tools: severity glow on the lining, a cross-section cut, a measure tool, a defect replay with captions, an inspection filter with a time-lapse, a clock-face minimap, wall snapshots of the selected defect, a view-only horseshoe section with CSV radius profile, screenshot and share link, and an experimental VR button.
 - PDF inspection reports are generated for regulatory submission (see [Feature Overview](#-feature-overview)).
 
@@ -210,17 +210,17 @@ The React frontend renders a fully interactive 3D tunnel in the browser using **
 
 | Layer | Technology | Why It Was Chosen |
 |---|---|---|
-| **AI / CV Model** | YOLOv8s (Ultralytics) | State-of-the-art real-time object detection; small model variant for edge deployment on ROV hardware |
+| **AI / CV Model** | YOLOv8n-seg (Ultralytics), exported to ONNX | Small enough to run in a browser tab; gives a mask per crack, so boxes follow the crack |
 | **Vision Language** | Python 3.10+ | Standard for ML/CV pipelines; native Ultralytics and OpenCV support |
-| **OpenCV** | opencv-python 5.0 | Frame capture, preprocessing, and display |
+| **OpenCV** | opencv-python 4.8+ | Frame capture, preprocessing, and display |
 | **Backend API** | Node.js + Express.js | Lightweight, fast REST API for real-time telemetry ingestion |
 | **Ingestion Gateway** | Node.js (port 5000) | Dedicated MongoDB ingestion microservice |
 | **Core API** | Node.js + Express (port 3000) | Spatial analytics, defect queries, severity scoring |
 | **Primary DB** | MongoDB (Atlas / local) | Flexible schema for varying detection payloads per frame |
-| **Secondary DB** | PostgreSQL | Relational persistence for structured reports and user data |
+| **Secondary DB** | PostgreSQL | Used only by the optional core analytics API (port 3000) for detections and inspections; the live app needs MongoDB only |
 | **3D Rendering** | Three.js (WebGL) | Browser-native GPU-accelerated 3D — no Unity, no Unreal, no plugin needed |
 | **Frontend Framework** | React.js + Vite | Fast, component-based UI with hot reload for development |
-| **Styling** | CSS Modules | Scoped, maintainable component styles |
+| **Styling** | Plain CSS, one file per page or component | Simple, no build-time styling library |
 | **Browser inference** | ONNX Runtime Web (WebAssembly) | Runs the exported model client-side, so no server GPU is needed |
 | **Security** | Helmet.js, CORS, Rate Limiting, bcrypt, JWT | Defense-in-depth HTTP headers, throttling, hashed passwords and signed sessions |
 | **AI assistant** | Google Gemini (free tier), Groq (free tier, backup) | Ask HRT chat, search and report drafting, with automatic failover between providers |
@@ -239,7 +239,7 @@ hrt-ai-inspection-system/
 │
 ├── ai_pipeline/                    # Python AI & computer vision core
 │   ├── predict.py                  # Main inference script (video → detections)
-│   ├── train.py                    # YOLOv8s fine-tuning on crack dataset
+│   ├── train.py                    # YOLOv8s training on the crack dataset (not the deployed model)
 │   ├── evaluate.py                 # Precision, Recall, mAP, F1 metrics
 │   ├── export_model.py             # Export to ONNX / TorchScript
 │   ├── visualise_dataset.py        # Dataset label sanity-check viewer
@@ -268,7 +268,7 @@ hrt-ai-inspection-system/
 │       │   └── inspection/         # New inspection console (video, webcam, photos)
 │       ├── auth/                   # Login, sign-up, forgot password
 │       ├── ui/                     # Command palette, toasts, theme, dive transition
-│       ├── utils/                  # defectHistory, keywordSearch, reportDraft
+│       ├── utils/                  # yoloBrowserInference (in-browser scan), crackVerdict (what counts), defectHistory, reportDraft
 │       ├── hooks/                  # useApi.js — data fetching with fallbacks
 │       └── App.jsx                 # Route definitions
 │
@@ -278,7 +278,7 @@ hrt-ai-inspection-system/
 │
 ├── runs/
 │   ├── detect/hrt_crack_det/
-│   │   └── weights/best.pt         # ← Trained model weights (use this for inference)
+│   │   └── weights/best.pt         # Third-party crack-seg weights for predict.py (not in the repo; see Provenance)
 │   ├── evaluate/                   # Evaluation plots and metrics
 │   └── predict/                    # Annotated output videos and CSVs
 │
@@ -389,7 +389,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the unit tests, the Tier 2 and 
 
 - **Front end:** https://hrt-ai-inspection-system.vercel.app/ (Vercel; `frontend/vercel.json` rewrites every path to the single-page app, so dashboard links and refreshes work)
 - **Gateway API:** https://hrt-mongo-gateway.onrender.com (Render; the free tier can take about 30 s to wake up, and the app shows a notice while it does)
-- **Demo mode:** a visitor can open the dashboard, 3D twin and reports without an account. API calls are answered in the browser from bundled sample data (3 inspections, 15 defects) and every write is refused.
+- **Demo mode:** a visitor can open the dashboard, 3D twin and reports without an account. API calls are answered in the browser from bundled sample data (3 inspections, 15 defect sites) and every write is refused.
 
 ## 🔐 Authentication and Roles
 
@@ -498,7 +498,7 @@ python ai_pipeline/predict.py `
 | Our contribution | The browser inference pipeline (tiled scan, mask decoding, box consolidation, multi-frame tracker), spatial mapping, services, 3D twin and the evaluation below |
 | Training code | `ai_pipeline/train.py` trains YOLOv8s on the Roboflow dataset; the log of that run is `runs/detect/hrt_crack_det/results.csv` (best validation mAP@0.5 0.68, epoch 103). Those weights are not kept in the repository. |
 
-### Only Real Cracks Are Counted
+### What Counts as a Defect
 
 The detector has one class and fires on stains, ring joints and shadows as well as cracks. Every detection therefore goes through three checks before it counts, and the dashboard, 3D twin, reports, PDF and Ask HRT all use the same rule.
 
@@ -606,10 +606,10 @@ Currently, the longitudinal position (Z / chainage) is calculated from video fra
 The YOLOv8 model is trained on relatively clear underwater photographs. In heavily silted or turbid flood conditions (which are common in monsoon-season inspections), the camera may produce unusable footage. Acoustic sonar imaging would be needed for those conditions.
 
 ### 4. Single Defect Class
-The current model only detects the class `crack`. Spalling and exposed rebar are found by a hand-tuned texture check (see [Only Real Cracks Are Counted](#only-real-cracks-are-counted)), which can also fire on other rough surfaces. **Seepage**, **honeycomb voids** and **delamination** are not detected at all.
+The current model only detects the class `crack`. Spalling and exposed rebar are found by a hand-tuned texture check (see [What Counts as a Defect](#what-counts-as-a-defect)), which can also fire on other rough surfaces. **Seepage**, **honeycomb voids** and **delamination** are not detected at all.
 
-### 5. Requires Active Database Services
-The system requires both a running MongoDB instance (port 27017) and a PostgreSQL instance (port 5432). Cold-starting without these will result in the Core API running in fallback mode with 503 responses for database-backed endpoints.
+### 5. Requires a Database
+The live app needs MongoDB (Atlas in production). The optional core analytics API (port 3000) also needs PostgreSQL; without it, that API answers 503 on its database routes.
 
 ### 6. No Real ROV Hardware Integration
 This system processes video files or webcam streams. It does not ship with ROV hardware drivers or communication protocols (e.g., MAVLink, BlueROV2 SDK). Integration with real ROV hardware requires additional engineering.
@@ -621,7 +621,6 @@ This system processes video files or webcam streams. It does not ship with ROV h
 | Challenge | How It Was Solved |
 |---|---|
 | `cv2.imshow()` crashes on Windows | Removed `opencv-python-headless` (installed by Roboflow) and reinstalled full `opencv-python` |
-| Dataset was segmentation format, model needed bounding boxes | Switched to dedicated object detection weights (`best.pt`), not segmentation |
 | React WebGL crash: `concreteTex is not defined` | Rewrote Three.js disposal using `scene.traverse()` with deduplicated geometry/material Sets |
 | `EADDRINUSE: :::3000` port conflicts | Separated Core API (port 3000) and MongoDB Gateway (port 5000) with `.env` configuration |
 | `UnicodeEncodeError` on Windows terminal | Replaced Unicode emoji characters in Python print statements with ASCII equivalents |
