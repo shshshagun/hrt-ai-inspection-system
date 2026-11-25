@@ -89,7 +89,7 @@ async function executeTool(name, args, { db, sink }) {
     if (!['severity', 'class', 'inspection', 'chainage_band'].includes(a.group_by)) throw new FilterError('group_by must be severity, class, inspection or chainage_band');
     const filter = buildFilter(a);
     const docs = await scan(db, filter.query);
-    return { applied_filters: filter.description, total: docs.length, groups: bucket(docs, a.group_by), note: 'Counts cover detections that count as cracks unless include_unreviewed was set.' };
+    return { applied_filters: filter.description, total: docs.length, groups: bucket(docs, a.group_by), note: 'Counts cover detections that count (cracks, and spalling from the texture check) unless include_unreviewed was set. Group by class to tell them apart.' };
   }
 
   if (name === 'list_inspections') {
@@ -97,9 +97,13 @@ async function executeTool(name, args, { db, sink }) {
     const map = new Map();
     for (const d of docs) {
       const id = d.inspection_id || 'unknown';
-      const row = map.get(id) || { inspection_id: String(id).slice(0, 64), cracks: 0, critical: 0, awaiting_review: 0, rejected: 0, last_detected: 0 };
+      const row = map.get(id) || { inspection_id: String(id).slice(0, 64), cracks: 0, spalling: 0, critical: 0, awaiting_review: 0, rejected: 0, last_detected: 0 };
       if (reviewState(d) === 'rejected') row.rejected += 1;
-      else if (countsAsCrack(d)) { row.cracks += 1; if (d.severity === 'Critical') row.critical += 1; }
+      else if (countsAsCrack(d)) {
+        // "counts" covers every class; spalling (texture check) is reported apart from cracks
+        if (String(d.class_label || '').toLowerCase().includes('spall')) row.spalling += 1; else row.cracks += 1;
+        if (d.severity === 'Critical') row.critical += 1;
+      }
       else row.awaiting_review += 1;
       row.last_detected = Math.max(row.last_detected, d.timestamp instanceof Date ? d.timestamp.getTime() : 0);
       map.set(id, row);

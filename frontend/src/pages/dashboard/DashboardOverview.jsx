@@ -49,7 +49,7 @@ export default function DashboardOverview() {
   const awaiting = inspections.reduce((n, i) => n + (i.pendingCount || 0), 0);
   const kpis = [
     { label: 'Inspections', value: <CountUp value={inspections.length} />, sub: 'sessions on record' },
-    { label: 'Cracks', value: <CountUp value={total} />, sub: awaiting > 0 ? `${awaiting} more awaiting review` : 'confirmed or judged cracks' },
+    { label: 'Defects', value: <CountUp value={total} />, sub: awaiting > 0 ? `${awaiting} more awaiting review` : 'cracks and spalling that count' },
     { label: 'Critical', value: <CountUp value={critical} />, sub: critical ? 'need an engineer review' : 'none right now' },
     { label: 'Coverage', value: <CountUp value={coverage} />, unit: '%', sub: `${Math.round(maxChainage)} of ${TUNNEL_LENGTH_M} m` },
   ];

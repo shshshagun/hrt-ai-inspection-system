@@ -1,5 +1,8 @@
 /**
- * Which detections count as cracks.
+ * Which detections count (as cracks, or as spalling / exposed rebar from the texture check).
+ *
+ * The stored automatic verdict is "crack" or "candidate". "crack" is the flag for "counts" and is kept for every class so old records
+ * and the server queries stay valid; what kind of defect it is comes from the detection's class.
  *
  * The detector has one class and is not very accurate on tunnel footage, so a detection is not stored as "a crack" just because the
  * model fired. Every detection gets an automatic verdict when it is made (crack or candidate, with reasons), and an engineer can
@@ -21,6 +24,7 @@ export const RULES = {
   classifierNot: 0.3,   // the second-stage classifier: below this it says "not a crack"
   classifierCrack: 0.7, // at or above this it says "crack"; in between it is not sure
   passScore: 0.6,       // a detection whose combined score reaches this counts as a crack
+  spallConfidence: 0.7, // spalling / exposed rebar from the texture check counts at this confidence or above, if seen often enough
 };
 
 /** Elongation and fill of a binary mask (1 = crack pixel) of size w x h, from its second moments. */
@@ -57,11 +61,30 @@ export function framesExpected(frameIntervalSec) {
 }
 
 /**
+ * Verdict for a patch from the texture check (spalling, cavity, exposed rebar). There is no trained model for these yet, so the
+ * rule is plain: it counts when the texture is clearly rough (confidence >= spallConfidence) and it was seen in enough frames,
+ * the same number a crack needs. On the test footage this kept the rebar patch and dropped crack edges and floating specks.
+ * The crack checker is not used: it only knows cracks. The verdict value is "crack" because that is the stored "counts" flag.
+ */
+function spallingVerdict(d, { mode = 'video', frameIntervalSec } = {}) {
+  const sConf = clamp01(((d.confidence ?? 0) - 0.55) / (RULES.spallConfidence - 0.55));
+  // Only a moving video scan gives the repeated, changing views this rule relies on. A single photo has one frame, and a webcam
+  // held still sees the same patch every time, so in those modes a patch always waits for review.
+  if (mode !== 'video') return { verdict: 'candidate', reasons: ['texture_heuristic'], score: Number(sConf.toFixed(3)) };
+  const reasons = [];
+  if ((d.confidence ?? 0) < RULES.spallConfidence) reasons.push('texture_weak');
+  const sFrames = clamp01((d.observations ?? 1) / framesExpected(frameIntervalSec));
+  if (sFrames < 1) reasons.push('few_frames');
+  const score = Number(Math.min(sConf, sFrames).toFixed(3));
+  return reasons.length ? { verdict: 'candidate', reasons, score } : { verdict: 'crack', reasons: [], score };
+}
+
+/**
  * Automatic verdict for one detection.
  *
  * Instead of letting every check veto, the checks are combined into one score from 0 to 1. The second-stage classifier, which
- * looks at the crop itself, carries the most weight; detector confidence, mask shape and the number of sightings add to it. Only
- * two things are hard limits: the texture-based "spalling" estimate is never a crack, and a mask smaller than minMaskPixels is noise.
+ * looks at the crop itself, carries the most weight; detector confidence, mask shape and the number of sightings add to it. A mask
+ * smaller than minMaskPixels is noise. Patches from the texture check ("spalling") have their own rule, spallingVerdict above.
  * `reasons` lists the parts that pulled the score down, so a reviewer can see why something was held back.
  *
  * @param {{cls:string, confidence:number, observations?:number, shape?:{areaPx:number, elongation:number}, boxAspect?:number, classifier?:{state:'ok'|'absent'|'failed', score:number|null}}} d
@@ -70,7 +93,7 @@ export function framesExpected(frameIntervalSec) {
  */
 export function autoVerdict(d, { mode = 'video', frameIntervalSec } = {}) {
   const reasons = [];
-  if (d.cls !== 'crack') return { verdict: 'candidate', reasons: ['texture_heuristic'], score: 0 }; // from a texture check, not a model
+  if (d.cls !== 'crack') return spallingVerdict(d, { mode, frameIntervalSec });
   if (d.shape && d.shape.areaPx > 0 && d.shape.areaPx < RULES.minMaskPixels) return { verdict: 'candidate', reasons: ['too_small'], score: 0 };
 
   // Each part is 0 (looks nothing like a crack) to 1 (clearly a crack)
