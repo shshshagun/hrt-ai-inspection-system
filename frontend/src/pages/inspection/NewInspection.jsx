@@ -1910,13 +1910,13 @@ export default function NewInspection() {
 }
 
 const WHY_LABEL = {
-  texture_heuristic: 'texture check, not the model', too_small: 'very small', low_confidence: 'low detector confidence',
+  texture_heuristic: 'texture check, not the model', texture_weak: 'texture not rough enough', too_small: 'very small', low_confidence: 'low detector confidence',
   blob_shape: 'blob-shaped, not thin', compact_box: 'compact box', few_frames: 'seen in few frames',
   classifier_not_crack: 'crack checker says no', classifier_unsure: 'crack checker not sure',
   classifier_unavailable: 'crack checker could not load', low_score: 'checks together fall just short',
 };
 
-/** After a scan: how many detections count as cracks, why the others were held back, and the full log as a file. */
+/** After a scan: how many detections count (cracks and spalling), why the others were held back, and the full log as a file. */
 function ScanVerdicts({ log }) {
   const counted = log.filter((e) => e.verdict === 'crack').length;
   const why = {};
@@ -1934,7 +1934,10 @@ function ScanVerdicts({ log }) {
   return (
     <div className="insp-verdicts">
       <div className="insp-verdicts__head">
-        <span><strong>{counted}</strong> of {log.length} stored count as cracks</span>
+        <span>
+          <strong>{counted}</strong> of {log.length} stored count
+          {' '}({log.filter((e) => e.verdict === 'crack' && e.class !== 'spalling').length} cracks, {log.filter((e) => e.verdict === 'crack' && e.class === 'spalling').length} spalling)
+        </span>
         <button type="button" className="insp-verdicts__dl" onClick={download}>Download log</button>
       </div>
       {rows.length > 0 && (

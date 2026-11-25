@@ -66,7 +66,7 @@ function MetaRow({ label, value }) {
 }
 
 const REASON_LABEL = { shadow: 'Shadow', stain: 'Stain or water streak', ring_joint: 'Ring joint or seam', debris: 'Debris', texture: 'Concrete texture', other: 'Something else' };
-const VERDICT_WHY = { texture_heuristic: 'texture check, not a trained model', low_confidence: 'low confidence', blob_shape: 'blob-shaped, not thin', too_small: 'very small', compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'the crack checker says no', classifier_unsure: 'the crack checker is not sure', classifier_unavailable: 'the crack checker could not load', low_score: 'the checks together fall just short' };
+const VERDICT_WHY = { texture_heuristic: 'texture check, not a trained model', texture_weak: 'the texture is not rough enough', low_confidence: 'low confidence', blob_shape: 'blob-shaped, not thin', too_small: 'very small', compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'the crack checker says no', classifier_unsure: 'the crack checker is not sure', classifier_unavailable: 'the crack checker could not load', low_score: 'the checks together fall just short' };
 
 export default function DefectDetail() {
   const { id } = useParams();
@@ -431,13 +431,13 @@ export default function DefectDetail() {
           )}
 
           {/* ── Is it a crack? (the review decision behind every count) ── */}
-          <section className="dd-verdict" aria-label="Is this a crack?">
-            <h2 className="dd-historical__title">Is this a crack?</h2>
+          <section className="dd-verdict" aria-label="Is this a real defect?">
+            <h2 className="dd-historical__title">Is this a real defect?</h2>
             <p className="dd-verdict__state">
-              {reviewState(source) === 'confirmed' ? 'An engineer confirmed it as a crack.'
+              {reviewState(source) === 'confirmed' ? 'An engineer confirmed it as a real defect.'
                 : reviewState(source) === 'rejected' ? `An engineer rejected it${source.reject_reason ? ` (${REASON_LABEL[source.reject_reason] || source.reject_reason})` : ''}. It does not count.`
-                  : countsAsCrack(source) ? 'The system judged this to be a crack. It counts until an engineer reviews it.'
-                    : `The system is not sure this is a crack, so it does not count yet${source.verdict_reason?.length ? ` (${source.verdict_reason.map((r) => VERDICT_WHY[r] || r).join(', ')})` : ''}.`}
+                  : countsAsCrack(source) ? 'The system judged this to be a real defect. It counts until an engineer reviews it.'
+                    : `The system is not sure this is a real defect, so it does not count yet${source.verdict_reason?.length ? ` (${source.verdict_reason.map((r) => VERDICT_WHY[r] || r).join(', ')})` : ''}.`}
             </p>
             {canReview ? (
               <div className="dd-verdict__row">

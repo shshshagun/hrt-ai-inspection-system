@@ -68,7 +68,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Plain deterministic summary of the facts. Also the fallback when no AI is available or its text fails the number check. */
 function templateDraft(f) {
-  if (!f.total) return `Inspection ${f.inspection_id || 'records'} has no detections that count as cracks${f.awaiting_review ? `; ${f.awaiting_review} are awaiting engineer review` : ''}.\n\nAll findings in this report are AI predictions and must be reviewed by an engineer.`;
+  if (!f.total) return `Inspection ${f.inspection_id || 'records'} has no detections that count as defects${f.awaiting_review ? `; ${f.awaiting_review} are awaiting engineer review` : ''}.\n\nAll findings in this report are AI predictions and must be reviewed by an engineer.`;
   const sev = SEV.filter((s) => f.by_severity[s]).map((s) => `${f.by_severity[s]} ${s.toLowerCase()}`).join(', ');
   const p1 = [`Inspection ${f.inspection_id} recorded ${plural(f.total, 'defect')}: ${sev}.`];
   if (f.chainage_range_m) p1.push(`Located defects lie between ${f.chainage_range_m[0]} m and ${f.chainage_range_m[1]} m from the intake.`);

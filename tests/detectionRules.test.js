@@ -51,6 +51,23 @@ test('the browser rule, the server function and the MongoDB query agree on every
   assert.deepEqual(rules.withView({ a: 1 }, 'all'), { a: 1 });
 });
 
+test('spalling from the texture check counts when it is clearly rough and seen often enough', async () => {
+  const { autoVerdict, RULES } = await loadVerdict();
+  const patch = { cls: 'spalling', confidence: 0.85, observations: 5 };
+  assert.deepEqual(autoVerdict(patch, { frameIntervalSec: 0.33 }), { verdict: 'crack', reasons: [], score: 1 });
+  // the crack checker is not asked about spalling, so a crack-checker "no" changes nothing
+  assert.equal(autoVerdict({ ...patch, classifier: { state: 'ok', score: 0.01 } }, { frameIntervalSec: 0.33 }).verdict, 'crack');
+  // weak texture (crack edges, specks) waits for review
+  const weak = autoVerdict({ ...patch, confidence: RULES.spallConfidence - 0.05 }, { frameIntervalSec: 0.33 });
+  assert.equal(weak.verdict, 'candidate');
+  assert.deepEqual(weak.reasons, ['texture_weak']);
+  // seen once in a video sampled three times a second: waits
+  assert.deepEqual(autoVerdict({ ...patch, observations: 1 }, { frameIntervalSec: 0.33 }).reasons, ['few_frames']);
+  // photos and webcam give no moving, repeated view: a patch always waits for review there
+  assert.deepEqual(autoVerdict({ ...patch, observations: 1 }, { mode: 'photo' }).reasons, ['texture_heuristic']);
+  assert.equal(autoVerdict({ ...patch, observations: 9 }, { mode: 'webcam' }).verdict, 'candidate');
+});
+
 test('automatic verdict: the checks are combined into one score instead of each having a veto', async () => {
   const { autoVerdict, RULES } = await loadVerdict();
   const good = { cls: 'crack', confidence: 0.8, observations: 4, shape: { areaPx: 400, elongation: 6 } };
@@ -58,8 +75,7 @@ test('automatic verdict: the checks are combined into one score instead of each 
   assert.equal(g.verdict, 'crack');
   assert.deepEqual(g.reasons, []);
   assert.ok(g.score >= RULES.passScore);
-  // hard limits
-  assert.deepEqual(autoVerdict({ ...good, cls: 'spalling' }).reasons, ['texture_heuristic']);
+  // hard limit
   assert.deepEqual(autoVerdict({ ...good, shape: { areaPx: 12, elongation: 6 } }).reasons, ['too_small']);
   // one weak check no longer blocks a detection that is otherwise clearly a crack
   assert.equal(autoVerdict({ ...good, confidence: 0.45, classifier: { state: 'ok', score: 0.95 } }).verdict, 'crack');

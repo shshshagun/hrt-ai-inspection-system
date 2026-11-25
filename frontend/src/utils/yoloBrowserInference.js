@@ -116,7 +116,39 @@ function prepareTileTensor(srcCanvas, x0, y0, cropW, cropH, workCanvas, workCtx)
   };
 }
 
-/** Supplementary CV check for exposed rebar / severe concrete spalling cavities */
+/**
+ * Thresholds for the texture check. minSoftVar is the one that tells broken concrete from water: measured on the test videos,
+ * spalled and rebar cells score about 30 on it, while dark water with floating specks and plain wall score 1 to 3.
+ */
+export const SPALL = { minMean: 35, maxMean: 170, minLapVar: 240, minSoftVar: 10, minDark: 0.02, maxDark: 0.85, maxRoughShare: 0.3 };
+
+/** Most detections a single frame can give: cracks first, then texture patches */
+const MAX_PER_FRAME = 10;
+
+function boxBlur3(src, w, h) {
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = Math.min(h - 1, Math.max(0, y + dy));
+        for (let dx = -1; dx <= 1; dx++) s += src[yy * w + Math.min(w - 1, Math.max(0, x + dx))];
+      }
+      out[y * w + x] = s / 9;
+    }
+  }
+  return out;
+}
+
+/** How much of box a lies inside box b (0 to 1) */
+function coveredBy(a, b) {
+  const iw = Math.max(0, Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1));
+  const ih = Math.max(0, Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1));
+  const area = Math.max(1, (a.x2 - a.x1) * (a.y2 - a.y1));
+  return (iw * ih) / area;
+}
+
+/** Texture check for spalling, cavities and exposed rebar. Not a trained model: see SPALL above. */
 function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
   // Analyze at fast downscaled 280x160 resolution
   const sw = 280;
@@ -133,24 +165,28 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
     const p = i * 4;
     luma[i] = 0.299 * rgba[p] + 0.587 * rgba[p + 1] + 0.114 * rgba[p + 2];
   }
+  // A lightly blurred copy (two 3x3 box blurs). Specks in the water and fine grain vanish in it; broken concrete does not.
+  const soft = boxBlur3(boxBlur3(luma, sw, sh), sw, sh);
 
-  // Laplacian variance per cell in 14x10 grid (skip outer HUD/ROV bumper borders)
+  // Texture per cell in a 14x10 grid. The bottom two rows are skipped: that is where an ROV's own frame and lights sit.
   const COLS = 14;
   const ROWS = 10;
   const cw = Math.floor(sw / COLS);
   const ch = Math.floor(sh / ROWS);
   const hotCells = [];
 
-  for (let r = 1; r < ROWS - 2; r++) {
-    for (let col = 1; col < COLS - 1; col++) {
+  for (let r = 0; r < ROWS - 2; r++) {
+    for (let col = 0; col < COLS; col++) {
       let sumL = 0;
       let darkCount = 0;
       let lapSum = 0;
       let lapSq = 0;
+      let softSum = 0;
+      let softSq = 0;
       let n = 0;
 
-      for (let y = r * ch + 1; y < (r + 1) * ch - 1; y++) {
-        for (let x = col * cw + 1; x < (col + 1) * cw - 1; x++) {
+      for (let y = Math.max(1, r * ch + 1); y < Math.min(sh - 1, (r + 1) * ch - 1); y++) {
+        for (let x = Math.max(1, col * cw + 1); x < Math.min(sw - 1, (col + 1) * cw - 1); x++) {
           const idx = y * sw + x;
           const v = luma[idx];
           sumL += v;
@@ -158,6 +194,9 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
           const lap = luma[idx - 1] + luma[idx + 1] + luma[idx - sw] + luma[idx + sw] - 4 * v;
           lapSum += lap;
           lapSq += lap * lap;
+          const sl = soft[idx - 1] + soft[idx + 1] + soft[idx - sw] + soft[idx + sw] - 4 * soft[idx];
+          softSum += sl;
+          softSq += sl * sl;
           n++;
         }
       }
@@ -167,12 +206,19 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
       const darkFrac = darkCount / n;
       const meanLap = lapSum / n;
       const lapVar = lapSq / n - meanLap * meanLap;
+      const softVar = softSq / n - (softSum / n) ** 2;
 
-      if (meanL > 68 && meanL < 165 && lapVar > 240 && darkFrac > 0.08 && darkFrac < 0.40) {
-        hotCells.push({ r, col, lapVar });
+      // Rough at both fine and coarse scale. Dark is allowed (a cavity, bars in shadow) as long as the cell is not all black.
+      if (meanL > SPALL.minMean && meanL < SPALL.maxMean && lapVar > SPALL.minLapVar && softVar > SPALL.minSoftVar
+        && darkFrac > SPALL.minDark && darkFrac < SPALL.maxDark) {
+        hotCells.push({ r, col, lapVar, softVar });
       }
     }
   }
+
+  // When a large part of the picture is rough (gravel, vegetation, a landscape), a rough patch says nothing about damage.
+  // The heaviest spalling in the test video made 26% of cells rough; aerial landscape shots made 28 to 42%.
+  if (hotCells.length > SPALL.maxRoughShare * (ROWS - 2) * COLS) return [];
 
   // Group 8-connected adjacent hot cells; require >= 2 connected cells
   const visited = new Set();
@@ -226,12 +272,14 @@ function detectSpallingClusters(srcCanvas, existingBoxes, W, H) {
       const y1 = (fy1 / sh) * H;
       const x2 = (fx2 / sw) * W;
       const y2 = (fy2 / sh) * H;
-      const avgVar = group.reduce((s, g) => s + g.lapVar, 0) / group.length;
-      const conf = Number(Math.min(0.92, 0.60 + (avgVar - 240) / 450).toFixed(2));
+      // Rougher at the coarse scale = surer. About 0.6 at the threshold, 0.75 for typical spalling, at most 0.92.
+      const avgSoft = group.reduce((s, g) => s + g.softVar, 0) / group.length;
+      const conf = Number(Math.min(0.92, 0.55 + (avgSoft - SPALL.minSoftVar) / 100).toFixed(2));
 
       const cand = { x1, y1, x2, y2, confidence: conf, class: 'spalling' };
-      const overlapsYolo = existingBoxes.some((b) => boxIoU(cand, b) > 0.35);
-      if (!overlapsYolo) clusters.push(cand);
+      // A crack's own rough edges look like texture: skip a patch that is mostly inside a crack's box
+      const onCrack = existingBoxes.some((b) => boxIoU(cand, b) > 0.35 || coveredBy(cand, b) > 0.5);
+      if (!onCrack) clusters.push(cand);
     }
   }
 
@@ -551,7 +599,7 @@ export async function detectVideoFrame(
 
   const mergedCracks = consolidateBoxes(rawBoxes, W, H, 0.35);
   const spallClusters = detectSpallingClusters(srcCanvas, mergedCracks, W, H);
-  const combined = [...mergedCracks, ...spallClusters].slice(0, 6);
+  const combined = [...mergedCracks, ...spallClusters].slice(0, MAX_PER_FRAME);
 
   if (combined.length === 0) {
     return { detections: [], snapshotUrl: null };
@@ -561,7 +609,9 @@ export async function detectVideoFrame(
   for (const cand of combined) {
     const crop = cropCanvas(srcCanvas, cand, W, H);
     cand.cropUrl = crop ? crop.toDataURL('image/jpeg', 0.8) : null;
-    cand.classifier = crop ? await classifyCrop(crop) : { state: 'absent', score: null };
+    // The checker was trained on cracks only, so its answer about a spalled patch means nothing: it is not asked
+    cand.classifier = cand.class === 'spalling' ? { state: 'absent', score: null }
+      : crop ? await classifyCrop(crop) : { state: 'absent', score: null };
   }
 
   // Paint mask overlays for winning detections directly onto srcCanvas before snapshot capture

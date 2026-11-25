@@ -44,7 +44,7 @@ const FILTER_PROPERTIES = {
   flagged_urgent: { type: 'boolean', description: 'true to list only defects an engineer flagged for urgent repair.' },
   since: { type: 'string', description: 'Only defects detected on or after this date (YYYY-MM-DD).' },
   until: { type: 'string', description: 'Only defects detected on or before this date (YYYY-MM-DD).' },
-  include_unreviewed: { type: 'boolean', description: 'true to also include detections that are still waiting for an engineer and that the system did not judge to be cracks. Leave unset for confirmed cracks only.' },
+  include_unreviewed: { type: 'boolean', description: 'true to also include detections that are still waiting for an engineer and that the system did not judge to be cracks. Leave unset for counted detections only (cracks, and spalling found by the texture check).' },
   sort: { type: 'string', enum: SORTS, description: 'Order of the results.' },
   limit: { type: 'integer', description: 'How many results to return, 1 to 25.' },
 };

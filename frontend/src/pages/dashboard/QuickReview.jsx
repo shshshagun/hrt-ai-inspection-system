@@ -7,11 +7,12 @@ import './QuickReview.css';
 
 const REASON_LABEL = { shadow: 'Shadow', stain: 'Stain', ring_joint: 'Ring joint', debris: 'Debris', texture: 'Texture', other: 'Other' };
 const WHY = {
-  texture_heuristic: 'texture check, not the model', too_small: 'very small', low_confidence: 'low confidence', blob_shape: 'blob-shaped',
+  texture_heuristic: 'texture check, not the model', texture_weak: 'texture not rough enough', too_small: 'very small', low_confidence: 'low confidence', blob_shape: 'blob-shaped',
   compact_box: 'compact box', few_frames: 'seen in few frames', classifier_not_crack: 'checker says no', classifier_unsure: 'checker not sure',
   classifier_unavailable: 'checker could not load', low_score: 'just short',
 };
 const SWIPE_PX = 110;
+const isSpall = (d) => String(d.class_label || d.category || '').toLowerCase().startsWith('spall');
 
 /**
  * One detection at a time, full screen: swipe right (or press →) for a crack, left (←) for not a crack, ↓ to skip, Z to undo.
@@ -109,7 +110,7 @@ export default function QuickReview({ items, onClose }) {
     <div className="qr" role="dialog" aria-modal="true" aria-label="Quick review">
       <div className="qr__top">
         <span className="qr__count">{Math.min(index + 1, deck.length)} / {deck.length}</span>
-        <span className="qr__tally">{cracks} crack{cracks === 1 ? '' : 's'} · {done.length - cracks} not</span>
+        <span className="qr__tally">{cracks} real · {done.length - cracks} not</span>
         <button type="button" className="qr__close" onClick={onClose} aria-label="Close quick review"><X size={18} /></button>
       </div>
 
@@ -125,7 +126,7 @@ export default function QuickReview({ items, onClose }) {
                 : pics.crop ? <img src={pics.crop} alt="The detection, as the crack checker saw it" draggable="false" />
                   : pics.image ? <img src={pics.image} alt="The frame the detection came from" draggable="false" />
                     : <span className="qr__loading">No picture stored for this detection</span>}
-              {hint && <span className={`qr__stamp qr__stamp--${hint}`}>{hint === 'crack' ? 'CRACK' : 'NOT A CRACK'}</span>}
+              {hint && <span className={`qr__stamp qr__stamp--${hint}`}>{hint === 'crack' ? (isSpall(card) ? 'SPALLING' : 'CRACK') : 'NOT A DEFECT'}</span>}
             </div>
             <div className="qr__meta">
               <span>{card.id}</span>
@@ -136,7 +137,7 @@ export default function QuickReview({ items, onClose }) {
             </div>
           </div>
 
-          <div className="qr__reasons" role="group" aria-label="Reason used when you say not a crack">
+          <div className="qr__reasons" role="group" aria-label="Reason used when you say not a defect">
             {REJECT_REASONS.map((r, i) => (
               <button key={r} type="button" className={`qr__chip${reason === r ? ' qr__chip--on' : ''}`} onClick={() => setReason(r)}>
                 <kbd>{i + 1}</kbd> {REASON_LABEL[r]}
@@ -146,15 +147,15 @@ export default function QuickReview({ items, onClose }) {
 
           <div className="qr__actions">
             <button type="button" className="qr__btn qr__btn--undo" onClick={undo} disabled={busy || !history.length} aria-label="Undo (Z)"><Undo2 size={18} /></button>
-            <button type="button" className="qr__btn qr__btn--no" onClick={() => decide('rejected')} disabled={busy} aria-label="Not a crack (left arrow)"><X size={26} /></button>
+            <button type="button" className="qr__btn qr__btn--no" onClick={() => decide('rejected')} disabled={busy} aria-label="Not a defect (left arrow)"><X size={26} /></button>
             <button type="button" className="qr__btn qr__btn--skip" onClick={() => decide('skip')} disabled={busy} aria-label="Skip (down arrow)"><SkipForward size={18} /></button>
-            <button type="button" className="qr__btn qr__btn--yes" onClick={() => decide('confirmed')} disabled={busy} aria-label="Crack (right arrow)"><Check size={26} /></button>
+            <button type="button" className="qr__btn qr__btn--yes" onClick={() => decide('confirmed')} disabled={busy} aria-label="Real defect (right arrow)"><Check size={26} /></button>
           </div>
-          <p className="qr__keys">Swipe, or ← not a crack · → crack · ↓ skip · Z undo · 1–6 reason · Esc close</p>
+          <p className="qr__keys">Swipe, or ← not a defect · → real · ↓ skip · Z undo · 1–6 reason · Esc close</p>
         </>
       ) : (
         <div className="qr__end">
-          <p><b>All done.</b> {cracks} confirmed as cracks, {done.length - cracks} rejected, {history.length - done.length} skipped.</p>
+          <p><b>All done.</b> {cracks} confirmed as real, {done.length - cracks} rejected, {history.length - done.length} skipped.</p>
           <div className="qr__end-row">
             {history.length > 0 && <button type="button" className="qr__chip" onClick={undo} disabled={busy}>Undo last</button>}
             <button type="button" className="qr__chip qr__chip--on" onClick={onClose}>Close</button>
