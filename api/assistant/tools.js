@@ -6,6 +6,7 @@
 const { FILTER_PROPERTIES, FilterError, buildFilter, runFilter, toRecord, PROJECTION, TUNNEL_M } = require('./filters');
 const { normalize, groupSites, siteGrowth, diffInspections } = require('./sites');
 const { countsAsCrack, reviewState } = require('../detectionRules');
+const { searchKnowledge } = require('./knowledge');
 
 const MAX_SCAN = 3000; // upper bound on documents read for aggregate tools
 
@@ -38,6 +39,11 @@ const DECLARATIONS = [
     name: 'get_site_history',
     description: 'History of one physical defect across inspections (matched by class, chainage within 3 m and angle within 35 degrees): when it was seen, its size each time and how much it grew.',
     parameters: { type: 'object', properties: { id: { type: 'string', description: 'A defect id returned by another tool.' } }, required: ['id'] },
+  },
+  {
+    name: 'search_knowledge',
+    description: 'Search the project notes for meanings and rules, not data: what a severity level means, what counts as a defect, how spalling is found, what chainage and clock position are, how sizes are estimated, the model\'s limits, and background on tunnel lining defects. Returns up to 3 passages with the note they came from.',
+    parameters: { type: 'object', properties: { query: { type: 'string', description: 'What to look up, in a few words, for example "what makes a crack critical".' } }, required: ['query'] },
   },
 ];
 
@@ -75,6 +81,15 @@ const siteLine = (site, extra = {}) => ({
 
 /** Executes a tool. `sink` collects the defect ids that appear in results so the UI can link them. */
 async function executeTool(name, args, { db, sink }) {
+  const a0 = args && typeof args === 'object' ? args : {};
+  if (name === 'search_knowledge') {
+    // reads local notes only, so it works without the database. Note names are not defect ids, so nothing goes in `sink`.
+    const q = typeof a0.query === 'string' ? a0.query.trim() : '';
+    if (q.length < 2 || q.length > 200) throw new FilterError('query must be 2 to 200 characters');
+    const passages = searchKnowledge(q, 3).map(({ note, section, text }) => ({ note, section, text }));
+    return passages.length ? { passages } : { passages, note: 'Nothing in the project notes matches that.' };
+  }
+
   if (!db) throw Object.assign(new Error('db'), { publicMessage: 'The database is not available right now.' });
   const a = args && typeof args === 'object' ? args : {};
 
