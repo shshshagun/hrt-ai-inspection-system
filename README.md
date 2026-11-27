@@ -200,7 +200,7 @@ The React frontend renders a fully interactive 3D tunnel in the browser using **
 | **Defect detail** | Before/after slider and growth table for a defect seen in several inspections; *Flag for Urgent Repair* and *Add Observation*; a snapshot and history link in the twin inspector |
 | **3D twin** | See Layer 4 above |
 | **Reports** | *Summary + PDF* dialog: a summary is drafted from the database (AI prose when a key is set, otherwise a standard template), the engineer edits it, and the PDF gains the summary, an unrolled-lining defect map and a severity bar chart. Every number in an AI draft is checked against the facts. CSV export is also available |
-| **Ask HRT** | Chat and natural-language search over the defect data (see [Ask HRT](#-ask-hrt--ai-assistant)) |
+| **Ask HRT** | Chat and natural-language search over the defect data and the project notes (RAG) (see [Ask HRT](#-ask-hrt--ai-assistant)) |
 | **Accounts** | Sign-up, sign-in, role-based access, forgot-password by e-mailed code (see [Authentication](#-authentication-and-roles)) |
 | **Demo mode** | Read-only demo with bundled sample data, no account needed |
 
@@ -258,7 +258,7 @@ hrt-ai-inspection-system/
 ├── api/                            # MongoDB Gateway (port 5000), the production API
 │   ├── server.js                   # Detections, inspections, reports, PDF export
 │   ├── auth/                       # Login, sign-up, roles, password reset, mailer
-│   └── assistant/                  # Ask HRT: Gemini and Groq providers, tools, report drafting
+│   └── assistant/                  # Ask HRT: Gemini and Groq providers, tools, knowledge notes (RAG), eval set, report drafting
 │
 ├── frontend/                       # React.js + Three.js Web Dashboard
 │   └── src/
@@ -434,6 +434,16 @@ Ask HRT answers questions about the stored inspection data, runs natural-languag
 | `ASSISTANT_RPM_USER`, `ASSISTANT_RPM_GLOBAL` | Questions allowed per minute (defaults 8 and 12) |
 
 Endpoints: `GET /api/assistant/status` (lists the active providers), `POST /api/assistant/chat`, `POST /api/assistant/search` and `POST /api/assistant/report-draft`. Keys live only in the host's environment settings, never in the repository.
+
+### Retrieval over project notes (RAG)
+
+The chat model has six read-only tools. Five query the defect database (search, summarise, list inspections, compare inspections, one defect's history). The sixth, `search_knowledge`, searches ten short notes in [`api/assistant/knowledge/`](api/assistant/knowledge/) on what the severity levels mean, what counts as a defect, how spalling is found, chainage and clock positions, sizing, the model's limits, comparing inspections, lining defect background and using the app. The model picks the tools itself, so a question like "are there critical defects past 200 m, and what makes a defect critical?" uses both kinds. It names the note it answered from.
+
+- **Retrieval** is plain BM25 keyword scoring in [`knowledge.js`](api/assistant/knowledge.js): each `##` section of a note is one passage. A passage scores higher when it contains more of the question's words, and rare words count more than common ones. The top 3 passages go to the model. There are no embeddings and no extra service.
+- **Notes** describe this project's own rules, checked against the code. The background notes are general summaries, not quotes from IS codes or ICOLD bulletins. To add knowledge, add a Markdown file with a `# Title` and `##` sections.
+- **Evaluation:** [`eval/questions.json`](api/assistant/eval/questions.json) has 19 questions, worded differently from the notes on purpose.
+  - `npm test` checks retrieval offline. The right note is in the top 3 for **14 of 16** knowledge questions. The two misses are synonyms keyword search cannot match: "fixed" vs "repair", and "find" vs "detect". Embedding search would be the next step.
+  - `node api/assistant/eval/run-live.js` sends every question to the configured free model. It scores tool choice, whether the answer cites the right note, and whether it contains the expected facts. It needs an AI key in `api/.env` and uses free-tier quota, so it is run by hand.
 
 ---
 

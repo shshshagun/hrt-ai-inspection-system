@@ -1,0 +1,24 @@
+{
+  "about": "Evaluation set for Ask HRT. 'notes' are the note titles that hold the answer (any one is a hit). 'tool' is the tool the model should call. 'answer_has' lists groups of alternatives; the answer must contain one item from each group. Questions are worded differently from the notes on purpose.",
+  "questions": [
+    { "id": "k01", "kind": "knowledge", "q": "When does the system call a crack critical?", "notes": ["Severity levels"], "tool": "search_knowledge", "answer_has": [["0.6", "60"]] },
+    { "id": "k02", "kind": "knowledge", "q": "Can a patch of broken concrete ever be rated critical?", "notes": ["Severity levels"], "tool": "search_knowledge", "answer_has": [["never", "not", "no"]] },
+    { "id": "k03", "kind": "knowledge", "q": "Why are some detections left waiting for an engineer instead of being included in the totals?", "notes": ["What counts as a defect"], "tool": "search_knowledge", "answer_has": [["candidate", "review"]] },
+    { "id": "k04", "kind": "knowledge", "q": "The model only knows cracks, so how does the app spot exposed steel bars?", "notes": ["Spalling and exposed rebar"], "tool": "search_knowledge", "answer_has": [["texture"]] },
+    { "id": "k05", "kind": "knowledge", "q": "What does 6 o'clock mean for where a defect is?", "notes": ["Chainage and clock position"], "tool": "search_knowledge", "answer_has": [["invert", "floor", "bottom"]] },
+    { "id": "k06", "kind": "knowledge", "q": "How does the system know how many metres into the tunnel a defect is when scanning a video?", "notes": ["Chainage and clock position"], "tool": "search_knowledge", "answer_has": [["0.4"]] },
+    { "id": "k07", "kind": "knowledge", "q": "How trustworthy are the millimetre measurements?", "notes": ["How defect sizes are estimated"], "tool": "search_knowledge", "answer_has": [["calibration", "estimate"]] },
+    { "id": "k08", "kind": "knowledge", "q": "Which kinds of damage can the system not find at all?", "notes": ["The detection model and its limits"], "tool": "search_knowledge", "answer_has": [["seepage", "honeycomb", "delamination"]] },
+    { "id": "k09", "kind": "knowledge", "q": "A defect is missing from the newest inspection. Does that mean it was fixed?", "notes": ["Comparing inspections and defect history"], "tool": "search_knowledge", "answer_has": [["not prove", "does not", "doesn't", "no"]] },
+    { "id": "k10", "kind": "knowledge", "q": "What do white deposits on the concrete wall tell us?", "notes": ["Background: defects in concrete tunnel linings"], "tool": "search_knowledge", "answer_has": [["water", "leaching", "efflorescence"]] },
+    { "id": "k11", "kind": "knowledge", "q": "What is a head race tunnel for?", "notes": ["Head race tunnels and why this system exists"], "tool": "search_knowledge", "answer_has": [["turbine"]] },
+    { "id": "k12", "kind": "knowledge", "q": "Why does the detector sometimes mistake ring joints for damage?", "notes": ["Background: defects in concrete tunnel linings", "What counts as a defect"], "tool": "search_knowledge", "answer_has": [["joint"]] },
+    { "id": "k13", "kind": "knowledge", "q": "Where in the app can I mark a defect as urgent?", "notes": ["Using the app"], "tool": "search_knowledge", "answer_has": [["detail"]] },
+    { "id": "k14", "kind": "knowledge", "q": "Does muddy water affect how well defects are found?", "notes": ["The detection model and its limits"], "tool": "search_knowledge", "answer_has": [["turbid", "unusable", "sonar", "yes"]] },
+    { "id": "k15", "kind": "knowledge", "q": "In a comparison of two inspections, what does 'grown' mean?", "notes": ["Comparing inspections and defect history"], "tool": "search_knowledge", "answer_has": [["20"]] },
+    { "id": "d01", "kind": "data", "q": "List the critical cracks between chainage 100 and 200 m.", "tool": "search_detections" },
+    { "id": "d02", "kind": "data", "q": "How many defects are there at each severity level?", "tool": "summarize_detections" },
+    { "id": "d03", "kind": "data", "q": "What changed between the last two inspections?", "tool": "compare_inspections" },
+    { "id": "b01", "kind": "both", "q": "Are there critical defects past 200 m, and what makes a defect critical?", "notes": ["Severity levels"], "tool": "search_detections+search_knowledge" }
+  ]
+}
